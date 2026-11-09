@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 import AppKit
 import CryptoKit
@@ -153,3 +154,4 @@ extension AppModel {
         }
     }
 }
+#endif

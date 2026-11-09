@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 import Charts
 import TokenMeterCore
@@ -538,3 +539,4 @@ struct PanelView: View {
         return f
     }()
 }
+#endif

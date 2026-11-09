@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 
 /// 主题色（Accent）：影响总览卡片底色、工具/模型条形配色、每日用量图
@@ -28,3 +29,4 @@ struct AppTheme: Identifiable, Equatable {
         all.first { $0.id == id } ?? all[0]
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 import AppKit
 import ServiceManagement
@@ -274,3 +275,14 @@ struct MenuBarLabel: View {
         }
     }
 }
+
+#else
+import Foundation
+
+@main
+struct TokenMeterAppFallback {
+    static func main() {
+        print("TokenMeter 菜单栏应用仅支持 macOS；本平台请使用 tokenmeter CLI。")
+    }
+}
+#endif
