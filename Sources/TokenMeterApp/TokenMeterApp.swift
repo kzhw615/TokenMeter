@@ -70,7 +70,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// 燃烧速率（tokens/分钟），由热扫描采样差分得出
+    /// 燃烧速率（tokens/秒），由热扫描采样差分得出
     @Published var burnRate: Int64?
     private var rateSamples: [(Date, Int64)] = []
 
@@ -107,7 +107,7 @@ final class AppModel: ObservableObject {
 
     func menuBarText(_ s: Summary) -> String {
         let shown = includeCache ? s.counts.total : s.counts.input + s.counts.output
-        let rate = (isBurning && (burnRate ?? 0) > 0) ? "\(Fmt.compactTokens(burnRate ?? 0))/min · " : ""
+        let rate = (isBurning && (burnRate ?? 0) > 0) ? "\(Fmt.compactTokens(burnRate ?? 0))/s · " : ""
         switch menuBarStyle {
         case "tokens": return rate + Fmt.compactTokens(shown)
         case "cost": return rate + Fmt.cost(s.cost)
@@ -167,7 +167,7 @@ final class AppModel: ObservableObject {
                     self.rateSamples.removeAll { now.timeIntervalSince($0.0) > 150 }
                     if let first = self.rateSamples.first, let last = self.rateSamples.last,
                        first.0 < last.0, now.timeIntervalSince(first.0) >= 30 {
-                        let dt = last.0.timeIntervalSince(first.0) / 60.0
+                        let dt = last.0.timeIntervalSince(first.0)
                         self.burnRate = max(0, Int64(Double(last.1 - first.1) / dt))
                     }
                 } else {

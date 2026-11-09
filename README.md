@@ -17,7 +17,7 @@ macOS 菜单栏（状态栏）token 用量统计器，灵感来自 [CodeBurn](ht
   - 按项目榜：从日志 cwd / 项目目录解析仓库名（含 dsh 的 unicode 转义目录名解码），回答"哪个 repo 最烧钱"
   - 每日用量柱状图：固定近 30 天（缺失日补零），与所选范围无关
   - 逐小时用量图：今天/昨天范围为当日 24 小时明细；其他范围为按钟点分布汇总
-  - 燃烧状态：任一 harness 日志近 2 分钟有写入时，菜单栏图标变跳动的彩色火苗并显示实时速率（tokens/min），面板头部显示燃烧中的工具
+  - 燃烧状态：任一 harness 日志近 2 分钟有写入时，菜单栏图标变跳动的彩色火苗并显示实时速率（tokens/s），面板头部显示燃烧中的工具
   - 设置行：6 种主题色、菜单栏显示样式（量+费 / 仅量 / 仅费 / 仅图标）、开机自启开关（SMAppService 一键注册登录项）
   - 数据源诊断不在面板展示；用 CLI `tokenmeter sources` 查看（文件数 / 禁用 / 说明）
 - CLI：`tokenmeter report [--range today|7d|30d|all] [--json] [--exclude-cache]`、`tokenmeter sources`
