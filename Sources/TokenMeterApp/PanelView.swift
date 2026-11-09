@@ -114,6 +114,20 @@ struct PanelView: View {
             if model.scanning {
                 ProgressView().controlSize(.small)
             }
+            Button(action: { model.manualCheck() }) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("检查更新")
+            Button(action: { NSApplication.shared.terminate(nil) }) {
+                Image(systemName: "power")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("退出 TokenMeter")
         }
     }
 
@@ -331,15 +345,11 @@ struct PanelView: View {
             Spacer()
             Button("刷新") { model.refresh() }
                 .buttonStyle(.borderless)
-            Button("检查更新") { model.manualCheck() }
-                .buttonStyle(.borderless)
             Button("价格表") {
                 PricingTable.writeTemplateIfMissing()
                 NSWorkspace.shared.open(PricingTable.overrideURL)
             }
             .buttonStyle(.borderless)
-            Button("退出") { NSApplication.shared.terminate(nil) }
-                .buttonStyle(.borderless)
         }
         .padding(.top, 4)
     }
