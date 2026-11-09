@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build core + CLI（跨平台目标）
+        run: swift build --target tokenmeter
+
+      - name: Full build（含 macOS App）
+        if: matrix.os == 'macos-14'
+        run: swift build
+
+      - name: Unit tests
+        run: swift test

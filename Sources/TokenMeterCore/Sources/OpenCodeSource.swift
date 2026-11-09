@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 import SQLite3
 
@@ -63,3 +64,4 @@ public struct OpenCodeSource: UsageSource {
         return builder.buckets
     }
 }
+#endif

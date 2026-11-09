@@ -30,7 +30,7 @@ public struct ScanResult {
 }
 
 public enum ProjectName {
-    /// dsh 会话目录名形如 --Users-kzhw-Documents-foo--，含 ~7EDF~ 形式的 unicode 转义
+    /// dsh 会话目录名形如 --Users-kzhw-Documents-foo--，非 ASCII 字符编码为 ~HEXHEXHEXHEX 连续段
     public static func decodeDsh(_ raw: String) -> String {
         var s = raw
         while s.hasPrefix("-") { s.removeFirst() }
@@ -39,11 +39,17 @@ public enum ProjectName {
         var out = ""
         var i = s.startIndex
         while i < s.endIndex {
-            if s[i] == "~", let end = s[i...].dropFirst().firstIndex(of: "~"),
-               let scalar = UInt32(s[s.index(after: i)..<end], radix: 16),
-               let uni = Unicode.Scalar(scalar) {
-                out.append(Character(uni))
-                i = s.index(after: end)
+            if s[i] == "~" {
+                let hexStart = s.index(after: i)
+                let hexEnd = s.index(hexStart, offsetBy: 4, limitedBy: s.endIndex) ?? s.endIndex
+                let hex = String(s[hexStart..<hexEnd])
+                if hex.count == 4, let scalar = UInt32(hex, radix: 16), let uni = Unicode.Scalar(scalar) {
+                    out.append(Character(uni))
+                    i = hexEnd
+                } else {
+                    out.append(s[i])
+                    i = s.index(after: i)
+                }
             } else {
                 out.append(s[i])
                 i = s.index(after: i)

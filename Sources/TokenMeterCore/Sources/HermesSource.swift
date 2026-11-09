@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 import SQLite3
 
@@ -55,3 +56,4 @@ public struct HermesSource: UsageSource {
         return builder.buckets
     }
 }
+#endif

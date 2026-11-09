@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 import SQLite3
 
@@ -49,3 +50,4 @@ public struct ZCodeSource: UsageSource {
         return builder.buckets
     }
 }
+#endif

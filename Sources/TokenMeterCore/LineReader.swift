@@ -44,7 +44,14 @@ public final class LineReader {
 
 public enum Zstd {
     public static func zstdPath() -> String? {
+        #if os(Windows)
+        // Windows 依赖 PATH 解析 zstd.exe（CreateProcess 会搜索 PATH）
+        return "zstd.exe"
+        #elseif os(Linux)
+        let candidates = ["/usr/bin/zstd", "/usr/local/bin/zstd"]
+        #else
         let candidates = ["/opt/homebrew/bin/zstd", "/usr/local/bin/zstd", "/usr/bin/zstd"]
+        #endif
         for c in candidates where FileManager.default.isExecutableFile(atPath: c) { return c }
         return nil
     }

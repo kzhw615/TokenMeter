@@ -15,5 +15,6 @@ let package = Package(
         .target(name: "TokenMeterCore"),
         .executableTarget(name: "tokenmeter", dependencies: ["TokenMeterCore"]),
         .executableTarget(name: "TokenMeterApp", dependencies: ["TokenMeterCore"]),
+        .testTarget(name: "TokenMeterCoreTests", dependencies: ["TokenMeterCore"]),
     ]
 )

@@ -40,6 +40,7 @@ enum Flex {
     }
 }
 
+#if os(macOS)
 /// 通用 SQLite 用量源：SQL 固定返回 6 列 model, input, output, cacheRead, cacheWrite, ts
 struct SqlUsageSource: UsageSource {
     let id: String
@@ -185,9 +186,18 @@ struct QoderSource: UsageSource {
     }
 }
 
+#endif
+
 enum ExtraSources {
     static func all() -> [UsageSource] {
-        [
+        var out: [UsageSource] = [
+            JsonlUsageSource(id: "reasonix", displayName: "Reasonix",
+                             dirs: ["~/.reasonix"], suffixes: ["usage.jsonl"]),
+            JsonlUsageSource(id: "droid", displayName: "Droid",
+                             dirs: ["~/.factory/sessions"], suffixes: [".jsonl", ".json"]),
+        ]
+        #if os(macOS)
+        out += [
             SqlUsageSource(id: "kiro", displayName: "Kiro",
                            dbPaths: ["~/Library/Application Support/KiroUser/globalStorage/kiro.kiroagent/dev_data/devdata.sqlite"],
                            sql: "SELECT COALESCE(model,'unknown'), tokens_prompt, tokens_generated, 0, 0, timestamp FROM tokens_generated"),
@@ -198,10 +208,8 @@ enum ExtraSources {
                            dbPaths: ["~/.minimax/runtime-state.sqlite"],
                            sql: "SELECT COALESCE(model,'unknown'), input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, create_time FROM token_usage"),
             QoderSource(),
-            JsonlUsageSource(id: "reasonix", displayName: "Reasonix",
-                             dirs: ["~/.reasonix"], suffixes: ["usage.jsonl"]),
-            JsonlUsageSource(id: "droid", displayName: "Droid",
-                             dirs: ["~/.factory/sessions"], suffixes: [".jsonl", ".json"]),
         ]
+        #endif
+        return out
     }
 }

@@ -118,6 +118,16 @@ Scripts/install.sh             安装到 /Applications
 - **应用内更新检查与一键更新**：启动时及每 20 小时匿名 GET 一次 GitHub Releases API（仅比对版本号，不上传任何数据）；发现新版本时面板顶部显示提示条、右上角出现橙色更新图标；点击「一键更新」后自动下载 Release 附件、**sha256 校验（GitHub 官方 digest）**、解压替换应用并重启，失败自动回滚旧版本；也可点「下载页」手动下载。不强制自动替换：提示可 × 忽略。关闭检查：`defaults write local.tokenmeter.menubar disableUpdateCheck -bool YES`。
 - **手动更新**：从 Releases 下载 `TokenMeter.app.zip` 替换旧 App；或拉源码后 `./Scripts/install.sh`。
 
+## 跨平台状态
+
+| 平台 | 状态 |
+| --- | --- |
+| macOS | ✅ 完整体验：菜单栏 App + CLI |
+| Windows | 🟡 CLI（`tokenmeter.exe`）：Swift 官方 Windows 工具链编译，jsonl 系数据源（Claude Code / Codex / DSH / WorkBuddy 等）全支持；SQLite 系来源（OpenCode/Hermes/ZCode/Qoder 等）与菜单栏 UI 暂为 macOS 专属，托盘 UI 规划中；DSH 压缩日志需 `zstd.exe` 在 PATH |
+| Linux | 🟡 CLI 同 Windows 口径；CI 每 push 三平台编译+单测 |
+
+Windows 构建：安装 [Swift 工具链](https://www.swift.org/install/windows/) 后 `swift build --target tokenmeter`；WSL 内的 harness 日志扫描在规划中（Phase 3）。
+
 ## 许可
 
 MIT License（见 [LICENSE](LICENSE)）。价格表数据来源于各厂商公开定价页，仅用于本地估算。

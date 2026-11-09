@@ -2,8 +2,11 @@ import Foundation
 
 public enum Aggregator {
     public static func allSources() -> [UsageSource] {
-        [ClaudeCodeSource(), CodexSource(), DshSource(), OpenCodeSource(), WorkBuddySource(),
-         HermesSource(), ZCodeSource(), CcSwitchSource()] + ExtraSources.all()
+        var list: [UsageSource] = [ClaudeCodeSource(), CodexSource(), DshSource(), WorkBuddySource(), CcSwitchSource()]
+        #if os(macOS)
+        list += [OpenCodeSource(), HermesSource(), ZCodeSource()]
+        #endif
+        return list + ExtraSources.all()
     }
 
     /// 扫描所有来源；enabled 为来源 id 集合（nil = 用默认）
