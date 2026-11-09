@@ -118,23 +118,25 @@ Scripts/install.sh             安装到 /Applications
 - **应用内更新检查与一键更新**：启动时及每 20 小时匿名 GET 一次 GitHub Releases API（仅比对版本号，不上传任何数据）；发现新版本时面板顶部显示提示条、右上角出现橙色更新图标；点击「一键更新」后自动下载 Release 附件、**sha256 校验（GitHub 官方 digest）**、解压替换应用并重启，失败自动回滚旧版本；也可点「下载页」手动下载。不强制自动替换：提示可 × 忽略。关闭检查：`defaults write local.tokenmeter.menubar disableUpdateCheck -bool YES`。
 - **手动更新**：从 Releases 下载 `TokenMeter.app.zip` 替换旧 App；或拉源码后 `./Scripts/install.sh`。
 
-## 跨平台桌面端（Phase 2：Tauri 托盘应用）
+## 跨平台桌面端（实验性：Tauri 托盘应用）
 
-`desktop/` 目录是 Tauri v2 托盘应用（Windows / Linux / macOS 通吃）：Rust 壳负责系统托盘（燃烧时换火苗图标）与窗口，前端 WebView 面板复用 CLI 的全部统计能力（通过打包的 `tokenmeter` sidecar 调 `report --json` / `activity --json`）。
+> ⚠️ **实验性**：仅在 macOS 上 smoke 验证过；Windows 打包链（WiX/NSIS/sidecar 权限）维护成本过高，**不作为官方支持目标**。Windows 用户请使用 CLI。
+
+`desktop/` 目录是 Tauri v2 托盘应用（设计目标 Windows / Linux / macOS）：Rust 壳负责系统托盘（燃烧时换火苗图标）与窗口，前端 WebView 面板复用 CLI 的全部统计能力（通过打包的 `tokenmeter` sidecar 调 `report --json` / `activity --json`）。
 
 构建步骤：
 1. 先构建 CLI 并放置 sidecar：`./Scripts/prepare-sidecar.sh`（Windows 手动：`swift build --target tokenmeter -c release` 后把 `tokenmeter.exe` 复制为 `desktop/src-tauri/binaries/tokenmeter-x86_64-pc-windows-msvc.exe`）；
 2. 安装 [Rust](https://rustup.rs) 与 tauri-cli：`cargo install tauri-cli --version ^2`；
 3. `cd desktop/src-tauri && cargo tauri build` → 安装包在 `target/release/bundle/`。
 
-macOS 用户建议继续用原生 SwiftUI 版（`build/TokenMeter.app`）；Tauri 版主要服务 Windows / Linux。
+macOS 主线体验请用原生 SwiftUI 版（`build/TokenMeter.app`）；Tauri 版为实验性玩具，Linux 桌面玩家可自建。
 
 ## 跨平台状态
 
 | 平台 | 状态 |
 | --- | --- |
 | macOS | ✅ 完整体验：菜单栏 App + CLI |
-| Windows | ✅ CLI（`tokenmeter.exe`）已真机验证（Win10 19045 / Swift 6.4.2，2026-11-09）：jsonl 系数据源（Claude Code / Codex / DSH / WorkBuddy 等）可用；SQLite 系来源与菜单栏 UI 暂为 macOS 专属，托盘 UI 规划中；DSH 压缩日志需 `zstd.exe` 在 PATH；中文输出先 `chcp 65001` |
+| Windows | ✅ CLI（`tokenmeter.exe`）已真机验证（Win10 19045 / Swift 6.4.2，2026-11-09）：jsonl 系数据源（Claude Code / Codex / DSH / WorkBuddy 等）可用；**不提供托盘应用**（Windows 打包链维护成本过高）；SQLite 系来源暂为 macOS 专属；DSH 压缩日志需 `zstd.exe` 在 PATH；中文输出先 `chcp 65001` |
 | Linux | 🟡 CLI 同 Windows 口径；CI 每 push 在 macOS + Ubuntu 双平台编译+单测（Ubuntu 验证非 Apple 编译路径），Windows 由真机验证 |
 
 Windows 构建：安装 [Swift 工具链](https://www.swift.org/install/windows/) 后 `swift build --target tokenmeter -c release`，产物 `.build\release\tokenmeter.exe`；中文输出请先 `chcp 65001` 切换控制台 UTF-8。WSL 内的 harness 日志扫描在规划中（Phase 3）。
