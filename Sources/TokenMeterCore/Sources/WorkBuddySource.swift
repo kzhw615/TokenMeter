@@ -1,6 +1,7 @@
 import Foundation
-
-/// WorkBuddy：~/.workbuddy/traces/*/trace_*.jsonl
+#if os(macOS)
+import SQLite3
+#endif
 /// generation span 的 span_end.toolOutput 是原始 chat.completion 响应数组，
 /// 每个响应带 usage{prompt_tokens, completion_tokens, prompt_tokens_details.cached_tokens}。
 public struct WorkBuddySource: UsageSource {
@@ -41,11 +42,17 @@ public struct WorkBuddySource: UsageSource {
     }
 
     public func parseFile(path: String) -> [UsageBucket] {
+        let projects = Self.projects()
         let builder = BucketBuilder(tool: "WorkBuddy")
-        let debug = ProcessInfo.processInfo.environment["TM_DEBUG_WB"] != nil
         guard let reader = LineReader(path: path) else { return [] }
-        var spans = 0
+        var pending: [(date: Date, model: String, counts: TokenCounts)] = []
+        var hits: [String: Int] = [:]
         reader.forEachLine { line in
+            if !projects.isEmpty, line.contains("/Users/") {
+                for p in projects where line.contains(p.path) {
+                    hits[p.path, default: 0] += 1
+                }
+            }
             guard line.contains("\"generation\""), line.contains("span_end") else { return }
             guard let o = JSONUtil.object(line),
                   JSONUtil.string(o, "type") == "span_end",
@@ -53,33 +60,35 @@ public struct WorkBuddySource: UsageSource {
                   JSONUtil.string(span, "type") == "generation",
                   let toolOutput = JSONUtil.string(span, "toolOutput") else { return }
             let date = JSONUtil.date(span, "endedAt") ?? JSONUtil.date(span, "startedAt") ?? Date()
-            var got = 0
             if let data = toolOutput.data(using: .utf8),
                let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] {
                 for el in arr {
                     guard let usage = JSONUtil.dict(el, "usage") else { continue }
-                    add(builder: builder, date: date, model: JSONUtil.string(el, "model") ?? "unknown", usage: usage)
-                    got += 1
+                    if let c = Self.counts(from: usage) {
+                        pending.append((date, JSONUtil.string(el, "model") ?? "unknown", c))
+                    }
                 }
             } else {
+                // tracePayloadTruncated 截断的 toolOutput：碎片提取 "model" 与 "usage"
                 for (model, usage) in Self.fragments(in: toolOutput) {
-                    add(builder: builder, date: date, model: model, usage: usage)
-                    got += 1
+                    if let c = Self.counts(from: usage) {
+                        pending.append((date, model, c))
+                    }
                 }
             }
-            if got > 0 { spans += 1 }
-            if debug && got > 0 {
-                FileHandle.standardError.write("wb span usages=\(got)\n".data(using: .utf8)!)
-            }
         }
-        if debug {
-            let tot = builder.buckets.reduce(Int64(0)) { $0 + $1.counts.total }
-            FileHandle.standardError.write("wb file \(path.split(separator: "/").last.map(String.init) ?? "?") spans=\(spans) total=\(tot)\n".data(using: .utf8)!)
+        // 出现次数最多的已知工作区路径胜出 → 用 spaces 表的显示名作为项目名
+        if let best = hits.max(by: { $0.value < $1.value }), best.value > 0,
+           let name = projects.first(where: { $0.path == best.key })?.name {
+            builder.project = name
+        }
+        for p in pending {
+            builder.add(date: p.date, model: p.model, counts: p.counts)
         }
         return builder.buckets
     }
 
-    private func add(builder: BucketBuilder, date: Date, model: String, usage: [String: Any]) {
+    private static func counts(from usage: [String: Any]) -> TokenCounts? {
         let prompt = JSONUtil.int(usage, "prompt_tokens")
         let completion = JSONUtil.int(usage, "completion_tokens")
         var cached: Int64 = 0
@@ -94,8 +103,50 @@ public struct WorkBuddySource: UsageSource {
             cacheRead: cached,
             cacheWrite: cacheWrite
         )
-        guard counts.total > 0 else { return }
-        builder.add(date: date, model: model, counts: counts)
+        return counts.total > 0 ? counts : nil
+    }
+
+    private static let projectsLock = NSLock()
+    private static var projectsStore: [(path: String, name: String)]?
+
+    static func projects() -> [(path: String, name: String)] {
+        projectsLock.withLock {
+            if let p = projectsStore { return p }
+            let p = loadProjects()
+            projectsStore = p
+            return p
+        }
+    }
+
+    /// 从 workbuddy.db 的 spaces / space_folders 读取 工作区路径 → 项目显示名
+    private static func loadProjects() -> [(path: String, name: String)] {
+        #if os(macOS)
+        let dbPath = SourcePaths.expand("~/.workbuddy/workbuddy.db")
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { return [] }
+        defer { sqlite3_close(db) }
+        let sql = """
+        SELECT f.path, s.name FROM spaces s JOIN space_folders f ON f.space_id = s.id
+        UNION
+        SELECT create_folder_path, name FROM spaces WHERE create_folder_path IS NOT NULL AND create_folder_path != ''
+        UNION
+        SELECT primary_folder_path, name FROM spaces WHERE primary_folder_path IS NOT NULL AND primary_folder_path != ''
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        var out: [(String, String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let p = sqlite3_column_text(stmt, 0).map({ String(cString: $0) }),
+                  let n = sqlite3_column_text(stmt, 1).map({ String(cString: $0) }),
+                  !p.isEmpty, !n.isEmpty else { continue }
+            out.append((p, n))
+        }
+        // 长路径优先，避免父目录抢匹配
+        return out.sorted { $0.0.count > $1.0.count }
+        #else
+        return []
+        #endif
     }
 
     /// 在被截断的 toolOutput 字符串里扫出所有 ("model", usageDict) 片段
