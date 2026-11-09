@@ -41,12 +41,11 @@ macOS 菜单栏（状态栏）token 用量统计器，灵感来自 [CodeBurn](ht
 Cursor、Gemini CLI、Trae、Grok Bot 的本地日志不含可解析的 token 级用量（云端计费 / 加密库），未接入。
 新增来源只需实现 `TokenMeterCore.UsageSource` 协议；日志格式变化请提 `new-source` issue。
 
-### 统计口径说明（与 TokenRank/opentoken 对照）
+### 统计口径说明
 
-- **含缓存** = 输入 + 输出 + 缓存读 + 缓存写（= 请求的 prompt + completion 总量），与 TokenRank 网站「含缓存口径」一致
+- **含缓存** = 输入 + 输出 + 缓存读 + 缓存写（= 请求的 prompt + completion 总量）
 - **不含缓存** = 纯新鲜输入 + 输出（缓存读、缓存写都不计）
-- TokenRank 采集器 opentoken 的排行榜口径 `normalized = fresh input + output` 中，**缓存写被算作 fresh input**，介于上两者之间
-- 交叉验证：Codex / DSH 的逐日 normalized 与 opentoken `preview` 输出一致；WorkBuddy 在含缓存口径下与其 WB 列一致
+- 缓存读 / 缓存写分别按各家官方缓存单价计费；不同统计工具对「缓存写是否算新鲜输入」处理不同，TokenMeter 两种口径同时提供、可一键切换
 
 ## 安装与运行
 
@@ -102,12 +101,17 @@ Scripts/install.sh             安装到 /Applications
 ## 已知限制
 
 - Cursor、Gemini CLI、CodeBuddy、Pi、Grok、OpenClaw、Kimi、Antigravity 无可解析的 token 级本地日志，未接入；CC Switch 源默认关闭防重复计数
-- **Trae / Trae SOLO CN 无法支持**：`ModularData/ai-agent/database.db` 为加密库（文件头非 SQLite），其余仅 Electron 会话日志；opentoken 的适配器矩阵中也没有 Trae
-- 与 TokenRank 采集器 opentoken 的覆盖对比：opentoken 能取到数据的来源（Claude Code、Codex、OpenCode、Hermes、DSH、WorkBuddy、ZCode、CC Switch）TokenMeter 均已支持；其 Cursor 云端取数在无登录态时同样失败（auth_rejected）
+- **Trae / Trae SOLO CN 无法支持**：`ModularData/ai-agent/database.db` 为加密库（文件头非 SQLite），其余仅 Electron 会话日志
 - 费用为**估算**：按官方公开单价 × 本地日志口径折算，不等于实际账单（折扣、Batch、区域加价、高峰时段等未计入）
 - Codex `token_count` 为会话内增量事件，极早期版本日志若无该事件则统计不到
 - 首次扫描大日志（数 GB + 数千个 zstd 压缩会话）约 2–5 分钟，期间菜单栏显示 `…`；之后走文件级缓存，增量秒级
 - `codex-auto-review`（Codex 内部自动审查模型）官方无公开单价，默认记 0，可在 pricing.json 补
+
+## 更新与发布
+
+- **发版流程**：`./Scripts/release.sh 0.2.0 "变更说明"` 一条命令完成——按新版本号构建、打并推送 `v0.2.0` tag、打包 `TokenMeter.app.zip` 与 `tokenmeter.zip` 附件、创建 GitHub Release；**Watch 了仓库的用户会收到 GitHub 通知**。
+- **应用内更新检查**：启动时及每 20 小时匿名 GET 一次 GitHub Releases API（仅比对版本号，不上传任何数据）；发现新版本在面板显示提示条并跳转 Release 下载页，**不自动替换二进制**；页脚「检查更新」可手动触发。关闭检查：`defaults write local.tokenmeter.menubar disableUpdateCheck -bool YES`。
+- **手动更新**：从 Releases 下载 `TokenMeter.app.zip` 替换旧 App；或拉源码后 `./Scripts/install.sh`。
 
 ## 许可
 

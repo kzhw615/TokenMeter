@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 
 /// 二线数据源：本机未必存在，存在即自动启用。
-/// 日志格式参考各产品本地落盘结构（与 opentoken/TokenRank 采集器口径对齐）。
+/// 日志格式参考各产品本地落盘结构。
 
 enum Flex {
     static let inputKeys = ["input_tokens", "inputTokens", "prompt_tokens", "promptTokens", "tokens_prompt", "input"]

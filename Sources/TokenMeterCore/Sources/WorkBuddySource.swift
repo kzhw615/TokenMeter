@@ -3,7 +3,6 @@ import Foundation
 /// WorkBuddy：~/.workbuddy/traces/*/trace_*.jsonl
 /// generation span 的 span_end.toolOutput 是原始 chat.completion 响应数组，
 /// 每个响应带 usage{prompt_tokens, completion_tokens, prompt_tokens_details.cached_tokens}。
-/// （参考 opentoken/TokenRank 采集器的解析口径）
 public struct WorkBuddySource: UsageSource {
     public var id: String { "workbuddy" }
     public var displayName: String { "WorkBuddy" }

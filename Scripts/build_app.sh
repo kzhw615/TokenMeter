@@ -1,7 +1,9 @@
 #!/bin/bash
 # 构建 TokenMeter.app（菜单栏应用）与 tokenmeter CLI
+# 用法: ./Scripts/build_app.sh [版本号]   （默认 0.1.0）
 set -euo pipefail
 cd "$(dirname "$0")/.."
+VERSION="${1:-0.1.0}"
 
 echo "==> swift build -c release"
 swift build -c release
@@ -34,7 +36,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>{{VERSION}}</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
@@ -48,8 +50,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
-
-echo "==> ad-hoc codesign"
+sed -i '' "s/{{VERSION}}/$VERSION/" "$APP/Contents/Info.plist"
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
 
 echo "==> done: $APP 和 $OUT/tokenmeter"

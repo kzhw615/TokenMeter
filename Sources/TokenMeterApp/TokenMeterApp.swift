@@ -38,10 +38,16 @@ final class AppModel: ObservableObject {
     }
     var theme: AppTheme { AppTheme.theme(for: themeID) }
 
+    /// 更新检查状态
+    @Published var latestVersion: String?
+    @Published var releaseURL: URL?
+    @Published var updateMessage: String?
+
     private var timer: Timer?
 
     init() {
         refresh()
+        checkForUpdates()
         timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.refresh() }
         }

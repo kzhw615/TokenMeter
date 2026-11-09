@@ -12,6 +12,23 @@ struct PanelView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
+                if model.updateVisible, let v = model.latestVersion {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.down.circle.fill").foregroundStyle(.orange)
+                        Text("新版本 v\(v) 可用").font(.caption)
+                        Spacer()
+                        Button("下载") {
+                            if let u = model.releaseURL { NSWorkspace.shared.open(u) }
+                        }
+                        .buttonStyle(.borderless).font(.caption)
+                        Button(action: { model.dismissUpdate() }) {
+                            Image(systemName: "xmark").font(.caption2)
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+                }
                 if let s = model.summary {
                     summaryCards(s)
                     toolsSection(s)
@@ -249,8 +266,13 @@ struct PanelView: View {
             if let t = model.lastScan {
                 Text("更新 \(timeFormatter.string(from: t))").font(.caption2).foregroundStyle(.secondary)
             }
+            if let m = model.updateMessage {
+                Text(m).font(.caption2).foregroundStyle(.secondary)
+            }
             Spacer()
             Button("刷新") { model.refresh() }
+                .buttonStyle(.borderless)
+            Button("检查更新") { model.manualCheck() }
                 .buttonStyle(.borderless)
             Button("价格表") {
                 PricingTable.writeTemplateIfMissing()
