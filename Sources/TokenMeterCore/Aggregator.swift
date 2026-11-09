@@ -3,7 +3,7 @@ import Foundation
 public enum Aggregator {
     public static func allSources() -> [UsageSource] {
         [ClaudeCodeSource(), CodexSource(), DshSource(), OpenCodeSource(), WorkBuddySource(),
-         HermesSource(), ZCodeSource(), CcSwitchSource()]
+         HermesSource(), ZCodeSource(), CcSwitchSource()] + ExtraSources.all()
     }
 
     /// 扫描所有来源；enabled 为来源 id 集合（nil = 用默认）

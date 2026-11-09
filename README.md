@@ -33,6 +33,19 @@ macOS 菜单栏（状态栏）token 用量统计器，灵感来自 [CodeBurn](ht
 
 Cursor、Gemini CLI 的本地日志不含 token 级用量，未接入。新增来源只需实现 `TokenMeterCore.UsageSource` 协议。
 
+### 二线来源（机器上存在对应日志即自动启用）
+
+| 来源 | 日志位置 | 取数方式 |
+| --- | --- | --- |
+| Kiro | `~/Library/Application Support/KiroUser/globalStorage/kiro.kiroagent/dev_data/devdata.sqlite` | `tokens_generated` 表 |
+| Copilot CLI | `~/.copilot/cli/state.db` | `local_runtime_token_usage` 表 |
+| MiniMax Code | `~/.minimax/runtime-state.sqlite` | `token_usage` 表 |
+| Qoder | `~/.qoder*/db.sqlite`（或 `QODER_BASE_PATH`） | `chat_message.token_info/model_info` JSON 字段 |
+| Reasonix | `~/.reasonix/usage.jsonl` | 每行 usage 字段 |
+| Droid | `~/.factory/sessions/**` | 会话 JSON 的 `tokenUsage` 字段 |
+
+这些来源在本机可能没有数据（显示 0 文件），但在其他机器上存在即自动统计；日志格式若变化请提 `new-source` issue。
+
 ### 统计口径说明（与 TokenRank/opentoken 对照）
 
 - **含缓存** = 输入 + 输出 + 缓存读 + 缓存写（= 请求的 prompt + completion 总量），与 TokenRank 网站「含缓存口径」一致
