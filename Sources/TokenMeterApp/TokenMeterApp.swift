@@ -22,9 +22,18 @@ struct TokenMeterApp: App {
     }
 }
 
+/// 扫描缓存常驻内存（独立于 MainActor，供后台扫描任务读写）
+enum CacheStore {
+    static let lock = NSLock()
+    static var cache: ScanCache?
+}
+
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var summary: Summary?
+    /// 所有范围的预计算结果：切换范围 = 内存查表，瞬时响应
+    @Published private(set) var summariesByRange: [RangeKind: Summary] = [:]
+    var summary: Summary? { summariesByRange[range] }
+
     @Published var range: RangeKind = .today
     @Published var lastScan: Date?
     @Published var scanning = false
@@ -48,8 +57,7 @@ final class AppModel: ObservableObject {
 
     func setRange(_ r: RangeKind) {
         guard r != range else { return }
-        range = r
-        refresh()
+        range = r   //  summariesByRange 已预计算，直接查表，无需重扫
     }
 
     /// 燃烧状态的彩色火苗帧（8fps 切换形成跳动动画）
@@ -97,16 +105,24 @@ final class AppModel: ObservableObject {
     func refresh() {
         guard !scanning else { return }
         scanning = true
-        let currentRange = range
         Task.detached(priority: .utility) {
-            var cache = ScanCache.load()
-            let scanned = Aggregator.scan(cache: &cache)
-            cache.save()
             let pricing = PricingTable.load()
-            let summary = Aggregator.summarize(buckets: scanned.buckets, range: currentRange, pricing: pricing, statuses: scanned.statuses)
+            var cache = CacheStore.lock.withLock { CacheStore.cache } ?? ScanCache.load()
+            let scanned = Aggregator.scan(cache: &cache)
+            // 一次扫描，七个范围的 Summary 全部预计算
+            var all: [RangeKind: Summary] = [:]
+            for r in RangeKind.allCases {
+                all[r] = Aggregator.summarize(buckets: scanned.buckets, range: r, pricing: pricing, statuses: scanned.statuses)
+            }
+            if cache.dirty {
+                var snapshot = cache
+                snapshot.dirty = false
+                Task.detached(priority: .background) { snapshot.save() }
+            }
+            CacheStore.lock.withLock { CacheStore.cache = cache }
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                self.summary = summary
+                self.summariesByRange = all
                 self.lastScan = Date()
                 self.scanning = false
             }

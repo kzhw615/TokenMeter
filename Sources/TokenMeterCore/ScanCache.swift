@@ -10,6 +10,10 @@ public struct ScanCache: Codable {
     }
     public var version: Int = 1
     public var entries: [String: Entry] = [:]
+    /// 本次会话是否有新解析（决定是否值得写回磁盘），不持久化
+    public var dirty: Bool = false
+
+    private enum CodingKeys: String, CodingKey { case version, entries }
 
     public init() {}
 
@@ -53,5 +57,6 @@ public struct ScanCache: Codable {
     public mutating func store(path: String, buckets: [UsageBucket]) {
         guard let fp = Self.fingerprint(path: path) else { return }
         entries[path] = Entry(size: fp.size, mtime: fp.mtime, buckets: buckets)
+        dirty = true
     }
 }
