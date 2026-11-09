@@ -99,28 +99,35 @@ def menubar_glyph(px: int) -> Image.Image:
     return out
 
 
-def menubar_flame(px: int) -> Image.Image:
-    """彩色火苗（非模板图）：橙红渐变外焰 + 黄色内焰"""
+def menubar_flame(px: int, frame: int = 0, total: int = 6) -> Image.Image:
+    """彩色火苗（非模板图）：橙红渐变外焰 + 黄色内焰；frame 决定摆动相位"""
+    import math
     s = px
+    phase = 2 * math.pi * frame / total
+    sway = math.sin(phase) * s * 0.06          # 焰尖左右摆
+    breathe = 0.92 + 0.12 * math.sin(phase + math.pi / 2)  # 内焰呼吸
     mask = Image.new("L", (s, s), 0)
     d = ImageDraw.Draw(mask)
-    # 外焰轮廓：底圆 + 中圆 + 尖角
+    # 外焰轮廓：底圆 + 中圆 + 尖角（尖部随相位摆动）
     d.ellipse([s * 0.16, s * 0.34, s * 0.84, s * 0.98], fill=255)
-    d.ellipse([s * 0.27, s * 0.24, s * 0.73, s * 0.70], fill=255)
-    d.polygon([(s * 0.5, s * 0.02), (s * 0.32, s * 0.46), (s * 0.68, s * 0.46)], fill=255)
-    # 外焰垂直渐变：尖部橙黄 -> 底部红橙
+    d.ellipse([s * 0.27 + sway * 0.4, s * 0.24, s * 0.73 + sway * 0.4, s * 0.70], fill=255)
+    d.polygon([(s * 0.5 + sway, s * 0.02), (s * 0.32, s * 0.46), (s * 0.68, s * 0.46)], fill=255)
+    # 外焰垂直渐变：尖部橙黄 -> 底部红橙（相位移一点色温）
+    warm = 0.5 + 0.5 * math.sin(phase)
     grad = Image.new("RGBA", (s, s))
     gd = ImageDraw.Draw(grad)
-    top, bottom = (255, 159, 10), (255, 69, 58)
+    top = lerp((255, 159, 10), (255, 120, 0), warm)
+    bottom = (255, 69, 58)
     for y in range(s):
         gd.line([(0, y), (s, y)], fill=lerp(top, bottom, y / s) + (255,))
     out = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     out.paste(grad, (0, 0), mask)
-    # 内焰：黄色小火苗
+    # 内焰：黄色小火苗（高度随呼吸变化）
+    ih = 0.36 * breathe
     inner = Image.new("L", (s, s), 0)
     idr = ImageDraw.Draw(inner)
-    idr.ellipse([s * 0.34, s * 0.56, s * 0.66, s * 0.92], fill=255)
-    idr.polygon([(s * 0.5, s * 0.40), (s * 0.38, s * 0.68), (s * 0.62, s * 0.68)], fill=255)
+    idr.ellipse([s * 0.34, s * (0.92 - ih * 0.8), s * 0.66, s * 0.92], fill=255)
+    idr.polygon([(s * 0.5 + sway * 0.3, s * (0.92 - ih - 0.10)), (s * 0.38, s * (0.92 - ih * 0.5)), (s * 0.62, s * (0.92 - ih * 0.5))], fill=255)
     yellow = Image.new("RGBA", (s, s), (255, 224, 92, 255))
     out = Image.alpha_composite(out, Image.composite(yellow, Image.new("RGBA", (s, s), (0, 0, 0, 0)), inner))
     return out
@@ -147,9 +154,10 @@ def main():
 
     menubar_glyph(88).save(os.path.join(ASSETS, "menubar_icon@2x.png"))
     menubar_glyph(44).save(os.path.join(ASSETS, "menubar_icon.png"))
-    menubar_flame(88).save(os.path.join(ASSETS, "menubar_flame@2x.png"))
-    menubar_flame(44).save(os.path.join(ASSETS, "menubar_flame.png"))
-    print("wrote menubar icons")
+    for i in range(6):
+        menubar_flame(88, i).save(os.path.join(ASSETS, f"menubar_flame_{i}@2x.png"))
+    menubar_flame(88, 0).save(os.path.join(ASSETS, "menubar_flame@2x.png"))
+    print("wrote menubar icons + 6 flame frames")
 
     master.resize((512, 512), Image.LANCZOS).save(os.path.join(ROOT, ".research", "icon-preview.png"))
     print("preview:", os.path.join(ROOT, ".research", "icon-preview.png"))

@@ -53,7 +53,12 @@ struct PanelView: View {
             Text("TokenMeter").font(.title3.bold())
             if model.isBurning {
                 HStack(spacing: 3) {
-                    Image(systemName: "flame.fill").foregroundStyle(.orange).font(.caption)
+                    if !AppModel.flameFrames.isEmpty {
+                        Image(nsImage: AppModel.flameFrames[model.flameFrame % AppModel.flameFrames.count])
+                            .frame(width: 12, height: 12)
+                    } else {
+                        Image(systemName: "flame.fill").foregroundStyle(.orange).font(.caption)
+                    }
                     Text("燃烧中 \(model.burningSources.joined(separator: ", "))")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
