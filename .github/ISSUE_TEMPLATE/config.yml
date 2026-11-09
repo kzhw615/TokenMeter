@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 讨论区
+    url: https://github.com/kzhw615/TokenMeter/discussions
+    about: 用法咨询、功能想法请发 Discussions，保持 Issues 干净

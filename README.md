@@ -1,6 +1,6 @@
 # TokenMeter
 
-macOS 菜单栏（状态栏）token 用量统计器，灵感来自 [CodeBurn](https://codeburn.app/zh-CN/docs/menubar) 与 TokenRank 面板：
+macOS 菜单栏（状态栏）token 用量统计器，灵感来自 [CodeBurn](https://codeburn.app/zh-CN/docs/menubar)：
 常驻菜单栏显示**当日含缓存 token 总量 + 预估费用**，点开展示按工具 / 按模型 / 每日趋势的明细。
 **纯本地运行**：只读取本机各 agent harness 的会话日志，不上传任何数据。
 
