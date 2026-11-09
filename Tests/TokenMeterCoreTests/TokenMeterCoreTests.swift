@@ -75,6 +75,23 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertEqual(b.count, 1)
         XCTAssertEqual(b[0].counts.total, 1106)
         XCTAssertEqual(b[0].model, "qwen3.8-max")
+        // 项目归属回归：zstd 与明文两条路径共用 makeBuilder
+        let b2 = DshSource().parseFile(path: "/Users/x/.dsh/sessions/--Users-kzhw-Documents-deepseek-harness-token~7EDF~8BA1~63D2~4EF6--/session-abc/session.v4.jsonl")
+        XCTAssertEqual(b2.count, 0, "不存在的文件应返回空")
+        _ = b2
+    }
+
+    func testDshProjectAttribution() {
+        let msg = #"{"type":"assistant/message","time":1794156046001,"data":{"turn":1,"step":1,"usage":{"inputTokens":6,"outputTokens":100,"cacheReadTokens":0,"cacheWriteTokens":0}}}"#
+        let p = write("session.v4.jsonl", msg + "\n")
+        // 通过临时目录结构模拟 sessions/<ws>/session-x/file
+        let ws = tmp + "/--Users-kzhw-Documents-deepseek-harness-token~7EDF~8BA1~63D2~4EF6--/session-abc"
+        try! FileManager.default.createDirectory(atPath: ws, withIntermediateDirectories: true)
+        let real = ws + "/session.v4.jsonl"
+        try! msg.write(toFile: real, atomically: true, encoding: .utf8)
+        let b = DshSource().parseFile(path: real)
+        XCTAssertEqual(b.count, 1)
+        XCTAssertEqual(b[0].project, "token统计插件")
     }
 
     // MARK: - 聚合与口径

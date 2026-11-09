@@ -270,13 +270,13 @@ struct PanelView: View {
 
     private func projectsSection(_ s: Summary) -> some View {
         let totalDisp = s.projects.reduce(Int64(0)) { $0 + disp($1.counts) }
-        let list = Array(s.projects.filter { $0.project != "-" }.prefix(8))
+        let list = Array(s.projects.prefix(8))
         return VStack(alignment: .leading, spacing: 8) {
             sectionTitle("按项目")
             if list.isEmpty { emptyNote }
             ForEach(Array(list.enumerated()), id: \.element.project) { idx, p in
                 HStack(spacing: 10) {
-                    Text(p.project).font(.callout).frame(width: 110, alignment: .leading)
+                    Text(p.project == "-" ? "未归属" : p.project).font(.callout).frame(width: 110, alignment: .leading)
                         .lineLimit(1).truncationMode(.middle)
                     bar(share: dispShare(p.counts, total: totalDisp), color: palette[idx % palette.count])
                     Text(Fmt.tokens(disp(p.counts))).font(.callout).monospacedDigit()

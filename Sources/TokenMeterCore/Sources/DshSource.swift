@@ -32,7 +32,7 @@ public struct DshSource: UsageSource {
             let local: [UsageBucket]
             if path.hasSuffix(".zstd") {
                 guard let data = Zstd.decompress(path: path) else { continue }
-                local = parse(data: data)
+                local = parse(data: data, path: path)
             } else {
                 local = parseFile(path: path)
             }
@@ -53,12 +53,17 @@ public struct DshSource: UsageSource {
         return builder.buckets
     }
 
-    public func parseFile(path: String) -> [UsageBucket] {
+    private func makeBuilder(path: String) -> BucketBuilder {
         let builder = BucketBuilder(tool: "DSH")
         let comps = path.split(separator: "/")
         if comps.count >= 3 {
             builder.project = ProjectName.decodeDsh(String(comps[comps.count - 3]))
         }
+        return builder
+    }
+
+    public func parseFile(path: String) -> [UsageBucket] {
+        let builder = makeBuilder(path: path)
         guard let reader = LineReader(path: path) else { return [] }
         let state = ParseState(builder: builder)
         state.currentModel = firstModel(path: path) ?? "unknown"
@@ -67,8 +72,8 @@ public struct DshSource: UsageSource {
         return builder.buckets
     }
 
-    private func parse(data: Data) -> [UsageBucket] {
-        let builder = BucketBuilder(tool: "DSH")
+    private func parse(data: Data, path: String) -> [UsageBucket] {
+        let builder = makeBuilder(path: path)
         let state = ParseState(builder: builder)
         let lines = LineReader.split(data)
         for line in lines {
@@ -190,7 +195,7 @@ public struct DshSource: UsageSource {
         }
         print("lines=\(lines) containsUsage=\(containsUsage) objOK=\(objOK) typeChunk=\(typeChunk) chunkTypeUsage=\(chunkTypeUsage)")
         if let l = firstUsageLine { print("sample: \(String(l.prefix(300)))") }
-        let buckets = parse(data: data)
+        let buckets = parse(data: data, path: path)
         print("buckets: \(buckets.count)")
         for b in buckets.prefix(5) { print("  \(b.day) \(b.model) total=\(b.counts.total)") }
     }
