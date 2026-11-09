@@ -22,29 +22,24 @@ macOS 菜单栏（状态栏）token 用量统计器，灵感来自 [CodeBurn](ht
 
 | 来源 | 日志位置 | 取数字段 |
 | --- | --- | --- |
-| DSH（DeepSeek Harness） | `~/.dsh/sessions/*/*/session.v4.jsonl.zstd`（zstd） | `assistant/message` 事件的 `data.usage{inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens}`；模型取 `data.stream` 里 finish chunk 的 `replayState.response.model` |
 | Claude Code | `~/.claude/projects/**/*.jsonl`（含 subagents） | `type=assistant` 的 `message.usage{input_tokens,cache_creation_input_tokens,cache_read_input_tokens,output_tokens}`，按 message.id 去重 |
 | Codex CLI / Desktop | `~/.codex/sessions/**/rollout-*.jsonl` 与 `.jsonl.zst`（新版会话为 zstd 压缩）、`archived_sessions/` | `event_msg.payload.type=token_count` 的 `info.last_token_usage`（单次增量），模型取 `session_meta.payload.model` / `thread_settings.model` / `base_instructions.provenance.model` |
-| OpenCode | `~/.local/share/opencode/opencode.db` | `message` 表 `data.tokens{input,output,reasoning,cache{read,write}}`、`data.modelID` |
+| DSH（DeepSeek Harness） | `~/.dsh/sessions/*/*/session.v*.jsonl.zstd`（zstd） | `assistant/message` 事件的 `data.usage{inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens}`；模型取 `data.stream` 里 finish chunk 的 `replayState.response.model` |
 | WorkBuddy | `~/.workbuddy/traces/*/trace_*.jsonl` | generation span 的 `span_end.toolOutput`（原始 chat.completion 响应数组）里的 `usage{prompt_tokens, completion_tokens, prompt_tokens_details.cached_tokens/cache_write_tokens}`；被 `tracePayloadTruncated` 截断的 toolOutput 用碎片提取兜底 |
-| CC Switch | `~/.cc-switch/cc-switch.db` 的 `proxy_request_logs` | 代理层镜像日志；**默认关闭**（这些请求通常也记录在 Claude/Codex 自身日志里，开启会重复计数） |
+| OpenCode | `~/.local/share/opencode/opencode.db` | `message` 表 `data.tokens{input,output,reasoning,cache{read,write}}`、`data.modelID` |
 | Hermes | `~/.hermes/state.db` + `~/.hermes/profiles/*/state.db` | `session_model_usage` 表（input/output/cache_read/cache_write_tokens、last_seen） |
 | ZCode | `~/.zcode/cli/db/db.sqlite` | `model_usage` 表（model_id、started_at、input/output/reasoning/cache_creation/cache_read_input_tokens） |
-
-Cursor、Gemini CLI 的本地日志不含 token 级用量，未接入。新增来源只需实现 `TokenMeterCore.UsageSource` 协议。
-
-### 二线来源（机器上存在对应日志即自动启用）
-
-| 来源 | 日志位置 | 取数方式 |
-| --- | --- | --- |
 | Kiro | `~/Library/Application Support/KiroUser/globalStorage/kiro.kiroagent/dev_data/devdata.sqlite` | `tokens_generated` 表 |
 | Copilot CLI | `~/.copilot/cli/state.db` | `local_runtime_token_usage` 表 |
 | MiniMax Code | `~/.minimax/runtime-state.sqlite` | `token_usage` 表 |
 | Qoder | `~/.qoder*/db.sqlite`（或 `QODER_BASE_PATH`） | `chat_message.token_info/model_info` JSON 字段 |
 | Reasonix | `~/.reasonix/usage.jsonl` | 每行 usage 字段 |
 | Droid | `~/.factory/sessions/**` | 会话 JSON 的 `tokenUsage` 字段 |
+| CC Switch（默认关闭） | `~/.cc-switch/cc-switch.db` 的 `proxy_request_logs` | 代理层镜像日志；默认关闭是因为这些请求通常也记录在 Claude/Codex 自身日志里，开启会重复计数 |
 
-这些来源在本机可能没有数据（显示 0 文件），但在其他机器上存在即自动统计；日志格式若变化请提 `new-source` issue。
+所有来源均为「存在即扫描」：本机没有对应日志时自动跳过，不影响其他来源。
+Cursor、Gemini CLI、Trae、Grok Bot 的本地日志不含可解析的 token 级用量（云端计费 / 加密库），未接入。
+新增来源只需实现 `TokenMeterCore.UsageSource` 协议；日志格式变化请提 `new-source` issue。
 
 ### 统计口径说明（与 TokenRank/opentoken 对照）
 
@@ -106,8 +101,7 @@ Scripts/install.sh             安装到 /Applications
 
 ## 已知限制
 
-- Cursor、Gemini CLI 无本地 token 日志（见上表）；CC Switch 源默认关闭防重复计数
-- 本机已确认无 token 级本地数据、未接入的：Qoder、CodeBuddy、Pi、Grok、Kiro、Copilot CLI、MiniMax、OpenClaw、Reasonix、Kimi、Antigravity（conversations db 为空库）
+- Cursor、Gemini CLI、CodeBuddy、Pi、Grok、OpenClaw、Kimi、Antigravity 无可解析的 token 级本地日志，未接入；CC Switch 源默认关闭防重复计数
 - **Trae / Trae SOLO CN 无法支持**：`ModularData/ai-agent/database.db` 为加密库（文件头非 SQLite），其余仅 Electron 会话日志；opentoken 的适配器矩阵中也没有 Trae
 - 与 TokenRank 采集器 opentoken 的覆盖对比：其在本机能取到非零数据的来源（Claude Code、Codex、OpenCode、Hermes、DSH、WorkBuddy、ZCode）TokenMeter 已全部支持；其检测到但无数据的（CodeBuddy、Antigravity、Pi）与其 Cursor 云端取数（本机 auth 被拒）同样无法获取
 - 费用为**估算**：按官方公开单价 × 本地日志口径折算，不等于实际账单（折扣、Batch、区域加价、高峰时段等未计入）
