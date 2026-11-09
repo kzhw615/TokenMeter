@@ -1,0 +1,15 @@
+# 构建产物
+.build/
+build/
+.cache/
+.tmp/
+dist/
+*.dmg
+
+# 研究/抓取存档（含本机截图与定价页 HTML，不入库）
+.research/
+
+# 系统
+.DS_Store
+*.xcuserstate
+.swiftpm/
