@@ -55,6 +55,13 @@ let pricing = PricingTable.load()
 let summary = Aggregator.summarize(buckets: scanned.buckets, range: opts.range, pricing: pricing, statuses: scanned.statuses)
 
 switch opts.command {
+case "activity":
+    let active = ActivityDetector.activeSources()
+    if active.isEmpty {
+        print("当前无活跃会话（近 2 分钟无日志写入）")
+    } else {
+        print("正在燃烧 token 的会话：\(active.joined(separator: ", "))")
+    }
 case "debug-dsh":
     let path = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : ""
     DshSource().debugParse(path: path)
@@ -121,5 +128,5 @@ case "report":
         print("  [\(flag)] \(pad(s.id, 14)) 文件 \(s.files)\(note)")
     }
 default:
-    print("用法: tokenmeter [report|sources] [--range today|yesterday|7d|30d|month|lastmonth|all] [--json] [--no-cache] [--exclude-cache]")
+    print("用法: tokenmeter [report|sources|activity] [--range today|yesterday|7d|30d|month|lastmonth|all] [--json] [--no-cache] [--exclude-cache]")
 }

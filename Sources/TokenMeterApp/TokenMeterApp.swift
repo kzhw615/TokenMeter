@@ -43,13 +43,32 @@ final class AppModel: ObservableObject {
     @Published var releaseURL: URL?
     @Published var updateMessage: String?
 
+    /// 正在燃烧的 harness（日志近 2 分钟有写入）
+    @Published var burningSources: [String] = []
+    var isBurning: Bool { !burningSources.isEmpty }
+
     private var timer: Timer?
+    private var activityTimer: Timer?
 
     init() {
         refresh()
         checkForUpdates()
+        pollActivity()
         timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.refresh() }
+        }
+        activityTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.pollActivity() }
+        }
+    }
+
+    func pollActivity() {
+        Task.detached(priority: .utility) { [weak self] in
+            let active = ActivityDetector.activeSources()
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                if active != self.burningSources { self.burningSources = active }
+            }
         }
     }
 
@@ -93,7 +112,10 @@ struct MenuBarLabel: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            if let img = Self.barIcon {
+            if model.isBurning {
+                Image(systemName: "flame.fill")
+                    .foregroundStyle(.orange)
+            } else if let img = Self.barIcon {
                 Image(nsImage: img)
             } else {
                 Image(systemName: "circle.hexagongrid.fill")

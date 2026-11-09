@@ -49,8 +49,15 @@ struct PanelView: View {
     // MARK: - 区块
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 8) {
             Text("TokenMeter").font(.title3.bold())
+            if model.isBurning {
+                HStack(spacing: 3) {
+                    Image(systemName: "flame.fill").foregroundStyle(.orange).font(.caption)
+                    Text("燃烧中 \(model.burningSources.joined(separator: ", "))")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
             Spacer()
             if model.scanning {
                 ProgressView().controlSize(.small)
