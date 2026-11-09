@@ -28,5 +28,5 @@ echo "==> 创建 GitHub Release"
 gh release create "v$VERSION" build/TokenMeter.app.zip build/tokenmeter.zip \
     --title "v$VERSION" --notes "$NOTES"
 
-echo "✓ 已发布 v$VERSION：https://github.com/kzhw615/TokenMeter/releases/tag/v$VERSION"
+echo "✓ 已发布 v${VERSION}：https://github.com/kzhw615/TokenMeter/releases/tag/v$VERSION"
 echo "  Watch 了仓库的用户会收到 GitHub 通知；App 内更新检查也会提示新版本"
