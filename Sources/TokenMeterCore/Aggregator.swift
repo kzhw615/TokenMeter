@@ -2,9 +2,9 @@ import Foundation
 
 public enum Aggregator {
     public static func allSources() -> [UsageSource] {
-        var list: [UsageSource] = [ClaudeCodeSource(), CodexSource(), DshSource(), WorkBuddySource(), CcSwitchSource()]
+        var list: [UsageSource] = [ClaudeCodeSource(), CodexSource(), DshSource(), WorkBuddySource()]
         #if os(macOS)
-        list += [OpenCodeSource(), HermesSource(), ZCodeSource()]
+        list += [CcSwitchSource(), OpenCodeSource(), HermesSource(), ZCodeSource()]
         #endif
         return list + ExtraSources.all()
     }

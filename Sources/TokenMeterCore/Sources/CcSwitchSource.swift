@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 import SQLite3
 
@@ -50,3 +51,4 @@ public struct CcSwitchSource: UsageSource {
         return builder.buckets
     }
 }
+#endif
