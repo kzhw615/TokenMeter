@@ -30,7 +30,8 @@
       "binaries/tokenmeter"
     ],
     "icon": [
-      "icons/app.png"
+      "icons/app.png",
+      "icons/icon.ico"
     ],
     "category": "DeveloperTool"
   }
