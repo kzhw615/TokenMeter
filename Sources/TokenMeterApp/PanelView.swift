@@ -46,6 +46,7 @@ struct PanelView: View {
     @EnvironmentObject var model: AppModel
     @State private var hoveredDay: String?
     @State private var hoveredHour: Int?
+    @State private var showSettings = false
 
     private var palette: [Color] { model.theme.palette }
 
@@ -102,6 +103,7 @@ struct PanelView: View {
                     trendSection(s)
                     hoursSection(s)
                     footnotes(s)
+                    if showSettings { settingsSection }
                 } else {
                     ProgressView().frame(maxWidth: .infinity)
                 }
@@ -495,13 +497,50 @@ struct PanelView: View {
             Spacer()
             Button("刷新") { model.refresh() }
                 .buttonStyle(.borderless)
-            Button("价格表") {
-                PricingTable.writeTemplateIfMissing()
-                NSWorkspace.shared.open(PricingTable.overrideURL)
+            Button("设置") {
+                withAnimation(.easeInOut(duration: 0.2)) { showSettings.toggle() }
             }
             .buttonStyle(.borderless)
         }
         .padding(.top, 4)
+    }
+
+    private var settingsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("设置")
+            budgetRow(label: "日预算",
+                      value: Binding(get: { model.dailyBudget }, set: { model.dailyBudget = $0 }),
+                      cost: model.summariesByRange[.today]?.cost)
+            budgetRow(label: "月预算",
+                      value: Binding(get: { model.monthlyBudget }, set: { model.monthlyBudget = $0 }),
+                      cost: model.summariesByRange[.thisMonth]?.cost)
+            Divider()
+            PriceEditorView()
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+    }
+
+    private func budgetRow(label: String, value: Binding<Double>, cost: Double?) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(.caption).frame(width: 44, alignment: .leading)
+            TextField("0", value: value, format: .number)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 70)
+                .font(.caption)
+            Text("USD").font(.caption2).foregroundStyle(.secondary)
+            Spacer()
+            if let cost, value.wrappedValue > 0 {
+                let over = cost >= value.wrappedValue
+                Text("\(Fmt.cost(cost)) / \(Fmt.cost(value.wrappedValue))")
+                    .font(.caption2).monospacedDigit()
+                    .foregroundStyle(over ? Color.red : Color.secondary)
+                ProgressView(value: min(1, cost / value.wrappedValue))
+                    .progressViewStyle(.linear)
+                    .frame(width: 80)
+                    .tint(over ? Color.red : model.theme.primary)
+            }
+        }
     }
 
     // MARK: - 小组件

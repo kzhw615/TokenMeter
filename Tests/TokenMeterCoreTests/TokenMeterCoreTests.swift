@@ -146,6 +146,23 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertEqual(Fmt.cost(45.12), "$45.12")
     }
 
+    func testDeepSeekPeakPricing() {
+        let t = PricingTable(prices: [ModelPrice(pattern: "deepseek-flash", input: 1, output: 4, cacheRead: 0.1, cacheWrite: 1.25)])
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        // 2026-11-10 是周二：10:00 高峰、20:00 空闲、周六 10:00 空闲
+        let peak = cal.date(from: DateComponents(year: 2026, month: 11, day: 10, hour: 10))!
+        let off = cal.date(from: DateComponents(year: 2026, month: 11, day: 10, hour: 20))!
+        let sat = cal.date(from: DateComponents(year: 2026, month: 11, day: 14, hour: 10))!
+        let counts = TokenCounts(input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0)
+        let offCost = t.cost(for: counts, model: "deepseek-flash", at: off)
+        XCTAssertEqual(offCost, 1.0, accuracy: 1e-9)
+        XCTAssertEqual(t.cost(for: counts, model: "deepseek-flash", at: peak), 2.0, accuracy: 1e-9, "工作日高峰应 ×2")
+        XCTAssertEqual(t.cost(for: counts, model: "deepseek-flash", at: sat), 1.0, accuracy: 1e-9, "周末不算高峰")
+        XCTAssertTrue(PricingTable.isDeepSeekPeak(peak))
+        XCTAssertFalse(PricingTable.isDeepSeekPeak(off))
+    }
+
     func testProjectNameDecode() {
         XCTAssertEqual(ProjectName.decodeDsh("--Users-kzhw-Documents-deepseek-harness-token~7EDF~8BA1~63D2~4EF6--"), "token统计插件")
         XCTAssertEqual(ProjectName.decodeClaude("-Users-kzhw-Documents-obsidian"), "obsidian")

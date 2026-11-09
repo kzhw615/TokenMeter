@@ -127,9 +127,9 @@ public final class BucketBuilder {
     public var buckets: [UsageBucket] { Array(map.values) }
 }
 
-enum SourcePaths {
+public enum SourcePaths {
     static var home: String { NSHomeDirectory() }
-    static func expand(_ p: String) -> String {
+    public static func expand(_ p: String) -> String {
         p.hasPrefix("~") ? home + String(p.dropFirst(1)) : p
     }
     static func files(under dir: String, suffix: String) -> [String] {

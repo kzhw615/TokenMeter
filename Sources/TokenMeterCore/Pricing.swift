@@ -31,12 +31,34 @@ public struct PricingTable: Codable {
     }
 
     public func cost(for counts: TokenCounts, model: String) -> Double {
+        cost(for: counts, model: model, at: nil)
+    }
+
+    /// 带时间的计价：DeepSeek 官方分高峰/空闲时段（北京时间工作日 9:00-12:00、14:00-18:00 为高峰，
+    /// 高峰价 = 空闲价 ×2）。内置表存空闲价，命中高峰时段自动 ×2。
+    public func cost(for counts: TokenCounts, model: String, at date: Date?) -> Double {
         guard let p = price(for: model) else { return 0 }
+        let mult: Double
+        if let date, model.lowercased().contains("deepseek"), Self.isDeepSeekPeak(date) {
+            mult = 2.0
+        } else {
+            mult = 1.0
+        }
         var c = Double(counts.input) / 1e6 * p.input
         c += Double(counts.output) / 1e6 * p.output
         c += Double(counts.cacheRead) / 1e6 * (p.cacheRead ?? p.input * 0.1)
         c += Double(counts.cacheWrite) / 1e6 * (p.cacheWrite ?? p.input * 1.25)
-        return c
+        return c * mult
+    }
+
+    /// 北京时间工作日 9:00-12:00 / 14:00-18:00 为 DeepSeek 高峰时段
+    public static func isDeepSeekPeak(_ date: Date) -> Bool {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        let weekday = cal.component(.weekday, from: date)   // 1=周日 ... 7=周六
+        guard (2...6).contains(weekday) else { return false }
+        let hour = cal.component(.hour, from: date)
+        return (9..<12).contains(hour) || (14..<18).contains(hour)
     }
 
     // MARK: - 加载 / 保存
@@ -65,12 +87,17 @@ public struct PricingTable: Codable {
         let fm = FileManager.default
         try? fm.createDirectory(at: supportDir, withIntermediateDirectories: true)
         if !fm.fileExists(atPath: overrideURL.path) {
-            let enc = JSONEncoder()
-            enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-            if let data = try? enc.encode(PricingTable(prices: builtin)) {
-                try? data.write(to: overrideURL, options: .atomic)
-            }
+            try? save(PricingTable(prices: builtin))
         }
+    }
+
+    /// 把价格表写入用户覆盖文件 pricing.json
+    public static func save(_ table: PricingTable) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: supportDir, withIntermediateDirectories: true)
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try enc.encode(table).write(to: overrideURL, options: .atomic)
     }
 
     /// 内置价格表（USD / 1M tokens）。

@@ -1,6 +1,12 @@
 import Foundation
 
 public enum Aggregator {
+    /// 由 day key + hour 还原本地时间（用于时段敏感计价）
+    static func bucketDate(day: String, hour: Int, calendar: Calendar) -> Date? {
+        guard let base = DayKey.date(for: day) else { return nil }
+        return calendar.date(bySettingHour: hour, minute: 0, second: 0, of: base)
+    }
+
     public static func allSources() -> [UsageSource] {
         var list: [UsageSource] = [ClaudeCodeSource(), CodexSource(), DshSource(), WorkBuddySource()]
         #if os(macOS)
@@ -45,8 +51,10 @@ public enum Aggregator {
         var dayMapAll: [String: (counts: TokenCounts, cost: Double)] = [:]
         var unpriced = Set<String>()
 
+        let cal0 = Calendar.current
         for b in buckets {
-            let c = pricing.cost(for: b.counts, model: b.model)
+            let bucketDate = Self.bucketDate(day: b.day, hour: b.hour, calendar: cal0)
+            let c = pricing.cost(for: b.counts, model: b.model, at: bucketDate)
             if pricing.price(for: b.model) == nil { unpriced.insert(b.model) }
             var da = dayMapAll[b.day] ?? (TokenCounts(), 0)
             da.counts += b.counts; da.cost += c

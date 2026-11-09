@@ -22,6 +22,9 @@ macOS 菜单栏（状态栏）token 用量统计器，灵感来自 [CodeBurn](ht
   - 数据源诊断不在面板展示；用 CLI `tokenmeter sources` 查看（文件数 / 禁用 / 说明）
 - CLI：`tokenmeter report [--range today|7d|30d|all] [--json] [--exclude-cache]`、`tokenmeter sources`
 - 文件级扫描缓存：6.9GB 的 Codex 日志首次扫描约 2 分钟（并行），之后增量秒级
+- FSEvents 监听各 harness 日志目录：写入静止 8 秒后自动刷新（比固定轮询更及时、更省电），30 分钟兜底轮询
+- 预算告警：设置日/月预算（USD），达到 80% / 100% 发系统通知（每档每周期一次）；超支时菜单栏文字变红；面板显示预算进度条
+- 设置区（面板页脚「设置」）：预算配置 + 面板内价格表编辑器（直接写 pricing.json，可一键恢复内置表）
 
 ## 支持的数据源
 

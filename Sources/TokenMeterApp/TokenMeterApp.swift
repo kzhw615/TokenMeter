@@ -151,13 +151,16 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
     private var activityTimer: Timer?
     private var flameTimer: Timer?
+    private var watcher: FolderWatcher?
+    private var debouncedRefresh: DispatchWorkItem?
 
     init() {
         refresh()
         checkForUpdates()
         pollActivity()
         Self.cleanupOldBackups()
-        timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+        startWatcher()
+        timer = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.refresh() }
         }
         activityTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
@@ -173,6 +176,28 @@ final class AppModel: ObservableObject {
                 self.flameFrame = (self.flameFrame + 1) % self.currentFlameFrames.count
             }
         }
+    }
+
+    /// 监听各 harness 日志目录：有写入 → 防抖 8 秒后刷新（日志静止即扫，比固定轮询更及时且省电）
+    private func startWatcher() {
+        let roots = [
+            "~/.claude/projects", "~/.codex/sessions", "~/.codex/archived_sessions",
+            "~/.dsh/sessions", "~/.workbuddy/traces", "~/.local/share/opencode",
+            "~/.hermes", "~/.zcode/cli/db", "~/.cc-switch",
+        ].map { SourcePaths.expand($0) }
+        watcher = FolderWatcher(paths: roots) { [weak self] in
+            self?.scheduleDebouncedRefresh()
+        }
+        watcher?.start()
+    }
+
+    func scheduleDebouncedRefresh() {
+        debouncedRefresh?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in self?.refresh() }
+        }
+        debouncedRefresh = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: work)
     }
 
     func pollActivity() {
@@ -222,6 +247,7 @@ final class AppModel: ObservableObject {
                 self.summariesByRange = all
                 self.lastScan = Date()
                 self.scanning = false
+                self.evaluateBudget()
             }
         }
     }
@@ -266,6 +292,7 @@ struct MenuBarLabel: View {
                 if let s = model.summary, s.counts.total > 0 {
                     Text(model.menuBarText(s))
                         .monospacedDigit()
+                        .foregroundStyle(model.budgetOver ? Color.red : Color.primary)
                 } else if model.scanning {
                     Text("…")
                 } else {
