@@ -58,14 +58,17 @@ public enum ProjectName {
         return (out.split(separator: "/").last.map(String.init)) ?? raw
     }
 
-    /// Claude 项目目录名：-Users-kzhw-Documents-foo → foo（取最后一段）
+    /// Claude 项目目录名：-Users-kzhw-Documents-foo → foo（取最后一段）；
+    /// Windows 扁平布局（projects/xxx.jsonl）时返回未归属
     public static func decodeClaude(_ raw: String) -> String {
+        if raw.hasSuffix(".jsonl") { return "-" }
         let parts = raw.split(separator: "-")
         return parts.last.map(String.init) ?? raw
     }
 
     public static func basename(_ path: String) -> String {
-        (path.split(separator: "/").last.map(String.init)) ?? path
+        let comps = path.split(whereSeparator: { $0 == "/" || $0 == "\\" })
+        return comps.last.map(String.init) ?? path
     }
 }
 

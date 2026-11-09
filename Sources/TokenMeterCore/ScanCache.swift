@@ -8,7 +8,7 @@ public struct ScanCache: Codable {
         public var mtime: Double
         public var buckets: [UsageBucket]
     }
-    public var version: Int = 2
+    public var version: Int = 3
     public var entries: [String: Entry] = [:]
     /// 本次会话是否有新解析（决定是否值得写回磁盘），不持久化
     public var dirty: Bool = false
@@ -26,7 +26,7 @@ public struct ScanCache: Codable {
     public static func load() -> ScanCache {
         guard let data = try? Data(contentsOf: url),
               let c = try? JSONDecoder().decode(ScanCache.self, from: data),
-              c.version == 2 else { return ScanCache() }
+              c.version == 3 else { return ScanCache() }
         return c
     }
 

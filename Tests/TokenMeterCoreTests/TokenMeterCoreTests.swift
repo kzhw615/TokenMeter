@@ -149,6 +149,8 @@ final class TokenMeterCoreTests: XCTestCase {
     func testProjectNameDecode() {
         XCTAssertEqual(ProjectName.decodeDsh("--Users-kzhw-Documents-deepseek-harness-token~7EDF~8BA1~63D2~4EF6--"), "token统计插件")
         XCTAssertEqual(ProjectName.decodeClaude("-Users-kzhw-Documents-obsidian"), "obsidian")
+        XCTAssertEqual(ProjectName.decodeClaude("645564414bdd.jsonl"), "-", "Windows 扁平布局应归未归属")
         XCTAssertEqual(ProjectName.basename("/a/b/crepo"), "crepo")
+        XCTAssertEqual(ProjectName.basename("C:\\Users\\a\\Documents\\Codex\\2026-11-01\\sao-mi"), "sao-mi")
     }
 }
