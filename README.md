@@ -103,7 +103,7 @@ Scripts/install.sh             安装到 /Applications
 
 - Cursor、Gemini CLI、CodeBuddy、Pi、Grok、OpenClaw、Kimi、Antigravity 无可解析的 token 级本地日志，未接入；CC Switch 源默认关闭防重复计数
 - **Trae / Trae SOLO CN 无法支持**：`ModularData/ai-agent/database.db` 为加密库（文件头非 SQLite），其余仅 Electron 会话日志；opentoken 的适配器矩阵中也没有 Trae
-- 与 TokenRank 采集器 opentoken 的覆盖对比：其在本机能取到非零数据的来源（Claude Code、Codex、OpenCode、Hermes、DSH、WorkBuddy、ZCode）TokenMeter 已全部支持；其检测到但无数据的（CodeBuddy、Antigravity、Pi）与其 Cursor 云端取数（本机 auth 被拒）同样无法获取
+- 与 TokenRank 采集器 opentoken 的覆盖对比：opentoken 能取到数据的来源（Claude Code、Codex、OpenCode、Hermes、DSH、WorkBuddy、ZCode、CC Switch）TokenMeter 均已支持；其 Cursor 云端取数在无登录态时同样失败（auth_rejected）
 - 费用为**估算**：按官方公开单价 × 本地日志口径折算，不等于实际账单（折扣、Batch、区域加价、高峰时段等未计入）
 - Codex `token_count` 为会话内增量事件，极早期版本日志若无该事件则统计不到
 - 首次扫描大日志（数 GB + 数千个 zstd 压缩会话）约 2–5 分钟，期间菜单栏显示 `…`；之后走文件级缓存，增量秒级
