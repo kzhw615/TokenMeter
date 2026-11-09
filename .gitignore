@@ -15,3 +15,6 @@ dist/
 .swiftpm/
 __pycache__/
 *.pyc
+desktop/src-tauri/binaries/*
+desktop/src-tauri/target/
+desktop/src-tauri/gen/

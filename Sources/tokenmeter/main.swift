@@ -57,7 +57,11 @@ let summary = Aggregator.summarize(buckets: scanned.buckets, range: opts.range, 
 switch opts.command {
 case "activity":
     let active = ActivityDetector.activeSources()
-    if active.isEmpty {
+    if opts.json {
+        let payload: [String: Any] = ["burning": !active.isEmpty, "sources": active]
+        let data = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data("{}".utf8)
+        print(String(decoding: data, as: UTF8.self))
+    } else if active.isEmpty {
         print("当前无活跃会话（近 2 分钟无日志写入）")
     } else {
         print("正在燃烧 token 的会话：\(active.joined(separator: ", "))")

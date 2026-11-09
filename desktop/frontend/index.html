@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TokenMeter</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>TokenMeter</h1>
+    <span id="burning" class="burning hidden"><img id="flame-img" src="" alt="" />燃烧中 <span id="burning-src"></span></span>
+    <span class="spacer"></span>
+    <button id="btn-quit" class="icon-btn" title="退出">⏻</button>
+  </header>
+
+  <div class="tabs" id="range-tabs"></div>
+  <div class="tabs" id="caliber-tabs"></div>
+
+  <section class="cards" id="cards">
+    <div class="card"><div class="card-title" id="card-total-title">用量（含缓存）</div><div class="card-value"><span id="v-total">-</span><small>tokens</small></div><div class="card-sub" id="s-total"></div></div>
+    <div class="card"><div class="card-title">预估费用</div><div class="card-value"><span id="v-cost">-</span></div><div class="card-sub" id="s-cost"></div></div>
+    <div class="card"><div class="card-title">缓存命中率</div><div class="card-value"><span id="v-hit">-</span></div><div class="card-sub" id="s-req"></div></div>
+  </section>
+
+  <section><h2>按工具</h2><div id="tools"></div></section>
+  <section><h2>按模型</h2><div id="models"></div></section>
+  <section><h2>按项目</h2><div id="projects"></div></section>
+  <section><h2>每日用量（近 30 天）</h2><div class="chart" id="days"></div></section>
+  <section><h2 id="hours-title">逐小时用量</h2><div class="chart" id="hours"></div></section>
+
+  <footer>
+    <span id="themes"></span>
+    <span class="spacer"></span>
+    <span id="updated" class="muted"></span>
+    <button id="btn-refresh" class="text-btn">刷新</button>
+  </footer>
+</div>
+<div id="tooltip" class="tooltip hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>

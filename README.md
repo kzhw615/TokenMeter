@@ -118,6 +118,17 @@ Scripts/install.sh             安装到 /Applications
 - **应用内更新检查与一键更新**：启动时及每 20 小时匿名 GET 一次 GitHub Releases API（仅比对版本号，不上传任何数据）；发现新版本时面板顶部显示提示条、右上角出现橙色更新图标；点击「一键更新」后自动下载 Release 附件、**sha256 校验（GitHub 官方 digest）**、解压替换应用并重启，失败自动回滚旧版本；也可点「下载页」手动下载。不强制自动替换：提示可 × 忽略。关闭检查：`defaults write local.tokenmeter.menubar disableUpdateCheck -bool YES`。
 - **手动更新**：从 Releases 下载 `TokenMeter.app.zip` 替换旧 App；或拉源码后 `./Scripts/install.sh`。
 
+## 跨平台桌面端（Phase 2：Tauri 托盘应用）
+
+`desktop/` 目录是 Tauri v2 托盘应用（Windows / Linux / macOS 通吃）：Rust 壳负责系统托盘（燃烧时换火苗图标）与窗口，前端 WebView 面板复用 CLI 的全部统计能力（通过打包的 `tokenmeter` sidecar 调 `report --json` / `activity --json`）。
+
+构建步骤：
+1. 先构建 CLI 并放置 sidecar：`./Scripts/prepare-sidecar.sh`（Windows 手动：`swift build --target tokenmeter -c release` 后把 `tokenmeter.exe` 复制为 `desktop/src-tauri/binaries/tokenmeter-x86_64-pc-windows-msvc.exe`）；
+2. 安装 [Rust](https://rustup.rs) 与 tauri-cli：`cargo install tauri-cli --version ^2`；
+3. `cd desktop/src-tauri && cargo tauri build` → 安装包在 `target/release/bundle/`。
+
+macOS 用户建议继续用原生 SwiftUI 版（`build/TokenMeter.app`）；Tauri 版主要服务 Windows / Linux。
+
 ## 跨平台状态
 
 | 平台 | 状态 |

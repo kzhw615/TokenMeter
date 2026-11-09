@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "TokenMeter Desktop",
+  "version": "0.1.0",
+  "identifier": "local.tokenmeter.desktop",
+  "build": {
+    "frontendDist": "../frontend"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "TokenMeter",
+        "width": 440,
+        "height": 640,
+        "visible": false,
+        "resizable": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": [
+      "binaries/tokenmeter"
+    ],
+    "icon": [
+      "icons/app.png"
+    ],
+    "category": "DeveloperTool"
+  }
+}
