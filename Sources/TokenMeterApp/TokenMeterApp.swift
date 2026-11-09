@@ -121,7 +121,7 @@ final class AppModel: ObservableObject {
         range = r   //  summariesByRange 已预计算，直接查表，无需重扫
     }
 
-    /// 燃烧状态的彩色火苗帧（8fps 切换形成跳动动画）
+    /// 燃烧状态的彩色火苗帧（平稳版）
     static let flameFrames: [NSImage] = (0..<6).compactMap { i in
         guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame_\(i)@2x.png"),
               let img = NSImage(contentsOf: url) else { return nil }
@@ -129,7 +129,23 @@ final class AppModel: ObservableObject {
         img.isTemplate = false
         return img
     }
+
+    /// 旺盛版火苗帧：燃烧速率超过阈值时切换（更大轮廓+侧舌+白热芯+火星）
+    static let flameFramesIntense: [NSImage] = (0..<6).compactMap { i in
+        guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame_hot_\(i)@2x.png"),
+              let img = NSImage(contentsOf: url) else { return nil }
+        img.size = NSSize(width: 19, height: 19)
+        img.isTemplate = false
+        return img
+    }
+
+    /// 旺盛档阈值：15K tokens/s
+    static let intenseRateThreshold: Int64 = 15_000
+    var flameIntense: Bool { (burnRate ?? 0) >= Self.intenseRateThreshold }
+    var currentFlameFrames: [NSImage] { flameIntense && !Self.flameFramesIntense.isEmpty ? Self.flameFramesIntense : Self.flameFrames }
+
     @Published var flameFrame: Int = 0
+    private var flameTick = 0
 
     private var timer: Timer?
     private var activityTimer: Timer?
@@ -146,10 +162,14 @@ final class AppModel: ObservableObject {
         activityTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.pollActivity() }
         }
-        flameTimer = Timer.scheduledTimer(withTimeInterval: 0.125, repeats: true) { [weak self] _ in
+        flameTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, self.isBurning, !Self.flameFrames.isEmpty else { return }
-                self.flameFrame = (self.flameFrame + 1) % Self.flameFrames.count
+                guard let self, self.isBurning, !self.currentFlameFrames.isEmpty else { return }
+                self.flameTick += 1
+                // 旺盛档 10fps，平稳档 5fps
+                let step = self.flameIntense ? 1 : 2
+                guard self.flameTick % step == 0 else { return }
+                self.flameFrame = (self.flameFrame + 1) % self.currentFlameFrames.count
             }
         }
     }
@@ -230,10 +250,9 @@ struct MenuBarLabel: View {
     var body: some View {
         HStack(spacing: 4) {
             if model.isBurning {
-                if !AppModel.flameFrames.isEmpty {
-                    Image(nsImage: AppModel.flameFrames[model.flameFrame % AppModel.flameFrames.count])
-                } else if let flame = Self.flameIcon {
-                    Image(nsImage: flame)
+                let frames = model.currentFlameFrames
+                if !frames.isEmpty {
+                    Image(nsImage: frames[model.flameFrame % frames.count])
                 } else {
                     Image(systemName: "flame.fill").foregroundStyle(.orange)
                 }

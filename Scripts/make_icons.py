@@ -133,6 +133,53 @@ def menubar_flame(px: int, frame: int = 0, total: int = 6) -> Image.Image:
     return out
 
 
+def menubar_flame_intense(px: int, frame: int = 0, total: int = 6) -> Image.Image:
+    """旺盛版火苗：更大轮廓 + 侧舌 + 白热内芯 + 飞溅火星；摆幅与帧率由 App 侧配合"""
+    import math
+    s = px
+    phase = 2 * math.pi * frame / total
+    sway = math.sin(phase) * s * 0.10
+    sway2 = math.sin(phase + 1.3) * s * 0.06
+    mask = Image.new("L", (s, s), 0)
+    d = ImageDraw.Draw(mask)
+    # 主焰：更饱满
+    d.ellipse([s * 0.10, s * 0.30, s * 0.90, s * 0.99], fill=255)
+    d.ellipse([s * 0.22 + sway * 0.5, s * 0.16, s * 0.78 + sway * 0.5, s * 0.66], fill=255)
+    d.polygon([(s * 0.5 + sway, 0), (s * 0.28, s * 0.42), (s * 0.72, s * 0.42)], fill=255)
+    # 左右侧舌（相位错开，形成舔动）
+    d.polygon([(s * 0.16, s * 0.60), (s * 0.05 + sway2, s * 0.36), (s * 0.26, s * 0.46)], fill=255)
+    d.polygon([(s * 0.84, s * 0.60), (s * 0.95 - sway2, s * 0.36), (s * 0.74, s * 0.46)], fill=255)
+    # 三段渐变：白黄尖 -> 橙 -> 红底
+    grad = Image.new("RGBA", (s, s))
+    gd = ImageDraw.Draw(grad)
+    c0, c1, c2 = (255, 224, 92), (255, 120, 0), (255, 59, 48)
+    for y in range(s):
+        t = y / s
+        col = lerp(c0, c1, min(1.0, t * 1.8)) if t < 0.55 else lerp(c1, c2, (t - 0.55) / 0.45)
+        gd.line([(0, y), (s, y)], fill=col + (255,))
+    out = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    out.paste(grad, (0, 0), mask)
+    # 白热内芯
+    core = Image.new("L", (s, s), 0)
+    cd = ImageDraw.Draw(core)
+    cd.ellipse([s * 0.34, s * 0.50, s * 0.66, s * 0.93], fill=255)
+    cd.polygon([(s * 0.5 + sway * 0.4, s * 0.30), (s * 0.38, s * 0.62), (s * 0.62, s * 0.62)], fill=255)
+    hot = Image.new("RGBA", (s, s), (255, 244, 180, 255))
+    out = Image.alpha_composite(out, Image.composite(hot, Image.new("RGBA", (s, s), (0, 0, 0, 0)), core))
+    inner = Image.new("L", (s, s), 0)
+    ImageDraw.Draw(inner).ellipse([s * 0.42, s * 0.66, s * 0.58, s * 0.90], fill=255)
+    white = Image.new("RGBA", (s, s), (255, 255, 235, 255))
+    out = Image.alpha_composite(out, Image.composite(white, Image.new("RGBA", (s, s), (0, 0, 0, 0)), inner))
+    # 飞溅火星
+    sparks = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(sparks)
+    p1 = (s * (0.5 + sway / s + 0.16 * math.sin(phase * 2)), s * (0.10 + 0.05 * math.cos(phase * 3)))
+    p2 = (s * (0.5 + sway / s - 0.20 * math.cos(phase * 2)), s * (0.20 + 0.06 * math.sin(phase * 2 + 1)))
+    for (cx, cy), r in ((p1, s * 0.035), (p2, s * 0.025)):
+        sd.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 200, 60, 220))
+    return Image.alpha_composite(out, sparks)
+
+
 def main():
     master = master_icon()
     master.save(os.path.join(ASSETS, "icon-1024.png"))
@@ -156,8 +203,9 @@ def main():
     menubar_glyph(44).save(os.path.join(ASSETS, "menubar_icon.png"))
     for i in range(6):
         menubar_flame(88, i).save(os.path.join(ASSETS, f"menubar_flame_{i}@2x.png"))
+        menubar_flame_intense(88, i).save(os.path.join(ASSETS, f"menubar_flame_hot_{i}@2x.png"))
     menubar_flame(88, 0).save(os.path.join(ASSETS, "menubar_flame@2x.png"))
-    print("wrote menubar icons + 6 flame frames")
+    print("wrote menubar icons + 6 calm frames + 6 intense frames")
 
     master.resize((512, 512), Image.LANCZOS).save(os.path.join(ROOT, ".research", "icon-preview.png"))
     print("preview:", os.path.join(ROOT, ".research", "icon-preview.png"))
