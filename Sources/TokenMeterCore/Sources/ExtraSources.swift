@@ -88,6 +88,8 @@ struct SqlUsageSource: UsageSource {
     }
 }
 
+#endif
+
 /// 通用 JSONL 用量源：每行找 tokenUsage / usage 子对象（或行本身）
 struct JsonlUsageSource: UsageSource {
     let id: String
@@ -130,6 +132,7 @@ struct JsonlUsageSource: UsageSource {
     }
 }
 
+#if os(macOS)
 /// Qoder：chat_message 表的 token_info / model_info 为 JSON 字符串
 struct QoderSource: UsageSource {
     public var id: String { "qoder" }
