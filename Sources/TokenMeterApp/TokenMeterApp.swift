@@ -47,6 +47,16 @@ final class AppModel: ObservableObject {
     @Published var burningSources: [String] = []
     var isBurning: Bool { !burningSources.isEmpty }
 
+    /// 燃烧状态的彩色火苗帧（8fps 切换形成跳动动画）
+    static let flameFrames: [NSImage] = (0..<6).compactMap { i in
+        guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame_\(i)@2x.png"),
+              let img = NSImage(contentsOf: url) else { return nil }
+        img.size = NSSize(width: 19, height: 19)
+        img.isTemplate = false
+        return img
+    }
+    @Published var flameFrame: Int = 0
+
     private var timer: Timer?
     private var activityTimer: Timer?
     private var flameTimer: Timer?
@@ -117,16 +127,6 @@ struct MenuBarLabel: View {
         return img
     }()
 
-    /// 燃烧状态的彩色火苗帧（8fps 切换形成跳动动画）
-    static let flameFrames: [NSImage] = (0..<6).compactMap { i in
-        guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame_\(i)@2x.png"),
-              let img = NSImage(contentsOf: url) else { return nil }
-        img.size = NSSize(width: 19, height: 19)
-        img.isTemplate = false
-        return img
-    }
-    @Published var flameFrame: Int = 0
-
     /// 燃烧状态的彩色火苗（非模板图，保留橙红渐变）
     static let flameIcon: NSImage? = {
         guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame@2x.png"),
@@ -139,8 +139,8 @@ struct MenuBarLabel: View {
     var body: some View {
         HStack(spacing: 4) {
             if model.isBurning {
-                if !Self.flameFrames.isEmpty {
-                    Image(nsImage: Self.flameFrames[model.flameFrame % Self.flameFrames.count])
+                if !AppModel.flameFrames.isEmpty {
+                    Image(nsImage: AppModel.flameFrames[model.flameFrame % AppModel.flameFrames.count])
                 } else if let flame = Self.flameIcon {
                     Image(nsImage: flame)
                 } else {
