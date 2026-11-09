@@ -126,7 +126,7 @@ Scripts/install.sh             安装到 /Applications
 | Windows | 🟡 CLI（`tokenmeter.exe`）：Swift 官方 Windows 工具链编译，jsonl 系数据源（Claude Code / Codex / DSH / WorkBuddy 等）全支持；SQLite 系来源（OpenCode/Hermes/ZCode/Qoder 等）与菜单栏 UI 暂为 macOS 专属，托盘 UI 规划中；DSH 压缩日志需 `zstd.exe` 在 PATH |
 | Linux | 🟡 CLI 同 Windows 口径；CI 每 push 在 macOS + Ubuntu 双平台编译+单测（Ubuntu 验证非 Apple 编译路径），Windows 由真机验证 |
 
-Windows 构建：安装 [Swift 工具链](https://www.swift.org/install/windows/) 后 `swift build --target tokenmeter`；WSL 内的 harness 日志扫描在规划中（Phase 3）。
+Windows 构建：安装 [Swift 工具链](https://www.swift.org/install/windows/) 后 `swift build --target tokenmeter -c release`，产物 `.build\release\tokenmeter.exe`；中文输出请先 `chcp 65001` 切换控制台 UTF-8。WSL 内的 harness 日志扫描在规划中（Phase 3）。
 
 ## 许可
 

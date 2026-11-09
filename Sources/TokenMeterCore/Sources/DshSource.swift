@@ -16,7 +16,7 @@ public struct DshSource: UsageSource {
     }
 
     public func scan(cache: inout ScanCache) -> ScanResult {
-        var files = logFiles()
+        let files = logFiles()
         if Zstd.zstdPath() == nil && files.contains(where: { $0.hasSuffix(".zstd") }) {
             // 有压缩文件但找不到 zstd：只解析未压缩的
             let note = "未找到 zstd 可执行文件，压缩会话日志已跳过"

@@ -18,7 +18,7 @@ public struct CodexSource: UsageSource {
     }
 
     public func scan(cache: inout ScanCache) -> ScanResult {
-        var files = logFiles()
+        let files = logFiles()
         let builder = BucketBuilder(tool: "Codex")
         var toParse: [String] = []
         for path in files {
