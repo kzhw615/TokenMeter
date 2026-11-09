@@ -110,11 +110,23 @@ struct MenuBarLabel: View {
         return img
     }()
 
+    /// 燃烧状态的彩色火苗（非模板图，保留橙红渐变）
+    static let flameIcon: NSImage? = {
+        guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame@2x.png"),
+              let img = NSImage(contentsOf: url) else { return nil }
+        img.size = NSSize(width: 19, height: 19)
+        img.isTemplate = false
+        return img
+    }()
+
     var body: some View {
         HStack(spacing: 4) {
             if model.isBurning {
-                Image(systemName: "flame.fill")
-                    .foregroundStyle(.orange)
+                if let flame = Self.flameIcon {
+                    Image(nsImage: flame)
+                } else {
+                    Image(systemName: "flame.fill").foregroundStyle(.orange)
+                }
             } else if let img = Self.barIcon {
                 Image(nsImage: img)
             } else {

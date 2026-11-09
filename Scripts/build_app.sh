@@ -19,6 +19,7 @@ cp "$BUILD/TokenMeterApp" "$APP/Contents/MacOS/TokenMeter"
 cp "$BUILD/tokenmeter" "$OUT/tokenmeter"
 cp Assets/TokenMeter.icns "$APP/Contents/Resources/"
 cp Assets/menubar_icon.png Assets/menubar_icon@2x.png "$APP/Contents/Resources/"
+cp Assets/menubar_flame.png Assets/menubar_flame@2x.png "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

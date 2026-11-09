@@ -99,6 +99,33 @@ def menubar_glyph(px: int) -> Image.Image:
     return out
 
 
+def menubar_flame(px: int) -> Image.Image:
+    """彩色火苗（非模板图）：橙红渐变外焰 + 黄色内焰"""
+    s = px
+    mask = Image.new("L", (s, s), 0)
+    d = ImageDraw.Draw(mask)
+    # 外焰轮廓：底圆 + 中圆 + 尖角
+    d.ellipse([s * 0.16, s * 0.34, s * 0.84, s * 0.98], fill=255)
+    d.ellipse([s * 0.27, s * 0.24, s * 0.73, s * 0.70], fill=255)
+    d.polygon([(s * 0.5, s * 0.02), (s * 0.32, s * 0.46), (s * 0.68, s * 0.46)], fill=255)
+    # 外焰垂直渐变：尖部橙黄 -> 底部红橙
+    grad = Image.new("RGBA", (s, s))
+    gd = ImageDraw.Draw(grad)
+    top, bottom = (255, 159, 10), (255, 69, 58)
+    for y in range(s):
+        gd.line([(0, y), (s, y)], fill=lerp(top, bottom, y / s) + (255,))
+    out = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    out.paste(grad, (0, 0), mask)
+    # 内焰：黄色小火苗
+    inner = Image.new("L", (s, s), 0)
+    idr = ImageDraw.Draw(inner)
+    idr.ellipse([s * 0.34, s * 0.56, s * 0.66, s * 0.92], fill=255)
+    idr.polygon([(s * 0.5, s * 0.40), (s * 0.38, s * 0.68), (s * 0.62, s * 0.68)], fill=255)
+    yellow = Image.new("RGBA", (s, s), (255, 224, 92, 255))
+    out = Image.alpha_composite(out, Image.composite(yellow, Image.new("RGBA", (s, s), (0, 0, 0, 0)), inner))
+    return out
+
+
 def main():
     master = master_icon()
     master.save(os.path.join(ASSETS, "icon-1024.png"))
@@ -120,6 +147,8 @@ def main():
 
     menubar_glyph(88).save(os.path.join(ASSETS, "menubar_icon@2x.png"))
     menubar_glyph(44).save(os.path.join(ASSETS, "menubar_icon.png"))
+    menubar_flame(88).save(os.path.join(ASSETS, "menubar_flame@2x.png"))
+    menubar_flame(44).save(os.path.join(ASSETS, "menubar_flame.png"))
     print("wrote menubar icons")
 
     master.resize((512, 512), Image.LANCZOS).save(os.path.join(ROOT, ".research", "icon-preview.png"))
