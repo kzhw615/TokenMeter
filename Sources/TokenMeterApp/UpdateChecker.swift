@@ -52,18 +52,6 @@ extension AppModel {
         }
     }
 
-    func manualCheck() {
-        updateMessage = "检查更新中…"
-        checkForUpdates(force: true)
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
-            guard let self, self.updateMessage == "检查更新中…" else { return }
-            self.updateMessage = self.latestVersion == nil ? "已是最新版本" : nil
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            self.updateMessage = nil
-        }
-    }
-
     func dismissUpdate() {
         guard let v = latestVersion else { return }
         UserDefaults.standard.set(v, forKey: "dismissedUpdateVersion")

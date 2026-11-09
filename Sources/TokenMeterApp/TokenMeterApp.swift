@@ -41,7 +41,6 @@ final class AppModel: ObservableObject {
     /// 更新检查状态
     @Published var latestVersion: String?
     @Published var releaseURL: URL?
-    @Published var updateMessage: String?
 
     /// 正在燃烧的 harness（日志近 2 分钟有写入）
     @Published var burningSources: [String] = []

@@ -108,20 +108,38 @@ struct PanelView: View {
             if model.scanning {
                 ProgressView().controlSize(.small)
             }
-            Button(action: { model.manualCheck() }) {
-                Image(systemName: "arrow.down.circle")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            if model.updateVisible, let v = model.latestVersion {
+                Button(action: {
+                    if let u = model.releaseURL { NSWorkspace.shared.open(u) }
+                }) {
+                    Image(systemName: "arrow.down.circle.badge.exclamationmark")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                }
+                .buttonStyle(.borderless)
+                .help("新版本 v\(v) 可用，点击前往下载")
             }
-            .buttonStyle(.borderless)
-            .help("检查更新")
-            Button(action: { NSApplication.shared.terminate(nil) }) {
+            Button(action: { confirmQuit() }) {
                 Image(systemName: "power")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.borderless)
             .help("退出 TokenMeter")
+        }
+    }
+
+    /// 退出前弹窗确认，避免误点直接退出
+    private func confirmQuit() {
+        let alert = NSAlert()
+        alert.messageText = "退出 TokenMeter？"
+        alert.informativeText = "退出后菜单栏的用量显示与燃烧状态会停止更新；重新打开 App 即可恢复。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "退出")
+        alert.addButton(withTitle: "取消")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSApplication.shared.terminate(nil)
         }
     }
 
@@ -332,9 +350,6 @@ struct PanelView: View {
         HStack(spacing: 10) {
             if let t = model.lastScan {
                 Text("更新 \(timeFormatter.string(from: t))").font(.caption2).foregroundStyle(.secondary)
-            }
-            if let m = model.updateMessage {
-                Text(m).font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
             Button("刷新") { model.refresh() }
