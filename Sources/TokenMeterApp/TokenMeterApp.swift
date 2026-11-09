@@ -50,6 +50,29 @@ final class AppModel: ObservableObject {
     /// 更新检查状态
     @Published var latestVersion: String?
     @Published var releaseURL: URL?
+    @Published var latestAssetURL: URL?
+    @Published var latestDigest: String?
+    @Published var updatePhase: UpdatePhase = .idle
+
+    enum UpdatePhase: Equatable {
+        case idle, downloading, verifying, installing, restarting, failed(String)
+        var busy: Bool {
+            switch self {
+            case .idle, .failed: return false
+            default: return true
+            }
+        }
+    }
+
+    var updateButtonTitle: String {
+        switch updatePhase {
+        case .idle, .failed: return "一键更新"
+        case .downloading: return "下载中…"
+        case .verifying: return "校验中…"
+        case .installing: return "安装中…"
+        case .restarting: return "重启中…"
+        }
+    }
 
     /// 正在燃烧的 harness（日志近 2 分钟有写入）
     @Published var burningSources: [String] = []
@@ -78,6 +101,7 @@ final class AppModel: ObservableObject {
         refresh()
         checkForUpdates()
         pollActivity()
+        Self.cleanupOldBackups()
         timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.refresh() }
         }

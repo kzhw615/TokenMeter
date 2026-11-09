@@ -54,9 +54,33 @@ struct PanelView: View {
                 if model.updateVisible, let v = model.latestVersion {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.down.circle.fill").foregroundStyle(.orange)
-                        Text("新版本 v\(v) 可用").font(.caption)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("新版本 v\(v) 可用").font(.caption)
+                            switch model.updatePhase {
+                            case .downloading:
+                                HStack(spacing: 4) {
+                                    ProgressView().controlSize(.mini)
+                                    Text("正在下载更新…").font(.caption2).foregroundStyle(.secondary)
+                                }
+                            case .verifying:
+                                Text("正在校验 sha256…").font(.caption2).foregroundStyle(.secondary)
+                            case .installing:
+                                Text("正在替换应用…").font(.caption2).foregroundStyle(.secondary)
+                            case .restarting:
+                                Text("即将重启…").font(.caption2).foregroundStyle(.secondary)
+                            case .failed(let m):
+                                Text(m).font(.caption2).foregroundStyle(.red)
+                            case .idle:
+                                EmptyView()
+                            }
+                        }
                         Spacer()
-                        Button("下载") {
+                        if model.canAutoUpdate {
+                            Button(model.updateButtonTitle) { model.startUpdate() }
+                                .buttonStyle(.borderless).font(.caption)
+                                .disabled(model.updatePhase.busy)
+                        }
+                        Button("下载页") {
                             if let u = model.releaseURL { NSWorkspace.shared.open(u) }
                         }
                         .buttonStyle(.borderless).font(.caption)
@@ -110,14 +134,18 @@ struct PanelView: View {
             }
             if model.updateVisible, let v = model.latestVersion {
                 Button(action: {
-                    if let u = model.releaseURL { NSWorkspace.shared.open(u) }
+                    if model.canAutoUpdate {
+                        model.startUpdate()
+                    } else if let u = model.releaseURL {
+                        NSWorkspace.shared.open(u)
+                    }
                 }) {
                     Image(systemName: "arrow.down.circle.badge.exclamationmark")
                         .font(.callout)
                         .foregroundStyle(.orange)
                 }
                 .buttonStyle(.borderless)
-                .help("新版本 v\(v) 可用，点击前往下载")
+                .help("新版本 v\(v) 可用，点击一键更新")
             }
             Button(action: { confirmQuit() }) {
                 Image(systemName: "power")
