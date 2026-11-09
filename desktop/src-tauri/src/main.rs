@@ -41,11 +41,30 @@ fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+/// 裸 exe 运行时（未走安装包），sidecar 不在 exe 同目录：从仓库布局 ../../binaries/ 自动补齐
+fn ensure_sidecar() {
+    let triple = env!("TAURI_ENV_TARGET_TRIPLE");
+    let ext = if cfg!(windows) { ".exe" } else { "" };
+    let name = format!("tokenmeter-{}{}", triple, ext);
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let dest = dir.join(&name);
+            if !dest.exists() {
+                let cand = dir.join("..").join("..").join("binaries").join(&name);
+                if cand.exists() {
+                    let _ = std::fs::copy(&cand, &dest);
+                }
+            }
+        }
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![run_cli, set_tray_flame, quit_app])
         .setup(|app| {
+            ensure_sidecar();
             let icon = Image::from_bytes(ICON_CALM).expect("tray icon");
             TrayIconBuilder::with_id("main")
                 .icon(icon)
