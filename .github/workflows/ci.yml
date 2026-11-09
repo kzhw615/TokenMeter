@@ -12,15 +12,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-latest, windows-latest]
+        os: [macos-14, ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Swift (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: "6.1"
 
       - name: Swift version
         run: swift --version

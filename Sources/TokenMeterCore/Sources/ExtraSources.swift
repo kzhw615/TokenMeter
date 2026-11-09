@@ -1,5 +1,7 @@
 import Foundation
+#if os(macOS)
 import SQLite3
+#endif
 
 /// 二线数据源：本机未必存在，存在即自动启用。
 /// 日志格式参考各产品本地落盘结构。
