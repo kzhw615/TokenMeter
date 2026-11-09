@@ -2,6 +2,45 @@ import SwiftUI
 import Charts
 import TokenMeterCore
 
+struct SlidingTabs<Option: Hashable>: View {
+    let options: [(option: Option, label: String)]
+    @Binding var selection: Option
+    @Namespace private var ns
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(options.indices, id: \.self) { i in
+                let opt = options[i]
+                let selected = selection == opt.option
+                Button {
+                    guard !selected else { return }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                        selection = opt.option
+                    }
+                } label: {
+                    Text(opt.label)
+                        .font(.callout)
+                        .fontWeight(selected ? .semibold : .regular)
+                        .foregroundStyle(selected ? Color.primary : Color.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 5)
+                        .background {
+                            if selected {
+                                Capsule()
+                                    .fill(Color.primary.opacity(0.16))
+                                    .matchedGeometryEffect(id: "thumb", in: ns)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(Capsule().fill(Color.primary.opacity(0.05)))
+    }
+}
+
 struct PanelView: View {
     @EnvironmentObject var model: AppModel
     @State private var hoveredDay: String?
@@ -30,11 +69,19 @@ struct PanelView: View {
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
                 }
                 if let s = model.summary {
-                    summaryCards(s)
-                    toolsSection(s)
-                    modelsSection(s)
-                    trendSection(s)
-                    footnotes(s)
+                    Group {
+                        summaryCards(s)
+                        toolsSection(s)
+                        modelsSection(s)
+                        trendSection(s)
+                        footnotes(s)
+                    }
+                    .id(model.range)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: model.slideDir > 0 ? .trailing : .leading)
+                            .combined(with: .opacity),
+                        removal: .move(edge: model.slideDir > 0 ? .leading : .trailing)
+                            .combined(with: .opacity)))
                 } else {
                     ProgressView().frame(maxWidth: .infinity)
                 }
@@ -72,20 +119,15 @@ struct PanelView: View {
 
     private func summaryCards(_ s: Summary) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker("范围", selection: Binding(get: { model.range }, set: { model.setRange($0) })) {
-                ForEach(RangeKind.allCases, id: \.self) { r in
-                    Text(r.label).tag(r)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            SlidingTabs(
+                options: RangeKind.allCases.map { (option: $0, label: $0.label) },
+                selection: Binding(get: { model.range }, set: { model.setRange($0) })
+            )
 
-            Picker("口径", selection: Binding(get: { model.includeCache }, set: { model.includeCache = $0 })) {
-                Text("含缓存").tag(true)
-                Text("不含缓存").tag(false)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            SlidingTabs(
+                options: [(option: true, label: "含缓存"), (option: false, label: "不含缓存")],
+                selection: Binding(get: { model.includeCache }, set: { model.includeCache = $0 })
+            )
 
             HStack(spacing: 0) {
                 card(title: model.includeCache ? "用量（含缓存）" : "用量（不含缓存）",
@@ -100,6 +142,7 @@ struct PanelView: View {
             }
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 10).fill(model.theme.cardTint))
+            .animation(.easeInOut(duration: 0.3), value: model.summary?.counts.total)
         }
     }
 
@@ -110,6 +153,7 @@ struct PanelView: View {
                 Text(value).font(.title2.bold()).monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.55)
+                    .contentTransition(.numericText())
                 if !unit.isEmpty {
                     Text(unit).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -132,7 +176,9 @@ struct PanelView: View {
                 HStack(spacing: 10) {
                     Text(t.tool).font(.callout).frame(width: 88, alignment: .leading).lineLimit(1)
                     bar(share: dispShare(t.counts, total: totalDisp), color: palette[idx % palette.count])
-                    Text(Fmt.tokens(disp(t.counts))).font(.callout).monospacedDigit().frame(width: 62, alignment: .trailing)
+                    Text(Fmt.tokens(disp(t.counts))).font(.callout).monospacedDigit()
+                        .contentTransition(.numericText())
+                        .frame(width: 62, alignment: .trailing)
                     Text(Fmt.percent(dispShare(t.counts, total: totalDisp))).font(.caption).foregroundStyle(.secondary).monospacedDigit().frame(width: 46, alignment: .trailing)
                     Text(Fmt.cost(t.cost)).font(.callout).monospacedDigit().frame(width: 58, alignment: .trailing)
                 }
@@ -151,6 +197,7 @@ struct PanelView: View {
                         Text(m.model).font(.callout).lineLimit(1).truncationMode(.middle)
                         Spacer()
                         Text(Fmt.tokens(disp(m.counts))).font(.callout).monospacedDigit()
+                            .contentTransition(.numericText())
                         Text(Fmt.percent(dispShare(m.counts, total: totalDisp))).font(.caption).foregroundStyle(.secondary).monospacedDigit().frame(width: 46, alignment: .trailing)
                         Text(Fmt.cost(m.cost)).font(.callout).monospacedDigit().frame(width: 58, alignment: .trailing)
                     }

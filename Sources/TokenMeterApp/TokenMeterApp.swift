@@ -47,6 +47,18 @@ final class AppModel: ObservableObject {
     @Published var burningSources: [String] = []
     var isBurning: Bool { !burningSources.isEmpty }
 
+    /// 范围切换方向（+1 向右滑入 / -1 向左滑入），供面板过渡动效使用
+    @Published var slideDir: Int = 1
+
+    func setRange(_ r: RangeKind) {
+        guard r != range else { return }
+        let old = RangeKind.allCases.firstIndex(of: range) ?? 0
+        let new = RangeKind.allCases.firstIndex(of: r) ?? 0
+        slideDir = new > old ? 1 : -1
+        range = r
+        refresh()
+    }
+
     /// 燃烧状态的彩色火苗帧（8fps 切换形成跳动动画）
     static let flameFrames: [NSImage] = (0..<6).compactMap { i in
         guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame_\(i)@2x.png"),
@@ -87,12 +99,6 @@ final class AppModel: ObservableObject {
                 if active != self.burningSources { self.burningSources = active }
             }
         }
-    }
-
-    func setRange(_ r: RangeKind) {
-        guard r != range else { return }
-        range = r
-        refresh()
     }
 
     func refresh() {
