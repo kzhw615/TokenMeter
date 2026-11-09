@@ -69,19 +69,11 @@ struct PanelView: View {
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
                 }
                 if let s = model.summary {
-                    Group {
-                        summaryCards(s)
-                        toolsSection(s)
-                        modelsSection(s)
-                        trendSection(s)
-                        footnotes(s)
-                    }
-                    .id(model.range)
-                    .transition(.asymmetric(
-                        insertion: .move(edge: model.slideDir > 0 ? .trailing : .leading)
-                            .combined(with: .opacity),
-                        removal: .move(edge: model.slideDir > 0 ? .leading : .trailing)
-                            .combined(with: .opacity)))
+                    summaryCards(s)
+                    toolsSection(s)
+                    modelsSection(s)
+                    trendSection(s)
+                    footnotes(s)
                 } else {
                     ProgressView().frame(maxWidth: .infinity)
                 }
@@ -89,6 +81,8 @@ struct PanelView: View {
                 footer
             }
             .padding(16)
+            .animation(.easeInOut(duration: 0.3), value: model.summary?.counts.total)
+            .animation(.easeInOut(duration: 0.3), value: model.includeCache)
         }
         .frame(width: 430, height: 560)
     }

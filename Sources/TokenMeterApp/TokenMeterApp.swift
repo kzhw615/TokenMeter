@@ -47,14 +47,8 @@ final class AppModel: ObservableObject {
     @Published var burningSources: [String] = []
     var isBurning: Bool { !burningSources.isEmpty }
 
-    /// 范围切换方向（+1 向右滑入 / -1 向左滑入），供面板过渡动效使用
-    @Published var slideDir: Int = 1
-
     func setRange(_ r: RangeKind) {
         guard r != range else { return }
-        let old = RangeKind.allCases.firstIndex(of: range) ?? 0
-        let new = RangeKind.allCases.firstIndex(of: r) ?? 0
-        slideDir = new > old ? 1 : -1
         range = r
         refresh()
     }
