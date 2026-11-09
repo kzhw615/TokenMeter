@@ -44,6 +44,7 @@ struct SlidingTabs<Option: Hashable>: View {
 struct PanelView: View {
     @EnvironmentObject var model: AppModel
     @State private var hoveredDay: String?
+    @State private var hoveredHour: Int?
 
     private var palette: [Color] { model.theme.palette }
 
@@ -296,6 +297,7 @@ struct PanelView: View {
                 )
                 .foregroundStyle(model.theme.primary.gradient)
                 .cornerRadius(2)
+                .opacity(hoveredHour == nil || hoveredHour == h.hour ? 1 : 0.4)
             }
             .chartXAxis {
                 AxisMarks(values: [0, 6, 12, 18, 23]) { value in
@@ -309,6 +311,45 @@ struct PanelView: View {
                     AxisValueLabel {
                         if let v = value.as(Double.self) {
                             Text(Fmt.compactTokens(Int64(v))).font(.caption2)
+                        }
+                    }
+                }
+            }
+            .chartOverlay { proxy in
+                GeometryReader { geo in
+                    ZStack(alignment: .topLeading) {
+                        Rectangle().fill(.clear).contentShape(Rectangle())
+                            .onContinuousHover { phase in
+                                switch phase {
+                                case .active(let loc):
+                                    guard let plotAnchor = proxy.plotFrame else { hoveredHour = nil; return }
+                                    let frame = geo[plotAnchor]
+                                    if let hour: Int = proxy.value(atX: loc.x - frame.origin.x) {
+                                        hoveredHour = (0...23).contains(hour) ? hour : nil
+                                    } else {
+                                        hoveredHour = nil
+                                    }
+                                case .ended:
+                                    hoveredHour = nil
+                                }
+                            }
+                        if let hh = hoveredHour,
+                           let stat = s.hours.first(where: { $0.hour == hh }),
+                           let plotAnchor = proxy.plotFrame,
+                           let xPos = proxy.position(forX: hh) {
+                            let frame = geo[plotAnchor]
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(String(format: "%02d:00 – %02d:59", hh, hh)).font(.caption2).foregroundStyle(.secondary)
+                                Text("\(Fmt.tokens(disp(stat.counts))) tokens")
+                                    .font(.caption).bold().monospacedDigit()
+                                Text(Fmt.cost(stat.cost))
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                            .padding(6)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(.regularMaterial))
+                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
+                            .position(x: min(max(xPos + frame.origin.x, 70), geo.size.width - 70), y: 24)
+                            .allowsHitTesting(false)
                         }
                     }
                 }
