@@ -36,6 +36,8 @@ public enum Aggregator {
         var requests = 0
         var toolMap: [String: (counts: TokenCounts, cost: Double, requests: Int)] = [:]
         var modelMap: [String: (counts: TokenCounts, cost: Double, requests: Int, tools: Set<String>)] = [:]
+        var projectMap: [String: (counts: TokenCounts, cost: Double, tools: Set<String>)] = [:]
+        var hourMap: [Int: (counts: TokenCounts, cost: Double)] = [:]
         var dayMap: [String: (counts: TokenCounts, cost: Double)] = [:]
         var dayMapAll: [String: (counts: TokenCounts, cost: Double)] = [:]
         var unpriced = Set<String>()
@@ -57,6 +59,12 @@ public enum Aggregator {
             var m = modelMap[b.model] ?? (TokenCounts(), 0, 0, [])
             m.counts += b.counts; m.cost += c; m.requests += b.requests; m.tools.insert(b.tool)
             modelMap[b.model] = m
+            var pj = projectMap[b.project] ?? (TokenCounts(), 0, [])
+            pj.counts += b.counts; pj.cost += c; pj.tools.insert(b.tool)
+            projectMap[b.project] = pj
+            var h = hourMap[b.hour] ?? (TokenCounts(), 0)
+            h.counts += b.counts; h.cost += c
+            hourMap[b.hour] = h
             var d = dayMap[b.day] ?? (TokenCounts(), 0)
             d.counts += b.counts; d.cost += c
             dayMap[b.day] = d
@@ -81,9 +89,34 @@ public enum Aggregator {
         }
         let denom = Double(counts.input + counts.cacheRead)
         let hit = denom > 0 ? Double(counts.cacheRead) / denom : 0
+        let projects = projectMap.map { ProjectStat(project: $0.key, counts: $0.value.counts, cost: $0.value.cost, share: Double($0.value.counts.total) / Double(totalAll), tools: Array($0.value.tools).sorted()) }
+            .sorted { $0.counts.total > $1.counts.total }
+        let singleDay: Bool = (range == .today || range == .yesterday)
+        let hours = (0..<24).map { h -> HourStat in
+            let e = hourMap[h]
+            return HourStat(hour: h, counts: e?.counts ?? TokenCounts(), cost: e?.cost ?? 0)
+        }
+        let hoursMode = singleDay ? (range == .today ? "今日逐小时" : "昨日逐小时") : "按钟点分布（范围内汇总）"
 
         return Summary(range: range, generatedAt: now, counts: counts, cost: cost, requests: requests,
                        cacheHitRate: hit, tools: tools, models: models, days: days, trendDays: trend,
+                       projects: projects, hours: hours, hoursMode: hoursMode,
                        unpricedModels: Array(unpriced).sorted(), sourceStatuses: statuses)
+    }
+
+    /// 热扫描：只解析最近活跃的文件，返回今日含缓存总量（用于燃烧速率）
+    public static func hotTodayTotal(since: Date, now: Date = Date()) -> Int64 {
+        let todayKey = DayKey.key(for: now)
+        var total: Int64 = 0
+        let sources: [UsageSource] = [ClaudeCodeSource(), CodexSource(), DshSource(), WorkBuddySource()]
+        for source in sources {
+            for f in source.logFiles() {
+                guard let m = SourcePaths.mtime(f), m >= since else { continue }
+                for b in source.parseFile(path: f) where b.day == todayKey {
+                    total += b.counts.total
+                }
+            }
+        }
+        return total
     }
 }

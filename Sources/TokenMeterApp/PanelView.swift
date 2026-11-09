@@ -96,7 +96,9 @@ struct PanelView: View {
                     summaryCards(s)
                     toolsSection(s)
                     modelsSection(s)
+                    projectsSection(s)
                     trendSection(s)
+                    hoursSection(s)
                     footnotes(s)
                 } else {
                     ProgressView().frame(maxWidth: .infinity)
@@ -263,6 +265,58 @@ struct PanelView: View {
         }
     }
 
+    private func projectsSection(_ s: Summary) -> some View {
+        let totalDisp = s.projects.reduce(Int64(0)) { $0 + disp($1.counts) }
+        let list = Array(s.projects.filter { $0.project != "-" }.prefix(8))
+        return VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("按项目")
+            if list.isEmpty { emptyNote }
+            ForEach(Array(list.enumerated()), id: \.element.project) { idx, p in
+                HStack(spacing: 10) {
+                    Text(p.project).font(.callout).frame(width: 110, alignment: .leading)
+                        .lineLimit(1).truncationMode(.middle)
+                    bar(share: dispShare(p.counts, total: totalDisp), color: palette[idx % palette.count])
+                    Text(Fmt.tokens(disp(p.counts))).font(.callout).monospacedDigit()
+                        .contentTransition(.numericText()).frame(width: 62, alignment: .trailing)
+                    Text(Fmt.percent(dispShare(p.counts, total: totalDisp))).font(.caption)
+                        .foregroundStyle(.secondary).monospacedDigit().frame(width: 46, alignment: .trailing)
+                    Text(Fmt.cost(p.cost)).font(.callout).monospacedDigit().frame(width: 58, alignment: .trailing)
+                }
+            }
+        }
+    }
+
+    private func hoursSection(_ s: Summary) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("逐小时用量 · \(s.hoursMode)")
+            Chart(s.hours, id: \.hour) { h in
+                BarMark(
+                    x: .value("小时", h.hour),
+                    y: .value("Tokens", Double(disp(h.counts)))
+                )
+                .foregroundStyle(model.theme.primary.gradient)
+                .cornerRadius(2)
+            }
+            .chartXAxis {
+                AxisMarks(values: [0, 6, 12, 18, 23]) { value in
+                    AxisValueLabel {
+                        if let h = value.as(Int.self) { Text("\(h)时").font(.caption2) }
+                    }
+                }
+            }
+            .chartYAxis {
+                AxisMarks(values: .automatic(desiredCount: 3)) { value in
+                    AxisValueLabel {
+                        if let v = value.as(Double.self) {
+                            Text(Fmt.compactTokens(Int64(v))).font(.caption2)
+                        }
+                    }
+                }
+            }
+            .frame(height: 80)
+        }
+    }
+
     private func trendSection(_ s: Summary) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle("每日用量（近 30 天）")
@@ -370,6 +424,19 @@ struct PanelView: View {
                 .buttonStyle(.plain)
             }
             Spacer()
+            Picker("菜单栏", selection: Binding(get: { model.menuBarStyle }, set: { model.menuBarStyle = $0 })) {
+                Text("量+费").tag("both")
+                Text("仅量").tag("tokens")
+                Text("仅费").tag("cost")
+                Text("仅图标").tag("icon")
+            }
+            .pickerStyle(.menu)
+            .controlSize(.small)
+            Toggle("开机自启", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .font(.caption2)
+                .fixedSize()
         }
         .padding(.top, 2)
     }
@@ -378,6 +445,9 @@ struct PanelView: View {
         HStack(spacing: 10) {
             if let t = model.lastScan {
                 Text("更新 \(timeFormatter.string(from: t))").font(.caption2).foregroundStyle(.secondary)
+            }
+            if let m = model.settingsMessage {
+                Text(m).font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
             Button("刷新") { model.refresh() }

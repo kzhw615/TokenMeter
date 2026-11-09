@@ -9,8 +9,12 @@ public struct ClaudeCodeSource: UsageSource {
 
     public init() {}
 
+    public func logFiles() -> [String] {
+        SourcePaths.files(under: "~/.claude/projects", suffix: ".jsonl")
+    }
+
     public func scan(cache: inout ScanCache) -> ScanResult {
-        let files = SourcePaths.files(under: "~/.claude/projects", suffix: ".jsonl")
+        let files = logFiles()
         let builder = BucketBuilder(tool: "Claude Code")
         var toParse: [String] = []
         for path in files {
@@ -23,7 +27,7 @@ public struct ClaudeCodeSource: UsageSource {
         let lock = NSLock()
         var pairs: [(String, [UsageBucket])] = []
         DispatchQueue.concurrentPerform(iterations: toParse.count) { i in
-            let b = parse(path: toParse[i])
+            let b = parseFile(path: toParse[i])
             lock.lock()
             pairs.append((toParse[i], b))
             lock.unlock()
@@ -35,8 +39,12 @@ public struct ClaudeCodeSource: UsageSource {
         return ScanResult(buckets: builder.buckets, files: files.count)
     }
 
-    private func parse(path: String) -> [UsageBucket] {
+    public func parseFile(path: String) -> [UsageBucket] {
         let builder = BucketBuilder(tool: "Claude Code")
+        if let idx = path.split(separator: "/").firstIndex(of: "projects"),
+           idx + 1 < path.split(separator: "/").count {
+            builder.project = ProjectName.decodeClaude(String(path.split(separator: "/")[idx + 1]))
+        }
         var seenMessageIDs = Set<String>()
         guard let reader = LineReader(path: path) else { return [] }
         reader.forEachLine { line in

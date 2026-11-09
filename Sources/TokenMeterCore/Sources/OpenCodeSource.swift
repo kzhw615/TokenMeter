@@ -31,7 +31,7 @@ public struct OpenCodeSource: UsageSource {
             return []
         }
         defer { sqlite3_close(db) }
-        let sql = "select data from message where data like '%\"tokens\"%'"
+        let sql = "select m.data, s.directory from message m left join session s on s.id = m.session_id where m.data like '%\"tokens\"%'"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
         defer { sqlite3_finalize(stmt) }
@@ -51,6 +51,9 @@ public struct OpenCodeSource: UsageSource {
             let counts = TokenCounts(input: input, output: output, cacheRead: cacheRead, cacheWrite: cacheWrite)
             guard counts.total > 0 else { continue }
             let model = JSONUtil.string(o, "modelID") ?? "unknown"
+            if let dir = sqlite3_column_text(stmt, 1).map({ String(cString: $0) }), !dir.isEmpty {
+                builder.project = ProjectName.basename(dir)
+            }
             var date = Date()
             if let time = JSONUtil.dict(o, "time"), let created = JSONUtil.intOrNil(time, "created") {
                 date = JSONUtil.dateFromMillis(created)

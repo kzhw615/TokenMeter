@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ServiceManagement
 import TokenMeterCore
 
 @main
@@ -47,6 +48,32 @@ final class AppModel: ObservableObject {
     }
     var theme: AppTheme { AppTheme.theme(for: themeID) }
 
+    /// 菜单栏显示样式：both / tokens / cost / icon
+    @Published var menuBarStyle: String = UserDefaults.standard.string(forKey: "menuBarStyle") ?? "both" {
+        didSet { UserDefaults.standard.set(menuBarStyle, forKey: "menuBarStyle") }
+    }
+
+    /// 开机自启（SMAppService）
+    @Published var launchAtLogin: Bool = (SMAppService.mainApp.status == .enabled)
+    @Published var settingsMessage: String?
+    func setLaunchAtLogin(_ on: Bool) {
+        do {
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            launchAtLogin = on
+            settingsMessage = on ? "已加入登录项" : "已移除登录项"
+        } catch {
+            settingsMessage = "设置失败：\(error.localizedDescription)"
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            self?.settingsMessage = nil
+        }
+    }
+
+    /// 燃烧速率（tokens/分钟），由热扫描采样差分得出
+    @Published var burnRate: Int64?
+    private var rateSamples: [(Date, Int64)] = []
+
     /// 更新检查状态
     @Published var latestVersion: String?
     @Published var releaseURL: URL?
@@ -77,6 +104,17 @@ final class AppModel: ObservableObject {
     /// 正在燃烧的 harness（日志近 2 分钟有写入）
     @Published var burningSources: [String] = []
     var isBurning: Bool { !burningSources.isEmpty }
+
+    func menuBarText(_ s: Summary) -> String {
+        let shown = includeCache ? s.counts.total : s.counts.input + s.counts.output
+        let rate = (isBurning && (burnRate ?? 0) > 0) ? "\(Fmt.compactTokens(burnRate ?? 0))/min · " : ""
+        switch menuBarStyle {
+        case "tokens": return rate + Fmt.compactTokens(shown)
+        case "cost": return rate + Fmt.cost(s.cost)
+        case "icon": return ""
+        default: return rate + "\(Fmt.compactTokens(shown)) · \(Fmt.cost(s.cost))"
+        }
+    }
 
     func setRange(_ r: RangeKind) {
         guard r != range else { return }
@@ -119,9 +157,23 @@ final class AppModel: ObservableObject {
     func pollActivity() {
         Task.detached(priority: .utility) { [weak self] in
             let active = ActivityDetector.activeSources()
+            let now = Date()
+            let hot: Int64? = active.isEmpty ? nil : Aggregator.hotTodayTotal(since: now.addingTimeInterval(-180), now: now)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 if active != self.burningSources { self.burningSources = active }
+                if let hot {
+                    self.rateSamples.append((now, hot))
+                    self.rateSamples.removeAll { now.timeIntervalSince($0.0) > 150 }
+                    if let first = self.rateSamples.first, let last = self.rateSamples.last,
+                       first.0 < last.0, now.timeIntervalSince(first.0) >= 30 {
+                        let dt = last.0.timeIntervalSince(first.0) / 60.0
+                        self.burnRate = max(0, Int64(Double(last.1 - first.1) / dt))
+                    }
+                } else {
+                    self.rateSamples.removeAll()
+                    self.burnRate = nil
+                }
             }
         }
     }
@@ -190,14 +242,15 @@ struct MenuBarLabel: View {
             } else {
                 Image(systemName: "circle.hexagongrid.fill")
             }
-            if let s = model.summary, s.counts.total > 0 {
-                let shown = model.includeCache ? s.counts.total : s.counts.input + s.counts.output
-                Text("\(Fmt.compactTokens(shown)) · \(Fmt.cost(s.cost))")
-                    .monospacedDigit()
-            } else if model.scanning {
-                Text("…")
-            } else {
-                Text("0")
+            if model.menuBarStyle != "icon" {
+                if let s = model.summary, s.counts.total > 0 {
+                    Text(model.menuBarText(s))
+                        .monospacedDigit()
+                } else if model.scanning {
+                    Text("…")
+                } else {
+                    Text("0")
+                }
             }
         }
     }

@@ -27,18 +27,22 @@ public struct TokenCounts: Codable, Equatable {
     public static func += (l: inout TokenCounts, r: TokenCounts) { l = l + r }
 }
 
-/// 一个文件解析/缓存复用后的聚合桶：某天 + 某工具 + 某模型
+/// 一个文件解析/缓存复用后的聚合桶：某天 + 某小时 + 某工具 + 某模型 + 某项目
 public struct UsageBucket: Codable, Equatable {
     public var day: String        // yyyy-MM-dd（本地时区）
+    public var hour: Int          // 0...23
     public var tool: String
     public var model: String
+    public var project: String    // 项目/仓库名；未知为 "-"
     public var counts: TokenCounts
     public var requests: Int      // 模型调用次数
 
-    public init(day: String, tool: String, model: String, counts: TokenCounts, requests: Int) {
+    public init(day: String, hour: Int = 0, tool: String, model: String, project: String = "-", counts: TokenCounts, requests: Int) {
         self.day = day
+        self.hour = hour
         self.tool = tool
         self.model = model
+        self.project = project
         self.counts = counts
         self.requests = requests
     }
@@ -140,6 +144,20 @@ public struct DayStat: Codable {
     public var cost: Double
 }
 
+public struct ProjectStat: Codable {
+    public var project: String
+    public var counts: TokenCounts
+    public var cost: Double
+    public var share: Double
+    public var tools: [String]
+}
+
+public struct HourStat: Codable {
+    public var hour: Int
+    public var counts: TokenCounts
+    public var cost: Double
+}
+
 public struct Summary: Codable {
     public var range: RangeKind
     public var generatedAt: Date
@@ -151,6 +169,9 @@ public struct Summary: Codable {
     public var models: [ModelStat]
     public var days: [DayStat]             // 升序（按所选范围）
     public var trendDays: [DayStat]        // 近 30 天（含补零），与范围无关
+    public var projects: [ProjectStat]     // 按项目降序
+    public var hours: [HourStat]           // 逐小时（单日为当日 24 桶；多日为范围内按钟点汇总）
+    public var hoursMode: String           // 逐小时图的标题说明
     public var unpricedModels: [String]    // 没有价格表条目的模型
     public var sourceStatuses: [SourceStatus]
 }

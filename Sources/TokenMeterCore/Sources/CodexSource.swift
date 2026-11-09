@@ -9,11 +9,16 @@ public struct CodexSource: UsageSource {
 
     public init() {}
 
-    public func scan(cache: inout ScanCache) -> ScanResult {
+    public func logFiles() -> [String] {
         var files = SourcePaths.files(under: "~/.codex/sessions", suffix: ".jsonl")
         files += SourcePaths.files(under: "~/.codex/sessions", suffix: ".jsonl.zst")
         files += SourcePaths.files(under: "~/.codex/archived_sessions", suffix: ".jsonl")
         files += SourcePaths.files(under: "~/.codex/archived_sessions", suffix: ".jsonl.zst")
+        return files
+    }
+
+    public func scan(cache: inout ScanCache) -> ScanResult {
+        var files = logFiles()
         let builder = BucketBuilder(tool: "Codex")
         var toParse: [String] = []
         for path in files {
@@ -26,7 +31,7 @@ public struct CodexSource: UsageSource {
         let lock = NSLock()
         var pairs: [(String, [UsageBucket])] = []
         DispatchQueue.concurrentPerform(iterations: toParse.count) { i in
-            let b = parse(path: toParse[i])
+            let b = parseFile(path: toParse[i])
             lock.lock()
             pairs.append((toParse[i], b))
             lock.unlock()
@@ -51,7 +56,7 @@ public struct CodexSource: UsageSource {
         return nil
     }
 
-    private func parse(path: String) -> [UsageBucket] {
+    public func parseFile(path: String) -> [UsageBucket] {
         let state = ParseState()
         if path.hasSuffix(".zst") {
             guard let data = Zstd.decompress(path: path) else { return [] }
@@ -70,6 +75,11 @@ public struct CodexSource: UsageSource {
         func consume(_ line: String) {
             if line.contains("\"session_meta\"") || line.contains("thread_settings_applied") || line.contains("\"turn_context\"") {
                 if let m = CodexSource.extractModel(line: line) { model = m }
+                if builder.project == "-",
+                   let o = JSONUtil.object(line), let payload = JSONUtil.dict(o, "payload"),
+                   let cwd = JSONUtil.string(payload, "cwd"), !cwd.isEmpty {
+                    builder.project = ProjectName.basename(cwd)
+                }
                 if !line.contains("\"token_count\"") { return }
             }
             guard line.contains("\"token_count\"") else { return }

@@ -112,6 +112,12 @@ case "report":
         print("  \(pad(m.model, 34)) \(pad(Fmt.tokens(disp(m.counts)), 12)) \(pad(Fmt.percent(shareOf(m.counts)), 8)) \(pad(Fmt.cost(m.cost), 10)) [\(m.tools.joined(separator: ","))]")
     }
     print("")
+    print("按项目：")
+    if summary.projects.isEmpty { print("  （无数据）") }
+    for p in summary.projects.prefix(10) {
+        print("  \(pad(p.project, 28)) \(pad(Fmt.tokens(disp(p.counts)), 12)) \(pad(Fmt.percent(p.share), 8)) \(Fmt.cost(p.cost))  [\(p.tools.joined(separator: ","))]")
+    }
+    print("")
     print("每日：")
     for d in summary.days.suffix(14) {
         print("  \(d.day)  \(pad(Fmt.tokens(disp(d.counts)), 12)) \(Fmt.cost(d.cost))")

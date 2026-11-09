@@ -10,8 +10,12 @@ public struct WorkBuddySource: UsageSource {
 
     public init() {}
 
+    public func logFiles() -> [String] {
+        SourcePaths.files(under: "~/.workbuddy/traces", suffix: ".jsonl")
+    }
+
     public func scan(cache: inout ScanCache) -> ScanResult {
-        let files = SourcePaths.files(under: "~/.workbuddy/traces", suffix: ".jsonl")
+        let files = logFiles()
         let builder = BucketBuilder(tool: "WorkBuddy")
         var toParse: [String] = []
         for path in files {
@@ -24,7 +28,7 @@ public struct WorkBuddySource: UsageSource {
         let lock = NSLock()
         var pairs: [(String, [UsageBucket])] = []
         DispatchQueue.concurrentPerform(iterations: toParse.count) { i in
-            let b = parse(path: toParse[i])
+            let b = parseFile(path: toParse[i])
             lock.lock()
             pairs.append((toParse[i], b))
             lock.unlock()
@@ -36,7 +40,7 @@ public struct WorkBuddySource: UsageSource {
         return ScanResult(buckets: builder.buckets, files: files.count)
     }
 
-    private func parse(path: String) -> [UsageBucket] {
+    public func parseFile(path: String) -> [UsageBucket] {
         let builder = BucketBuilder(tool: "WorkBuddy")
         let debug = ProcessInfo.processInfo.environment["TM_DEBUG_WB"] != nil
         guard let reader = LineReader(path: path) else { return [] }

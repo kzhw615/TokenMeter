@@ -9,9 +9,14 @@ public struct DshSource: UsageSource {
 
     public init() {}
 
-    public func scan(cache: inout ScanCache) -> ScanResult {
+    public func logFiles() -> [String] {
         var files = SourcePaths.files(under: "~/.dsh/sessions", suffix: ".zstd")
         files += SourcePaths.files(under: "~/.dsh/sessions", suffix: ".jsonl")
+        return files
+    }
+
+    public func scan(cache: inout ScanCache) -> ScanResult {
+        var files = logFiles()
         if Zstd.zstdPath() == nil && files.contains(where: { $0.hasSuffix(".zstd") }) {
             // 有压缩文件但找不到 zstd：只解析未压缩的
             let note = "未找到 zstd 可执行文件，压缩会话日志已跳过"
@@ -48,8 +53,12 @@ public struct DshSource: UsageSource {
         return builder.buckets
     }
 
-    private func parseFile(path: String) -> [UsageBucket] {
+    public func parseFile(path: String) -> [UsageBucket] {
         let builder = BucketBuilder(tool: "DSH")
+        let comps = path.split(separator: "/")
+        if comps.count >= 3 {
+            builder.project = ProjectName.decodeDsh(String(comps[comps.count - 3]))
+        }
         guard let reader = LineReader(path: path) else { return [] }
         let state = ParseState(builder: builder)
         state.currentModel = firstModel(path: path) ?? "unknown"
