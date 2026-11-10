@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 import TokenMeterCore
 
@@ -95,3 +96,4 @@ struct PriceEditorView: View {
         message = "已恢复内置价格表"
     }
 }
+#endif

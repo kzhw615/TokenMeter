@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 import UserNotifications
 import TokenMeterCore
@@ -64,3 +65,4 @@ extension AppModel {
         }
     }
 }
+#endif

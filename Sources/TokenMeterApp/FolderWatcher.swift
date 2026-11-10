@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 
 /// FSEvents 目录监听：harness 日志目录有写入时触发回调（替代高频轮询 stat）
@@ -49,3 +50,4 @@ final class FolderWatcher {
         stream = nil
     }
 }
+#endif
