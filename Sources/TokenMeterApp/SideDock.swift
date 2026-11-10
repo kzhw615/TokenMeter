@@ -6,8 +6,8 @@ import TokenMeterCore
 /// 贴边吸附形状：边缘侧上下各一段凹弧外扩翼（CodeBurn 式融合），内侧圆角
 struct DockShape: Shape {
     let mode: String   // "left" / "right"
-    var wing: CGFloat = 22
-    var radius: CGFloat = 18
+    var wing: CGFloat = 15
+    var radius: CGFloat = 13
 
     func path(in rect: CGRect) -> Path {
         var p = Path()
@@ -41,7 +41,7 @@ struct DockShape: Shape {
 /// 侧边悬浮坞：CodeBurn 式贴边融合黑坞；可拖动（原生窗口拖拽）+ 位置记忆 + 双击回位；点击弹完整面板
 @MainActor
 final class SideDockController {
-    static let size = NSSize(width: 76, height: 220)
+    static let size = NSSize(width: 62, height: 168)
 
     private var dock: NSPanel?
     private var detail: NSWindow?
@@ -180,9 +180,8 @@ struct SideDockView: View {
         return Fmt.compactTokens(t)
     }
     private var costText: String { Fmt.cost(todaySummary?.cost ?? 0) }
-    private var bottomIsRate: Bool { model.isBurning && (model.burnRate ?? 0) > 0 }
     private var bottomText: String {
-        if bottomIsRate { return Fmt.compactTokens(model.burnRate ?? 0) + "/s" }
+        if model.isBurning { return Fmt.compactTokens(model.burnRate ?? 0) + "/s" }
         return Fmt.percent(todaySummary?.cacheHitRate ?? 0)
     }
 
@@ -192,41 +191,41 @@ struct SideDockView: View {
             let frames = model.currentFlameFrames
             if !frames.isEmpty {
                 Image(nsImage: frames[model.flameFrame % frames.count])
-                    .frame(width: 18, height: 18)
+                    .frame(width: 15, height: 15)
             }
         } else {
             Image(systemName: "circle.hexagongrid.fill")
-                .font(.system(size: 15))
+                .font(.system(size: 13))
                 .foregroundStyle(.white.opacity(0.75))
         }
     }
 
     private var content: some View {
-        VStack(spacing: 7) {
+        VStack(spacing: 5) {
             iconView
-            Text("今天").font(.system(size: 9)).foregroundStyle(.white.opacity(0.55))
+            Text("今天").font(.system(size: 8)).foregroundStyle(.white.opacity(0.55))
             Text(tokensText)
-                .font(.system(size: 15, weight: .bold))
+                .font(.system(size: 13, weight: .bold))
                 .monospacedDigit()
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(costText)
-                .font(.system(size: 10))
+                .font(.system(size: 9))
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.7))
-            Rectangle().fill(.white.opacity(0.15)).frame(width: 32, height: 1)
+            Rectangle().fill(.white.opacity(0.15)).frame(width: 26, height: 1)
             Text(bottomText)
-                .font(.system(size: 9, weight: bottomIsRate ? .semibold : .regular))
-                .foregroundStyle(bottomIsRate ? Color.orange : Color.white.opacity(0.55))
+                .font(.system(size: 8, weight: model.isBurning ? .semibold : .regular))
+                .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
         }
-        .padding(.vertical, 30)   // 上下留给外扩翼
-        .padding(.horizontal, 6)
+        .padding(.vertical, 22)   // 上下留给外扩翼
+        .padding(.horizontal, 4)
     }
 
     private var shaped: some View {
         content
-            .frame(width: 76, height: 220)
+            .frame(width: 62, height: 168)
             .background(DockShape(mode: mode).fill(Color(white: 0.08).opacity(0.94)))
             .overlay(DockShape(mode: mode).stroke(Color.white.opacity(0.08), lineWidth: 0.5))
     }

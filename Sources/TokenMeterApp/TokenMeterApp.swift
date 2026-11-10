@@ -226,11 +226,14 @@ final class AppModel: ObservableObject {
                 if active != self.burningSources { self.burningSources = active }
                 if let hot {
                     self.rateSamples.append((now, hot))
-                    self.rateSamples.removeAll { now.timeIntervalSince($0.0) > 150 }
+                    self.rateSamples.removeAll { now.timeIntervalSince($0.0) > 300 }
+                    // 5 分钟窗口平均速率：工具执行间隙（无新 token）也不会掉零消失
                     if let first = self.rateSamples.first, let last = self.rateSamples.last,
                        first.0 < last.0, now.timeIntervalSince(first.0) >= 30 {
                         let dt = last.0.timeIntervalSince(first.0)
                         self.burnRate = max(0, Int64(Double(last.1 - first.1) / dt))
+                    } else if self.burnRate == nil {
+                        self.burnRate = 0   // 燃烧中但样本不足：显示 0/s 而非隐藏
                     }
                 } else {
                     self.rateSamples.removeAll()
