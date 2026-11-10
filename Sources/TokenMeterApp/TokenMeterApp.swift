@@ -130,8 +130,21 @@ final class AppModel: ObservableObject {
     private static let harnessAppPaths: [String: String] = [
         "WorkBuddy": "/Applications/WorkBuddy.app",
     ]
+    /// 内置品牌 logo 资源名（官网 favicon/官方 logo 打包）
+    private static let harnessBundledIcons: [String: String] = [
+        "Claude Code": "claude",      // Anthropic spark
+        "Codex": "codex",              // OpenAI knot
+        "DSH": "deepseek",             // DeepSeek whale
+        "OpenCode": "opencode",        // opencode block glyph
+    ]
     func loadHarnessIcons() {
         var icons: [String: NSImage] = [:]
+        for (name, res) in Self.harnessBundledIcons {
+            if let url = Bundle.module.url(forResource: res, withExtension: "png", subdirectory: "harness"),
+               let img = NSImage(contentsOf: url), img.size.width > 0 {
+                icons[name] = img
+            }
+        }
         for (name, path) in Self.harnessAppPaths where FileManager.default.fileExists(atPath: path) {
             let img = NSWorkspace.shared.icon(forFile: path)
             if img.size.width > 0 { icons[name] = img }

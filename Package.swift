@@ -14,7 +14,7 @@ let package = Package(
     targets: [
         .target(name: "TokenMeterCore"),
         .executableTarget(name: "tokenmeter", dependencies: ["TokenMeterCore"]),
-        .executableTarget(name: "TokenMeterApp", dependencies: ["TokenMeterCore"]),
+        .executableTarget(name: "TokenMeterApp", dependencies: ["TokenMeterCore"], resources: [.copy("Resources/harness")]),
         .testTarget(name: "TokenMeterCoreTests", dependencies: ["TokenMeterCore"]),
     ]
 )

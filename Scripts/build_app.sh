@@ -18,6 +18,10 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BUILD/TokenMeterApp" "$APP/Contents/MacOS/TokenMeter"
 cp "$BUILD/tokenmeter" "$OUT/tokenmeter"
 cp Assets/TokenMeter.icns "$APP/Contents/Resources/"
+# SwiftPM 资源包（harness 品牌图标等）
+if [ -d "$BUILD/TokenMeter_TokenMeterApp.bundle" ]; then
+    cp -R "$BUILD/TokenMeter_TokenMeterApp.bundle" "$APP/Contents/Resources/"
+fi
 cp Assets/menubar_icon.png Assets/menubar_icon@2x.png "$APP/Contents/Resources/"
 cp Assets/menubar_flame@2x.png "$APP/Contents/Resources/"
 cp Assets/menubar_flame_0@2x.png Assets/menubar_flame_1@2x.png Assets/menubar_flame_2@2x.png Assets/menubar_flame_3@2x.png Assets/menubar_flame_4@2x.png Assets/menubar_flame_5@2x.png "$APP/Contents/Resources/"
