@@ -469,6 +469,14 @@ struct PanelView: View {
                 .buttonStyle(.plain)
             }
             Spacer()
+            Picker("侧边坞", selection: Binding(get: { model.sideDock }, set: { model.sideDock = $0 })) {
+                Text("关").tag("off")
+                Text("左").tag("left")
+                Text("右").tag("right")
+            }
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            .frame(width: 92)
             Picker("菜单栏", selection: Binding(get: { model.menuBarStyle }, set: { model.menuBarStyle = $0 })) {
                 Text("量+费").tag("both")
                 Text("仅量").tag("tokens")
@@ -477,6 +485,7 @@ struct PanelView: View {
             }
             .pickerStyle(.menu)
             .controlSize(.small)
+            .frame(width: 84)
             Toggle("开机自启", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
                 .toggleStyle(.switch)
                 .controlSize(.small)

@@ -54,6 +54,15 @@ final class AppModel: ObservableObject {
         didSet { UserDefaults.standard.set(menuBarStyle, forKey: "menuBarStyle") }
     }
 
+    /// 侧边悬浮坞：off / left / right
+    @Published var sideDock: String = UserDefaults.standard.string(forKey: "sideDock") ?? "off" {
+        didSet {
+            UserDefaults.standard.set(sideDock, forKey: "sideDock")
+            dockController.apply(mode: sideDock, model: self)
+        }
+    }
+    private let dockController = SideDockController()
+
     /// 开机自启（SMAppService）
     @Published var launchAtLogin: Bool = (SMAppService.mainApp.status == .enabled)
     @Published var settingsMessage: String?
@@ -162,6 +171,7 @@ final class AppModel: ObservableObject {
         pollActivity()
         Self.cleanupOldBackups()
         startWatcher()
+        dockController.apply(mode: sideDock, model: self)
         updateTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.maybeDailyUpdateCheck() }
         }
