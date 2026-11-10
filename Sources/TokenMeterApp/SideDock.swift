@@ -139,7 +139,7 @@ final class SideDockController: ObservableObject {
             object: nil, queue: .main) { [weak self, weak model] _ in
                 Task { @MainActor [weak self] in
                     guard let self, let model else { return }
-                    self.apply(mode: model.sideDock, model: model)
+                    self.apply(mode: model.sideDock, model: model, useSaved: true)   // 保留吸附侧别记忆
                 }
             }
     }
