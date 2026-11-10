@@ -37,7 +37,7 @@ final class FolderWatcher {
             FSEventStreamCreateFlags(kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagWatchRoot)
         ) else { return }
         stream = s
-        FSEventStreamScheduleWithRunLoop(s, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        FSEventStreamSetDispatchQueue(s, DispatchQueue.main)
         FSEventStreamStart(s)
     }
 

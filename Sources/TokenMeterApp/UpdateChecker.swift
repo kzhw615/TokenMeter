@@ -2,6 +2,7 @@
 import Foundation
 import AppKit
 import CryptoKit
+import TokenMeterCore
 
 enum UpdateError: Error {
     case badDownload, digestMismatch, unzipFailed
