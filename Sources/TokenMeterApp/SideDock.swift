@@ -9,7 +9,7 @@ import TokenMeterCore
 struct BarFlareShape: Shape {
     let side: String
     var fuse: CGFloat
-    var wing: CGFloat = 18
+    var wing: CGFloat = 12
     var radius: CGFloat = 16
 
     var animatableData: CGFloat {
@@ -71,7 +71,7 @@ struct BarFlareShape: Shape {
 /// 位置/侧别记忆；双击回位；单击弹面板。四角完全透明（无投影 haze）
 @MainActor
 final class SideDockController: ObservableObject {
-    static let barSize = NSSize(width: 64, height: 168)   // 含上下 wing 18
+    static let barSize = NSSize(width: 64, height: 156)   // 含上下 wing 12
 
     @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合
     @Published var side: String = "right"
@@ -266,7 +266,7 @@ struct SideDockView: View {
     }
 
     var body: some View {
-        let ink = Color(white: 0.08)
+        let ink = Color.black
         return VStack(spacing: 4) {
             iconView
             Text("今天").font(.system(size: 8)).foregroundStyle(.white.opacity(0.55))
@@ -286,7 +286,7 @@ struct SideDockView: View {
                 .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
         }
         .frame(width: 64, height: 132)
-        .frame(width: 64, height: 168)
+        .frame(width: 64, height: 156)
         .background(BarFlareShape(side: controller.side, fuse: controller.fuse).fill(ink))
         .overlay(BarFlareShape(side: controller.side, fuse: controller.fuse).stroke(Color.white.opacity(0.06), lineWidth: 0.5))
         .frame(width: 64, height: 168)
