@@ -136,6 +136,8 @@ final class AppModel: ObservableObject {
         "Codex": "codex",              // OpenAI knot
         "DSH": "deepseek",             // DeepSeek whale
         "OpenCode": "opencode",        // opencode block glyph
+        "Hermes": "hermes",            // 用户提供：黑白女孩标
+        "ZCode": "zcode",              // 用户提供：黑底白 Z
     ]
     func loadHarnessIcons() {
         var icons: [String: NSImage] = [:]
