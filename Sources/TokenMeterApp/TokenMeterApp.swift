@@ -125,6 +125,20 @@ final class AppModel: ObservableObject {
             dockController.apply(mode: sideDock, model: self, useSaved: true)
         }
     }
+    /// harness 真实 App 图标（本机装了 .app 的源）；其余用品牌色字母徽章
+    @Published var harnessIcons: [String: NSImage] = [:]
+    private static let harnessAppPaths: [String: String] = [
+        "WorkBuddy": "/Applications/WorkBuddy.app",
+    ]
+    func loadHarnessIcons() {
+        var icons: [String: NSImage] = [:]
+        for (name, path) in Self.harnessAppPaths where FileManager.default.fileExists(atPath: path) {
+            let img = NSWorkspace.shared.icon(forFile: path)
+            if img.size.width > 0 { icons[name] = img }
+        }
+        harnessIcons = icons
+    }
+
     /// 侧边坞是否展示 harness 状态条（总开关）
     @Published var dockShowHarness: Bool = UserDefaults.standard.object(forKey: "dockShowHarness") == nil ? true : UserDefaults.standard.bool(forKey: "dockShowHarness") {
         didSet {
@@ -249,7 +263,9 @@ final class AppModel: ObservableObject {
                 let states: [(String, Int)] = ActivityDetector.lastActivity(now: now).compactMap { name, date in
                     guard let date else { return nil }   // 无日志 = 未安装，不展示
                     let age = now.timeIntervalSince(date)
-                    let st = active.contains(name) ? 0 : (age < 600 ? 1 : 2)
+                    var st = active.contains(name) ? 0 : (age < 600 ? 1 : 2)
+                    // WorkBuddy 有真实未读回执：unread>0 即"待阅读"（不受 10min 限制）
+                    if name == "WorkBuddy", st == 2, ActivityDetector.workBuddyUnreadCount() > 0 { st = 1 }
                     return (name, st)
                 }
                 let installedChanged = states.map { $0.0 } != self.sourceStates.map { $0.0 }
@@ -298,6 +314,7 @@ final class AppModel: ObservableObject {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.summariesByRange = all
+                self.loadHarnessIcons()
                 self.lastScan = Date()
                 self.scanning = false
                 self.scanStartedAt = nil

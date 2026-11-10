@@ -1,4 +1,7 @@
 import Foundation
+#if os(macOS)
+import SQLite3
+#endif
 
 /// 会话活跃度检测：某 harness 的日志文件在最近 window 秒内被写入 ⇒ 视为「正在燃烧 token」。
 /// 模型流式输出 / 工具调用都会持续刷新日志；等待用户输入时日志静止，超时后图标复原。
@@ -25,6 +28,24 @@ public enum ActivityDetector {
             ("Hermes", newer(fileMtime("~/.hermes/state.db"), latestMtime(under: "~/.hermes/profiles", suffixes: ["state.db"]))),
             ("ZCode", fileMtime("~/.zcode/cli/db/db.sqlite")),
         ]
+    }
+
+    /// WorkBuddy 真实已读态：sessions.unread=1 的会话数（macOS；其他平台 0）
+    public static func workBuddyUnreadCount() -> Int {
+        #if os(macOS)
+        let path = NSString(string: "~/.workbuddy/workbuddy.db").expandingTildeInPath
+        guard FileManager.default.fileExists(atPath: path) else { return 0 }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { return 0 }
+        defer { sqlite3_close(db) }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM sessions WHERE unread = 1", -1, &stmt, nil) == SQLITE_OK,
+              let stmt else { return 0 }
+        defer { sqlite3_finalize(stmt) }
+        return sqlite3_step(stmt) == SQLITE_ROW ? Int(sqlite3_column_int(stmt, 0)) : 0
+        #else
+        return 0
+        #endif
     }
 
     /// Codex 只扫今天/昨天的日期目录，避免遍历全部 6000+ 文件

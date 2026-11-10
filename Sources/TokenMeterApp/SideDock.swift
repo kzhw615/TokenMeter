@@ -272,17 +272,11 @@ struct SideDockView: View {
         return Fmt.compactTokens(t)
     }
     private var costText: String { Fmt.cost(todaySummary?.cost ?? 0) }
-    /// 三态：有 token 流=速率；在跑但暂无流=脉冲"运行中"；空闲=命中率
-    private var bottomMode: Int {
-        if model.isBurning { return (model.burnRate ?? 0) > 0 ? 0 : 1 }
-        return 2
-    }
+    /// 底行：燃烧中=速率（含 0/s），空闲=命中率
+    private var bottomIsRate: Bool { model.isBurning }
     private var bottomText: String {
-        switch bottomMode {
-        case 0: return Fmt.compactTokens(model.burnRate ?? 0) + "/s"
-        case 1: return "运行中"
-        default: return Fmt.percent(todaySummary?.cacheHitRate ?? 0)
-        }
+        if model.isBurning { return Fmt.compactTokens(model.burnRate ?? 0) + "/s" }
+        return Fmt.percent(todaySummary?.cacheHitRate ?? 0)
     }
 
     @ViewBuilder
@@ -300,17 +294,27 @@ struct SideDockView: View {
         }
     }
 
-    /// harness 图标映射（无对应符号时回退首字母）
-    private func harnessIcon(_ name: String) -> String {
+    /// 品牌色字母徽章（无真 App 图标时）
+    private func badgeColor(_ name: String) -> Color {
         switch name {
-        case "Claude Code": return "sparkles"
-        case "Codex": return "terminal"
-        case "DSH": return "bolt.fill"
-        case "WorkBuddy": return "person.2.fill"
-        case "OpenCode": return "curlybraces"
-        case "Hermes": return "paperplane.fill"
-        case "ZCode": return "square.stack.3d.up.fill"
-        default: return ""
+        case "Claude Code": return Color(red: 0.85, green: 0.47, blue: 0.34)
+        case "Codex": return Color(red: 0.06, green: 0.64, blue: 0.50)
+        case "DSH": return Color(red: 0.30, green: 0.42, blue: 0.99)
+        case "OpenCode": return Color(red: 0.88, green: 0.64, blue: 0.35)
+        case "Hermes": return Color(red: 0.49, green: 0.36, blue: 1.0)
+        case "ZCode": return Color(red: 0.13, green: 0.77, blue: 0.37)
+        default: return Color.gray
+        }
+    }
+    private func monogram(_ name: String) -> String {
+        switch name {
+        case "Claude Code": return "C"
+        case "Codex": return "X"
+        case "DSH": return "D"
+        case "OpenCode": return "O"
+        case "Hermes": return "H"
+        case "ZCode": return "Z"
+        default: return String(name.prefix(1))
         }
     }
 
@@ -318,25 +322,29 @@ struct SideDockView: View {
     private var harnessRows: some View {
         VStack(spacing: 4) {
             ForEach(model.visibleDockSources, id: \.0) { name, state in
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     if state == 0 {
-                        PulseDot()
+                        PulseDot().padding(.leading, 2)
                     } else {
                         Circle()
                             .fill(state == 1 ? Color.green : Color.white.opacity(0.3))
                             .frame(width: 5, height: 5)
+                            .padding(.leading, 2)
                     }
-                    let sym = harnessIcon(name)
-                    if sym.isEmpty {
-                        Text(String(name.prefix(1)))
-                            .font(.system(size: 7, weight: .bold))
-                            .foregroundStyle(.white.opacity(state == 2 ? 0.4 : 0.8))
+                    if let img = model.harnessIcons[name] {
+                        Image(nsImage: img)
+                            .resizable()
+                            .frame(width: 12, height: 12)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
                     } else {
-                        Image(systemName: sym)
-                            .font(.system(size: 7))
-                            .foregroundStyle(.white.opacity(state == 2 ? 0.4 : 0.8))
+                        Text(monogram(name))
+                            .font(.system(size: 7.5, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .frame(width: 12, height: 12)
+                            .background(RoundedRectangle(cornerRadius: 3).fill(badgeColor(name)))
                     }
                 }
+                .opacity(state == 2 ? 0.45 : 1)
                 .frame(width: 56, alignment: .leading)
                 .padding(.leading, 12)
             }
@@ -361,12 +369,9 @@ struct SideDockView: View {
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.7))
             Rectangle().fill(.white.opacity(0.15)).frame(width: 20, height: 1)
-            HStack(spacing: 3) {
-                if bottomMode == 1 { PulseDot() }
-                Text(bottomText)
-                    .font(.system(size: 7, weight: model.isBurning ? .semibold : .regular))
-                    .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
-            }
+            Text(bottomText)
+                .font(.system(size: 7, weight: model.isBurning ? .semibold : .regular))
+                .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
           }
           .frame(width: 56, height: 112)
           .padding(.top, 28)
