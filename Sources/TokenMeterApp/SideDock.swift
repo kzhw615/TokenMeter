@@ -9,7 +9,8 @@ import TokenMeterCore
 struct BarFlareShape: Shape {
     let side: String
     var fuse: CGFloat
-    var wing: CGFloat = 12
+    var wing: CGFloat = 18
+    var flare: CGFloat = 12   // 喇叭口水平外扩（凹弧大小）
     var radius: CGFloat = 16
 
     var animatableData: CGFloat {
@@ -20,7 +21,7 @@ struct BarFlareShape: Shape {
     func path(in rect: CGRect) -> Path {
         let w = rect.width, h = rect.height
         let r = radius
-        let f = wing * fuse          // 喇叭口外扩量
+        let f = flare * fuse         // 喇叭口水平外扩量
         let oR = radius * (1 - fuse) // 外侧圆角半径
         let oy = wing                // 舱体顶
         let ob = h - wing            // 舱体底
@@ -28,7 +29,7 @@ struct BarFlareShape: Shape {
         let topEndY = oy + oR - wing * fuse
         let botEndY = ob - oR + wing * fuse
         // 控制点插值：浮块圆弧近似 (0.55r) ↔ 融合凹弧 (0.75f / 0.45wing)
-        let c1x = w - (r - 0.55 * r) * (1 - fuse) - (wing * 0.75) * fuse
+        let c1x = w - (r - 0.55 * r) * (1 - fuse) - (flare * 0.75) * fuse
         let c2yTop = (oy + 0.45 * r) * (1 - fuse) + (wing * 0.45) * fuse
         let c2yBot = (ob - 0.45 * r) * (1 - fuse) + (h - wing * 0.45) * fuse
         var p = Path()
@@ -71,7 +72,7 @@ struct BarFlareShape: Shape {
 /// 位置/侧别记忆；双击回位；单击弹面板。四角完全透明（无投影 haze）
 @MainActor
 final class SideDockController: ObservableObject {
-    static let barSize = NSSize(width: 64, height: 156)   // 含上下 wing 12
+    static let barSize = NSSize(width: 64, height: 168)   // 含上下 wing 18
 
     @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合
     @Published var side: String = "right"
@@ -286,7 +287,7 @@ struct SideDockView: View {
                 .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
         }
         .frame(width: 64, height: 132)
-        .frame(width: 64, height: 156)
+        .frame(width: 64, height: 168)
         .background(BarFlareShape(side: controller.side, fuse: controller.fuse).fill(ink))
         .overlay(BarFlareShape(side: controller.side, fuse: controller.fuse).stroke(Color.white.opacity(0.06), lineWidth: 0.5))
         .frame(width: 64, height: 168)
