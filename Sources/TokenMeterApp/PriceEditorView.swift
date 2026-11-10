@@ -48,6 +48,8 @@ struct PriceEditorView: View {
                 }
             }
             .frame(height: 180)
+            .scrollIndicators(.hidden)
+            .padding(.trailing, 6)
             HStack(spacing: 8) {
                 Button("保存") { save() }
                 Button("加一行") { rows.append(Row(pattern: "", input: "", output: "", cr: "", cw: "")) }
