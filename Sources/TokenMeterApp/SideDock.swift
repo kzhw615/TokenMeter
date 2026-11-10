@@ -79,6 +79,7 @@ final class SideDockController: ObservableObject {
     private var detail: NSWindow?
     private var screenObserver: NSObjectProtocol?
     private var mouseUpObserver: Any?
+    private var mouseUpLocalObserver: Any?
     private var floatStartOrigin: NSPoint = .zero
     private var dragStartCenter: CGFloat = 0
 
@@ -116,12 +117,18 @@ final class SideDockController: ObservableObject {
         floating = false
 
         // 全局 mouseUp：浮块态松手即吸附（不再用定时器，按住多久都不会误触）
-        mouseUpObserver = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp, .rightMouseUp]) { [weak self] _ in
+        let handler: (NSEvent) -> Void = { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.floating else { return }
                 self.snapFloat()
             }
+        }
+        // 本地监听：松手在本 App 内（浮块上）；全局监听：松手在其他 App 上
+        mouseUpLocalObserver = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp, .rightMouseUp]) { e in
+            handler(e)
+            return e
         } as Any?
+        mouseUpObserver = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp, .rightMouseUp], handler: handler) as Any?
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main) { [weak self, weak model] _ in
@@ -144,6 +151,7 @@ final class SideDockController: ObservableObject {
 
     func teardown() {
         if let obs = mouseUpObserver { NSEvent.removeMonitor(obs); mouseUpObserver = nil }
+        if let obs = mouseUpLocalObserver { NSEvent.removeMonitor(obs); mouseUpLocalObserver = nil }
         if let obs = screenObserver { NotificationCenter.default.removeObserver(obs); screenObserver = nil }
         railPanel?.orderOut(nil); railPanel = nil
         floatPanel?.orderOut(nil); floatPanel = nil
@@ -203,6 +211,22 @@ final class SideDockController: ObservableObject {
                 _ = rail
             }
         })
+    }
+
+    /// 60fps 手动插值滑动（borderless nonactivating 面板上 animator 不可靠）
+    static func animatePanel(_ panel: NSPanel, to target: NSPoint, duration: TimeInterval, completion: @escaping () -> Void) {
+        let from = panel.frame.origin
+        let start = Date()
+        Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { t in
+            let k = min(1, Date().timeIntervalSince(start) / duration)
+            let e = k < 0.5 ? 2 * k * k : 1 - pow(-2 * k + 2, 2) / 2   // easeInOutQuad
+            panel.setFrameOrigin(NSPoint(x: from.x + (target.x - from.x) * e,
+                                         y: from.y + (target.y - from.y) * e))
+            if k >= 1 {
+                t.invalidate()
+                completion()
+            }
+        }
     }
 
     private func railSide() -> String { currentMode }
