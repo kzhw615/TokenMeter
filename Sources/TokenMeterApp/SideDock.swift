@@ -180,58 +180,74 @@ struct SideDockView: View {
     let onDragEnd: () -> Void
     let onReset: () -> Void
 
-    var body: some View {
-        let s = model.summariesByRange[.today]
-        let tokens = s.map { model.includeCache ? $0.counts.total : $0.counts.input + $0.counts.output } ?? 0
-        let shape = DockShape(mode: mode)
+    private var todaySummary: Summary? { model.summariesByRange[.today] }
+    private var tokensText: String {
+        let t = todaySummary.map { model.includeCache ? $0.counts.total : $0.counts.input + $0.counts.output } ?? 0
+        return Fmt.compactTokens(t)
+    }
+    private var costText: String { Fmt.cost(todaySummary?.cost ?? 0) }
+    private var bottomText: String {
+        if model.isBurning, let r = model.burnRate, r > 0 { return Fmt.compactTokens(r) + "/s" }
+        return Fmt.percent(todaySummary?.cacheHitRate ?? 0)
+    }
+    private var bottomIsRate: Bool {
+        model.isBurning && (model.burnRate ?? 0) > 0
+    }
 
-        VStack(spacing: 7) {
-            if model.isBurning {
-                let frames = model.currentFlameFrames
-                if !frames.isEmpty {
-                    Image(nsImage: frames[model.flameFrame % frames.count])
-                        .frame(width: 18, height: 18)
-                }
-            } else {
-                Image(systemName: "circle.hexagongrid.fill")
-                    .font(.system(size: 15))
-                    .foregroundStyle(.white.opacity(0.75))
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { onDrag($0.translation) }
+            .onEnded { _ in onDragEnd() }
+    }
+
+    @ViewBuilder
+    private var iconView: some View {
+        if model.isBurning {
+            let frames = model.currentFlameFrames
+            if !frames.isEmpty {
+                Image(nsImage: frames[model.flameFrame % frames.count])
+                    .frame(width: 18, height: 18)
             }
+        } else {
+            Image(systemName: "circle.hexagongrid.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(.white.opacity(0.75))
+        }
+    }
+
+    private var content: some View {
+        VStack(spacing: 7) {
+            iconView
             Text("今天").font(.system(size: 9)).foregroundStyle(.white.opacity(0.55))
-            Text(Fmt.compactTokens(tokens))
+            Text(tokensText)
                 .font(.system(size: 15, weight: .bold))
                 .monospacedDigit()
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-            Text(Fmt.cost(s?.cost ?? 0))
+            Text(costText)
                 .font(.system(size: 10))
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.7))
             Rectangle().fill(.white.opacity(0.15)).frame(width: 32, height: 1)
-            if model.isBurning, let rate = model.burnRate, rate > 0 {
-                Text("\(Fmt.compactTokens(rate))/s")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.orange)
-            } else {
-                Text(Fmt.percent(s?.cacheHitRate ?? 0))
-                    .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(0.55))
-            }
+            Text(bottomText)
+                .font(.system(size: bottomIsRate ? 9 : 9, weight: bottomIsRate ? .semibold : .regular))
+                .foregroundStyle(bottomIsRate ? .orange : .white.opacity(0.55))
         }
-        .padding(.vertical, 30)   // 上下留给外扩翼
+        .padding(.vertical, 30)
         .padding(.horizontal, 6)
-        .frame(width: 76, height: 220)
-        .background(shape.fill(Color(white: 0.08).opacity(0.94)))
-        .overlay(shape.strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
-        .contentShape(shape)
-        .gesture(
-            DragGesture(minimumDistance: 3)
-                .onChanged { onDrag($0.translation) }
-                .onEnded { _ in onDragEnd() }
-        )
-        .onTapGesture(count: 2, perform: onReset)
-        .onTapGesture(perform: onTap)
+    }
+
+    var body: some View {
+        let shape = DockShape(mode: mode)
+        return content
+            .frame(width: 76, height: 220)
+            .background(shape.fill(Color(white: 0.08).opacity(0.94)))
+            .overlay(shape.strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
+            .contentShape(shape)
+            .gesture(dragGesture)
+            .onTapGesture(count: 2, perform: onReset)
+            .onTapGesture(perform: onTap)
     }
 }
 #endif
