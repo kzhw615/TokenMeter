@@ -201,32 +201,18 @@ final class SideDockController: ObservableObject {
                 if side != self.railSide() { self.repositionRail(side: side, vf: vf) }
                 // 舱体归位导轨：view 坐标 y = 屏幕顶 - 屏幕y
                 let newBarY = (vf.maxY - targetY) - Self.barSize.height / 2
+                // barY/showBar 无动画直设：舱体在浮块落点的原高度现身，
+                // 避免"旧高度闪现再滑移"的两段跳；只有凹弧 fuse 走弹簧生长
+                self.barY = newBarY
+                self.showBar = true
+                float.orderOut(nil)
                 withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                    self.barY = newBarY
-                    self.showBar = true
                     self.fuse = 1      // 凹弧生长 = 衍射融合
                 }
-                float.orderOut(nil)
                 self.save(side: side, barScreenY: targetY + Self.barSize.height / 2)
                 _ = rail
             }
         })
-    }
-
-    /// 60fps 手动插值滑动（borderless nonactivating 面板上 animator 不可靠）
-    static func animatePanel(_ panel: NSPanel, to target: NSPoint, duration: TimeInterval, completion: @escaping () -> Void) {
-        let from = panel.frame.origin
-        let start = Date()
-        Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { t in
-            let k = min(1, Date().timeIntervalSince(start) / duration)
-            let e = k < 0.5 ? 2 * k * k : 1 - pow(-2 * k + 2, 2) / 2   // easeInOutQuad
-            panel.setFrameOrigin(NSPoint(x: from.x + (target.x - from.x) * e,
-                                         y: from.y + (target.y - from.y) * e))
-            if k >= 1 {
-                t.invalidate()
-                completion()
-            }
-        }
     }
 
     private func railSide() -> String { currentMode }
