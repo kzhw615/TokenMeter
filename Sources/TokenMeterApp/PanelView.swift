@@ -120,7 +120,8 @@ struct PanelView: View {
                 themeRow
                 footer
             }
-            .padding(16)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
             .animation(.easeInOut(duration: 0.3), value: model.summary?.counts.total)
             .animation(.easeInOut(duration: 0.3), value: model.includeCache)
         }
@@ -516,6 +517,7 @@ struct PanelView: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
+            Text("v\(UpdateKit.currentVersion())").font(.caption2).foregroundStyle(.tertiary)
             if let t = model.lastScan {
                 Text("更新 \(timeFormatter.string(from: t))").font(.caption2).foregroundStyle(.secondary)
             }

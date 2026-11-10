@@ -21,7 +21,7 @@ final class SideDockController {
         guard mode == "left" || mode == "right" else { return }
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 76, height: 320),
+            contentRect: NSRect(x: 0, y: 0, width: 76, height: 176),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false)
@@ -33,7 +33,7 @@ final class SideDockController {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.contentView = NSHostingView(rootView:
-            SideDockView(onTap: { [weak self, weak model] in
+            SideDockView(mode: mode, onTap: { [weak self, weak model] in
                 guard let self, let model else { return }
                 self.showDetail(model: model)
             })
@@ -61,8 +61,9 @@ final class SideDockController {
         guard let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame
         let w: CGFloat = 76
-        let h: CGFloat = 320
-        let x = mode == "left" ? vf.minX + 6 : vf.maxX - w - 6
+        let h: CGFloat = 176
+        // 贴边吸附：不留间隙
+        let x = mode == "left" ? vf.minX : vf.maxX - w
         let y = vf.midY - h / 2
         panel.setFrame(NSRect(x: x, y: y, width: w, height: h), display: true)
     }
@@ -70,7 +71,7 @@ final class SideDockController {
     func showDetail(model: AppModel) {
         if detail == nil {
             let win = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 440, height: 620),
+                contentRect: NSRect(x: 0, y: 0, width: 430, height: 560),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered,
                 defer: false)
@@ -87,49 +88,45 @@ final class SideDockController {
 
 struct SideDockView: View {
     @EnvironmentObject var model: AppModel
+    let mode: String
     let onTap: () -> Void
+
+    /// 贴边圆角：靠右屏边时圆左侧两角，反之圆右侧两角
+    private var shape: UnevenRoundedRectangle {
+        let r: CGFloat = 18
+        return mode == "left"
+            ? UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 0, bottomTrailingRadius: r, topTrailingRadius: r)
+            : UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: r, bottomTrailingRadius: 0, topTrailingRadius: 0)
+    }
 
     var body: some View {
         let s = model.summariesByRange[.today]
         let tokens = s.map { model.includeCache ? $0.counts.total : $0.counts.input + $0.counts.output } ?? 0
-        let week = (s?.trendDays.suffix(7) ?? [])
-        let weekMax = max(1, week.map { model.includeCache ? $0.counts.total : $0.counts.input + $0.counts.output }.max() ?? 1)
 
-        VStack(spacing: 6) {
+        VStack(spacing: 7) {
             if model.isBurning {
                 let frames = model.currentFlameFrames
                 if !frames.isEmpty {
                     Image(nsImage: frames[model.flameFrame % frames.count])
-                        .frame(width: 16, height: 16)
+                        .frame(width: 18, height: 18)
                 }
             } else {
                 Image(systemName: "circle.hexagongrid.fill")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white.opacity(0.75))
             }
-            Text("今天").font(.system(size: 9)).foregroundStyle(.secondary)
+            Text("今天").font(.system(size: 9)).foregroundStyle(.white.opacity(0.55))
             Text(Fmt.compactTokens(tokens))
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 15, weight: .bold))
                 .monospacedDigit()
+                .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(Fmt.cost(s?.cost ?? 0))
                 .font(.system(size: 10))
                 .monospacedDigit()
-                .foregroundStyle(.secondary)
-
-            Spacer(minLength: 2)
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(Array(week.enumerated()), id: \.offset) { _, d in
-                    let v = model.includeCache ? d.counts.total : d.counts.input + d.counts.output
-                    Capsule()
-                        .fill(model.theme.primary.opacity(0.35 + 0.65 * Double(v) / Double(weekMax)))
-                        .frame(width: max(3, 48 * CGFloat(Double(v) / Double(weekMax))), height: 4)
-                }
-            }
-            .frame(width: 48, alignment: .leading)
-            Spacer(minLength: 2)
-
+                .foregroundStyle(.white.opacity(0.7))
+            Rectangle().fill(.white.opacity(0.15)).frame(width: 32, height: 1)
             if model.isBurning, let rate = model.burnRate, rate > 0 {
                 Text("\(Fmt.compactTokens(rate))/s")
                     .font(.system(size: 9, weight: .semibold))
@@ -137,14 +134,15 @@ struct SideDockView: View {
             } else {
                 Text(Fmt.percent(s?.cacheHitRate ?? 0))
                     .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.55))
             }
         }
-        .padding(8)
-        .frame(width: 76, height: 320)
-        .background(RoundedRectangle(cornerRadius: 18).fill(.ultraThinMaterial))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.quaternary, lineWidth: 0.5))
-        .contentShape(RoundedRectangle(cornerRadius: 18))
+        .padding(.vertical, 12)
+        .padding(.horizontal, 6)
+        .frame(width: 76, height: 176)
+        .background(shape.fill(Color(white: 0.08).opacity(0.94)))
+        .overlay(shape.strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
+        .contentShape(shape)
         .onTapGesture(perform: onTap)
     }
 }
