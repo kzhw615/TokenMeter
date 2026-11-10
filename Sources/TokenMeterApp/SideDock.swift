@@ -154,7 +154,23 @@ final class SideDockController: ObservableObject {
         panel = nil
     }
 
-    /// 松手：按中心距离吸附到较近屏边；水平滑动 + 形态 cross-fade 融合
+    /// 60fps 手动插值滑动（borderless nonactivating 面板上 NSAnimationContext/animator 不生效）
+    private static func slidePanel(_ panel: NSPanel, to target: NSPoint, duration: TimeInterval, completion: @escaping () -> Void) {
+        let from = panel.frame.origin
+        let start = Date()
+        Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { t in
+            let k = min(1, Date().timeIntervalSince(start) / duration)
+            let e = k < 0.5 ? 2 * k * k : 1 - pow(-2 * k + 2, 2) / 2   // easeInOutQuad
+            panel.setFrameOrigin(NSPoint(x: from.x + (target.x - from.x) * e,
+                                         y: from.y + (target.y - from.y) * e))
+            if k >= 1 {
+                t.invalidate()
+                completion()
+            }
+        }
+    }
+
+    /// 松手：按中心距离吸附到较近屏边；水平滑动 + fuse 形变融合
     func snap() {
         guard let panel, let screen = NSScreen.main else { return }
         snapping = true
@@ -163,22 +179,17 @@ final class SideDockController: ObservableObject {
         let targetX = newSide == "left" ? vf.minX : vf.maxX - Self.barSize.width
         let targetY = min(max(panel.frame.origin.y, vf.minY), vf.maxY - Self.barSize.height)
         let target = NSPoint(x: targetX, y: targetY)
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.24
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel.animator().setFrameOrigin(target)
-        }, completionHandler: { [weak self] in
+        Self.slidePanel(panel, to: target, duration: 0.26) { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                panel.setFrameOrigin(target)
                 self.snapping = false
                 self.side = newSide
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    self.fuse = 1      // 圆角浮块淡入为贴边融合形态
+                    self.fuse = 1      // 圆角浮块形变为贴边融合形态
                 }
                 self.save(side: newSide, originY: targetY)
             }
-        })
+        }
     }
 
     func resetPosition(mode: String) {
@@ -255,7 +266,7 @@ struct SideDockView: View {
     }
 
     var body: some View {
-        let ink = Color(white: 0.08).opacity(0.94)
+        let ink = Color(white: 0.08)
         return VStack(spacing: 4) {
             iconView
             Text("今天").font(.system(size: 8)).foregroundStyle(.white.opacity(0.55))
