@@ -84,16 +84,17 @@ final class SideDockController: ObservableObject {
     private var mouseUpGlobal: Any?
     private var snapping = false
 
-    func apply(mode: String, model: AppModel) {
+    /// useSaved=true 仅首启：沿用上次吸附的侧别；设置切换走 false：显式意图优先
+    func apply(mode: String, model: AppModel, useSaved: Bool = false) {
         teardown()
         guard mode == "left" || mode == "right" else { return }
         guard let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame
-        side = UserDefaults.standard.string(forKey: "dockSide") ?? mode
+        side = useSaved ? (UserDefaults.standard.string(forKey: "dockSide") ?? mode) : mode
         fuse = 1
 
         let panel = NSPanel(
-            contentRect: NSRect(origin: originFor(side: side, vf: vf, saved: true), size: Self.barSize),
+            contentRect: NSRect(origin: originFor(side: side, vf: vf, saved: useSaved), size: Self.barSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false)
         panel.isFloatingPanel = true

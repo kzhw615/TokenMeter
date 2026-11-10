@@ -59,7 +59,7 @@ final class AppModel: ObservableObject {
     @Published var sideDock: String = UserDefaults.standard.string(forKey: "sideDock") ?? "off" {
         didSet {
             UserDefaults.standard.set(sideDock, forKey: "sideDock")
-            dockController.apply(mode: sideDock, model: self)
+            dockController.apply(mode: sideDock, model: self, useSaved: false)
         }
     }
     private let dockController = SideDockController()
@@ -172,7 +172,7 @@ final class AppModel: ObservableObject {
         pollActivity()
         Self.cleanupOldBackups()
         startWatcher()
-        dockController.apply(mode: sideDock, model: self)
+        dockController.apply(mode: sideDock, model: self, useSaved: true)
         updateTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.maybeDailyUpdateCheck() }
         }
