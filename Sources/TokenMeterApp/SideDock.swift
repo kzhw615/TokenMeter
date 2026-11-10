@@ -10,7 +10,8 @@ struct BarFlareShape: Shape {
     let side: String
     var fuse: CGFloat
     var wing: CGFloat = 18
-    var flare: CGFloat = 12   // 喇叭口水平外扩（凹弧大小）
+    var flare: CGFloat = 6    // 喇叭口水平外扩（凹弧大小）
+    var rise: CGFloat = 9     // 凹弧沿屏边爬升高度
     var radius: CGFloat = 16
 
     var animatableData: CGFloat {
@@ -25,13 +26,13 @@ struct BarFlareShape: Shape {
         let oR = radius * (1 - fuse) // 外侧圆角半径
         let oy = wing                // 舱体顶
         let ob = h - wing            // 舱体底
-        // 外侧上角：浮块角弧端点 (w, oy+oR) ↔ 融合收尖端 (w, 0)
-        let topEndY = oy + oR - wing * fuse
-        let botEndY = ob - oR + wing * fuse
+        // 外侧上角：浮块角弧端点 (w, oy+oR) ↔ 融合收尖端 (w, oy-rise)
+        let topEndY = oy + oR * (1 - fuse) - rise * fuse
+        let botEndY = ob - oR * (1 - fuse) + rise * fuse
         // 控制点插值：浮块圆弧近似 (0.55r) ↔ 融合凹弧 (0.75f / 0.45wing)
         let c1x = w - (r - 0.55 * r) * (1 - fuse) - (flare * 0.75) * fuse
-        let c2yTop = (oy + 0.45 * r) * (1 - fuse) + (wing * 0.45) * fuse
-        let c2yBot = (ob - 0.45 * r) * (1 - fuse) + (h - wing * 0.45) * fuse
+        let c2yTop = (oy + 0.45 * r) * (1 - fuse) + (oy - rise * 0.55) * fuse
+        let c2yBot = (ob - 0.45 * r) * (1 - fuse) + (ob + rise * 0.55) * fuse
         var p = Path()
         if side == "right" {
             p.move(to: CGPoint(x: r, y: oy))
