@@ -3,13 +3,52 @@ import SwiftUI
 import AppKit
 import TokenMeterCore
 
-/// 侧边悬浮坞：停靠屏幕左/右边缘的竖条 glance 视图；点击弹出完整面板窗口。
-/// 解决菜单栏空间被其他 App 挤压的问题。
+/// 贴边吸附形状：边缘侧上下各一段凹弧外扩翼（CodeBurn 式融合），内侧圆角
+struct DockShape: Shape {
+    let mode: String   // "left" / "right"
+    var wing: CGFloat = 22
+    var radius: CGFloat = 18
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let w = rect.width, h = rect.height
+        let f = wing, r = radius
+        if mode == "right" {
+            // 贴右边：翼在右侧上下外扩
+            p.move(to: CGPoint(x: w, y: 0))
+            p.addQuadCurve(to: CGPoint(x: w - f, y: f), control: CGPoint(x: w - f, y: 0))
+            p.addLine(to: CGPoint(x: r, y: f))
+            p.addQuadCurve(to: CGPoint(x: 0, y: f + r), control: CGPoint(x: 0, y: f))
+            p.addLine(to: CGPoint(x: 0, y: h - f - r))
+            p.addQuadCurve(to: CGPoint(x: r, y: h - f), control: CGPoint(x: 0, y: h - f))
+            p.addLine(to: CGPoint(x: w - f, y: h - f))
+            p.addQuadCurve(to: CGPoint(x: w, y: h), control: CGPoint(x: w - f, y: h - f))
+            p.closeSubpath()
+        } else {
+            // 贴左边：镜像
+            p.move(to: CGPoint(x: 0, y: 0))
+            p.addQuadCurve(to: CGPoint(x: f, y: f), control: CGPoint(x: f, y: 0))
+            p.addLine(to: CGPoint(x: w - r, y: f))
+            p.addQuadCurve(to: CGPoint(x: w, y: f + r), control: CGPoint(x: w, y: f))
+            p.addLine(to: CGPoint(x: w, y: h - f - r))
+            p.addQuadCurve(to: CGPoint(x: w - r, y: h - f), control: CGPoint(x: w, y: h - f))
+            p.addLine(to: CGPoint(x: f, y: h - f))
+            p.addQuadCurve(to: CGPoint(x: 0, y: h), control: CGPoint(x: f, y: h - f))
+            p.closeSubpath()
+        }
+        return p
+    }
+}
+
+/// 侧边悬浮坞：贴边吸附竖条 glance；可拖动、位置记忆；点击弹完整面板窗口
 @MainActor
 final class SideDockController {
+    static let size = NSSize(width: 76, height: 220)
+
     private var dock: NSPanel?
     private var detail: NSWindow?
     private var screenObserver: NSObjectProtocol?
+    private var dragStart: NSPoint?
 
     func apply(mode: String, model: AppModel) {
         dock?.orderOut(nil)
@@ -21,7 +60,7 @@ final class SideDockController {
         guard mode == "left" || mode == "right" else { return }
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 76, height: 176),
+            contentRect: NSRect(origin: .zero, size: Self.size),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false)
@@ -33,39 +72,86 @@ final class SideDockController {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.contentView = NSHostingView(rootView:
-            SideDockView(mode: mode, onTap: { [weak self, weak model] in
-                guard let self, let model else { return }
-                self.showDetail(model: model)
-            })
+            SideDockView(
+                mode: mode,
+                onTap: { [weak self, weak model] in
+                    guard let self, let model else { return }
+                    self.showDetail(model: model)
+                },
+                onDrag: { [weak self] translation in
+                    self?.dragPanel(translation: translation)
+                },
+                onDragEnd: { [weak self] in
+                    self?.endDrag()
+                },
+                onReset: { [weak self] in
+                    self?.resetPosition(mode: mode)
+                })
             .environmentObject(model))
-        place(panel, mode)
+        panel.setFrameOrigin(initialOrigin(mode: mode))
         panel.orderFrontRegardless()
         dock = panel
 
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
-            object: nil, queue: .main) { [weak panel] _ in
-                guard let panel else { return }
-                Task { @MainActor in
-                    Self.placeStatic(panel, mode)
+            object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, let panel = self.dock else { return }
+                    panel.setFrameOrigin(self.clamped(panel.frame.origin, mode: mode))
                 }
             }
     }
 
-    private func place(_ panel: NSPanel, _ mode: String) {
-        Self.placeStatic(panel, mode)
+    /// 记忆位置优先；否则贴边垂直居中
+    private func initialOrigin(mode: String) -> NSPoint {
+        let savedX = UserDefaults.standard.double(forKey: "dockX")
+        let savedY = UserDefaults.standard.double(forKey: "dockY")
+        if let screen = NSScreen.main, savedX.isFinite, savedY.isFinite,
+           UserDefaults.standard.object(forKey: "dockX") != nil {
+            let pt = NSPoint(x: savedX, y: savedY)
+            if screen.visibleFrame.insetBy(dx: -40, dy: -40).contains(pt) { return pt }
+        }
+        return defaultOrigin(mode: mode)
     }
 
-    @MainActor
-    private static func placeStatic(_ panel: NSPanel, _ mode: String) {
-        guard let screen = NSScreen.main else { return }
+    private func defaultOrigin(mode: String) -> NSPoint {
+        guard let screen = NSScreen.main else { return .zero }
         let vf = screen.visibleFrame
-        let w: CGFloat = 76
-        let h: CGFloat = 176
-        // 贴边吸附：不留间隙
-        let x = mode == "left" ? vf.minX : vf.maxX - w
-        let y = vf.midY - h / 2
-        panel.setFrame(NSRect(x: x, y: y, width: w, height: h), display: true)
+        let x = mode == "left" ? vf.minX : vf.maxX - Self.size.width
+        return NSPoint(x: x, y: vf.midY - Self.size.height / 2)
+    }
+
+    private func clamped(_ origin: NSPoint, mode: String) -> NSPoint {
+        guard let screen = NSScreen.main else { return origin }
+        let vf = screen.visibleFrame.insetBy(dx: -20, dy: 0)
+        var o = origin
+        o.x = min(max(o.x, vf.minX - 30), vf.maxX - Self.size.width + 30)
+        o.y = min(max(o.y, vf.minY), vf.maxY - Self.size.height)
+        return o
+    }
+
+    func dragPanel(translation: CGSize) {
+        guard let panel = dock else { return }
+        if dragStart == nil { dragStart = panel.frame.origin }
+        guard let start = dragStart else { return }
+        // SwiftUI translation y 向下为正，AppKit y 向上为正
+        let target = NSPoint(x: start.x + translation.width, y: start.y - translation.height)
+        panel.setFrameOrigin(clamped(target, mode: panel.frame.origin.x < (NSScreen.main?.visibleFrame.midX ?? 0) ? "left" : "right"))
+    }
+
+    func endDrag() {
+        guard let panel = dock else { return }
+        dragStart = nil
+        UserDefaults.standard.set(Double(panel.frame.origin.x), forKey: "dockX")
+        UserDefaults.standard.set(Double(panel.frame.origin.y), forKey: "dockY")
+    }
+
+    /// 双击回位：贴边垂直居中
+    func resetPosition(mode: String) {
+        guard let panel = dock else { return }
+        panel.setFrameOrigin(defaultOrigin(mode: mode))
+        UserDefaults.standard.removeObject(forKey: "dockX")
+        UserDefaults.standard.removeObject(forKey: "dockY")
     }
 
     func showDetail(model: AppModel) {
@@ -90,18 +176,14 @@ struct SideDockView: View {
     @EnvironmentObject var model: AppModel
     let mode: String
     let onTap: () -> Void
-
-    /// 贴边圆角：靠右屏边时圆左侧两角，反之圆右侧两角
-    private var shape: UnevenRoundedRectangle {
-        let r: CGFloat = 18
-        return mode == "left"
-            ? UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 0, bottomTrailingRadius: r, topTrailingRadius: r)
-            : UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: r, bottomTrailingRadius: 0, topTrailingRadius: 0)
-    }
+    let onDrag: (CGSize) -> Void
+    let onDragEnd: () -> Void
+    let onReset: () -> Void
 
     var body: some View {
         let s = model.summariesByRange[.today]
         let tokens = s.map { model.includeCache ? $0.counts.total : $0.counts.input + $0.counts.output } ?? 0
+        let shape = DockShape(mode: mode)
 
         VStack(spacing: 7) {
             if model.isBurning {
@@ -137,12 +219,18 @@ struct SideDockView: View {
                     .foregroundStyle(.white.opacity(0.55))
             }
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 30)   // 上下留给外扩翼
         .padding(.horizontal, 6)
-        .frame(width: 76, height: 176)
+        .frame(width: 76, height: 220)
         .background(shape.fill(Color(white: 0.08).opacity(0.94)))
         .overlay(shape.strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
         .contentShape(shape)
+        .gesture(
+            DragGesture(minimumDistance: 3)
+                .onChanged { onDrag($0.translation) }
+                .onEnded { _ in onDragEnd() }
+        )
+        .onTapGesture(count: 2, perform: onReset)
         .onTapGesture(perform: onTap)
     }
 }
