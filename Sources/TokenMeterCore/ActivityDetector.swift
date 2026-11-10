@@ -3,7 +3,7 @@ import Foundation
 /// 会话活跃度检测：某 harness 的日志文件在最近 window 秒内被写入 ⇒ 视为「正在燃烧 token」。
 /// 模型流式输出 / 工具调用都会持续刷新日志；等待用户输入时日志静止，超时后图标复原。
 public enum ActivityDetector {
-    public static let defaultWindow: TimeInterval = 120
+    public static let defaultWindow: TimeInterval = 60
 
     public static func activeSources(now: Date = Date(), window: TimeInterval = defaultWindow) -> [String] {
         let cutoff = now.addingTimeInterval(-window)

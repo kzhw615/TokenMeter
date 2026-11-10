@@ -240,6 +240,22 @@ final class SideDockController: ObservableObject {
     }
 }
 
+/// 呼吸脉冲点：表达"AI 正在跑但暂无 token 落盘"
+struct PulseDot: View {
+    @State private var on = false
+    var body: some View {
+        Circle()
+            .fill(Color.orange)
+            .frame(width: 5, height: 5)
+            .opacity(on ? 0.3 : 1)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                    on = true
+                }
+            }
+    }
+}
+
 struct SideDockView: View {
     @ObservedObject var controller: SideDockController
     @EnvironmentObject var model: AppModel
@@ -250,9 +266,17 @@ struct SideDockView: View {
         return Fmt.compactTokens(t)
     }
     private var costText: String { Fmt.cost(todaySummary?.cost ?? 0) }
+    /// 三态：有 token 流=速率；在跑但暂无流=脉冲"运行中"；空闲=命中率
+    private var bottomMode: Int {
+        if model.isBurning { return (model.burnRate ?? 0) > 0 ? 0 : 1 }
+        return 2
+    }
     private var bottomText: String {
-        if model.isBurning { return Fmt.compactTokens(model.burnRate ?? 0) + "/s" }
-        return Fmt.percent(todaySummary?.cacheHitRate ?? 0)
+        switch bottomMode {
+        case 0: return Fmt.compactTokens(model.burnRate ?? 0) + "/s"
+        case 1: return "运行中"
+        default: return Fmt.percent(todaySummary?.cacheHitRate ?? 0)
+        }
     }
 
     @ViewBuilder
@@ -286,9 +310,12 @@ struct SideDockView: View {
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.7))
             Rectangle().fill(.white.opacity(0.15)).frame(width: 20, height: 1)
-            Text(bottomText)
-                .font(.system(size: 7, weight: model.isBurning ? .semibold : .regular))
-                .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
+            HStack(spacing: 3) {
+                if bottomMode == 1 { PulseDot() }
+                Text(bottomText)
+                    .font(.system(size: bottomMode == 1 ? 7 : 7, weight: model.isBurning ? .semibold : .regular))
+                    .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
+            }
         }
         .frame(width: 56, height: 112)
         .frame(width: 64, height: 168, alignment: controller.side == "right" ? .trailing : .leading)

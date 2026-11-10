@@ -226,8 +226,8 @@ final class AppModel: ObservableObject {
                 if active != self.burningSources { self.burningSources = active }
                 if let hot {
                     self.rateSamples.append((now, hot))
-                    self.rateSamples.removeAll { now.timeIntervalSince($0.0) > 35 }
-                    // 30s 窗口平均速率（5s 采样）：跟手且平滑，工具执行间隙不掉零
+                    self.rateSamples.removeAll { now.timeIntervalSince($0.0) > 25 }
+                    // 20s 窗口平均速率（5s 采样）：跟手且平滑；停止出 token 后较快回落
                     if let first = self.rateSamples.first, let last = self.rateSamples.last,
                        first.0 < last.0, now.timeIntervalSince(first.0) >= 10 {
                         let dt = last.0.timeIntervalSince(first.0)
