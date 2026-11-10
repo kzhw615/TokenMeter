@@ -81,7 +81,7 @@ final class SideDockController: ObservableObject {
     static let barBlockHeight: CGFloat = 168   // 舱体块恒定（已知安全组合）；可见舱体由形状内缩参数控制
     var rowCount: Int = 0
     var bottomInset: CGFloat { rowCount > 0 ? 10 : 28 }
-    var dockHeight: CGFloat { max(Self.barBlockHeight, 28 + 112 + (rowCount > 0 ? 10 + CGFloat(rowCount) * 40 : 0) + bottomInset) }
+    var dockHeight: CGFloat { max(Self.barBlockHeight, 28 + 112 + (rowCount > 0 ? 10 + CGFloat(rowCount) * 34 : 0) + bottomInset) }
 
     @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合
     @Published var side: String = "right"
@@ -252,7 +252,7 @@ struct PulseDot: View {
     var body: some View {
         Circle()
             .fill(Color.orange)
-            .frame(width: 8, height: 8)
+            .frame(width: 7, height: 7)
             .opacity(on ? 0.3 : 1)
             .onAppear {
                 withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
@@ -328,20 +328,20 @@ struct SideDockView: View {
                     } else {
                         Circle()
                             .fill(state == 1 ? Color.green : Color.white.opacity(0.3))
-                            .frame(width: 8, height: 8)
+                            .frame(width: 7, height: 7)
                             .padding(.leading, 2)
                     }
                     if let img = model.harnessIcons[name] {
                         Image(nsImage: img)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 32, height: 32)
+                            .frame(width: 26, height: 26)
                     } else {
                         Text(monogram(name))
-                            .font(.system(size: 16, weight: .heavy))
+                            .font(.system(size: 13, weight: .heavy))
                             .foregroundStyle(.white)
-                            .frame(width: 32, height: 32)
-                            .background(RoundedRectangle(cornerRadius: 7).fill(badgeColor(name)))
+                            .frame(width: 26, height: 26)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(badgeColor(name)))
                     }
                 }
                 .opacity(state == 2 ? 0.45 : 1)
