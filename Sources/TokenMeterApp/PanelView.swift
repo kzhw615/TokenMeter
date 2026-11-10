@@ -544,6 +544,26 @@ struct PanelView: View {
             budgetRow(label: "月预算",
                       value: Binding(get: { model.monthlyBudget }, set: { model.monthlyBudget = $0 }),
                       cost: model.summariesByRange[.thisMonth]?.cost)
+            if !model.sourceStates.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("侧边坞展示源").font(.caption).foregroundStyle(.secondary)
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 4), spacing: 4) {
+                        ForEach(model.sourceStates, id: \.0) { name, _ in
+                            let hidden = model.hiddenDockSources.contains(name)
+                            Button {
+                                if hidden { model.hiddenDockSources.remove(name) }
+                                else { model.hiddenDockSources.insert(name) }
+                            } label: {
+                                Text(name)
+                                    .font(.caption2)
+                                    .strikethrough(hidden)
+                                    .foregroundStyle(hidden ? Color.secondary.opacity(0.5) : model.theme.primary)
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+            }
             Divider()
             PriceEditorView()
         }

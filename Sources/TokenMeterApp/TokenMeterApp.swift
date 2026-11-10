@@ -116,6 +116,17 @@ final class AppModel: ObservableObject {
     @Published var burningSources: [String] = []
     var isBurning: Bool { !burningSources.isEmpty }
 
+    /// 坞底 harness 三态：0 运行中 / 1 待阅读 / 2 空闲；仅含本机有日志的源
+    @Published var sourceStates: [(String, Int)] = []
+    /// 侧边坞隐藏名单（默认全展示已安装源）
+    @Published var hiddenDockSources: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "dockHiddenSources") ?? []) {
+        didSet {
+            UserDefaults.standard.set(Array(hiddenDockSources), forKey: "dockHiddenSources")
+            dockController.apply(mode: sideDock, model: self, useSaved: true)
+        }
+    }
+    var visibleDockSources: [(String, Int)] { sourceStates.filter { !hiddenDockSources.contains($0.0) } }
+
     func menuBarText(_ s: Summary) -> String {
         let shown = includeCache ? s.counts.total : s.counts.input + s.counts.output
         let rate = (isBurning && (burnRate ?? 0) > 0) ? "\(Fmt.compactTokens(burnRate ?? 0))/s · " : ""
@@ -224,6 +235,18 @@ final class AppModel: ObservableObject {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 if active != self.burningSources { self.burningSources = active }
+                // 三态：运行中(<60s) / 待阅读(60s~10min) / 空闲(>10min)
+                let states: [(String, Int)] = ActivityDetector.lastActivity(now: now).compactMap { name, date in
+                    guard let date else { return nil }   // 无日志 = 未安装，不展示
+                    let age = now.timeIntervalSince(date)
+                    let st = active.contains(name) ? 0 : (age < 600 ? 1 : 2)
+                    return (name, st)
+                }
+                let installedChanged = states.map { $0.0 } != self.sourceStates.map { $0.0 }
+                self.sourceStates = states
+                if installedChanged {
+                    self.dockController.apply(mode: self.sideDock, model: self, useSaved: true)
+                }
                 if let hot {
                     self.rateSamples.append((now, hot))
                     self.rateSamples.removeAll { now.timeIntervalSince($0.0) > 25 }

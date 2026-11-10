@@ -7,20 +7,24 @@ public enum ActivityDetector {
 
     public static func activeSources(now: Date = Date(), window: TimeInterval = defaultWindow) -> [String] {
         let cutoff = now.addingTimeInterval(-window)
-        var out: [String] = []
-
-        func hot(_ name: String, _ date: Date?) {
-            if let date, date >= cutoff { out.append(name) }
+        return lastActivity(now: now).compactMap { name, date in
+            if let date, date >= cutoff { return name }
+            return nil
         }
+    }
 
-        hot("Claude Code", latestMtime(under: "~/.claude/projects", suffixes: [".jsonl"]))
-        hot("Codex", latestCodexMtime(now: now, cutoff: cutoff))
-        hot("DSH", latestMtime(under: "~/.dsh/sessions", suffixes: [".zstd", ".jsonl"]))
-        hot("WorkBuddy", latestMtime(under: "~/.workbuddy/traces", suffixes: [".jsonl"]))
-        hot("OpenCode", fileMtime("~/.local/share/opencode/opencode.db"))
-        hot("Hermes", newer(fileMtime("~/.hermes/state.db"), latestMtime(under: "~/.hermes/profiles", suffixes: ["state.db"])))
-        hot("ZCode", fileMtime("~/.zcode/cli/db/db.sqlite"))
-        return out
+    /// 每个可识别 harness 的最后活动时间（nil = 本机无日志/未安装）；顺序即展示顺序
+    public static func lastActivity(now: Date = Date()) -> [(String, Date?)] {
+        let farPast = now.addingTimeInterval(-1e9)
+        return [
+            ("Claude Code", latestMtime(under: "~/.claude/projects", suffixes: [".jsonl"])),
+            ("Codex", latestCodexMtime(now: now, cutoff: farPast)),
+            ("DSH", latestMtime(under: "~/.dsh/sessions", suffixes: [".zstd", ".jsonl"])),
+            ("WorkBuddy", latestMtime(under: "~/.workbuddy/traces", suffixes: [".jsonl"])),
+            ("OpenCode", fileMtime("~/.local/share/opencode/opencode.db")),
+            ("Hermes", newer(fileMtime("~/.hermes/state.db"), latestMtime(under: "~/.hermes/profiles", suffixes: ["state.db"]))),
+            ("ZCode", fileMtime("~/.zcode/cli/db/db.sqlite")),
+        ]
     }
 
     /// Codex 只扫今天/昨天的日期目录，避免遍历全部 6000+ 文件

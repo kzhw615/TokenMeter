@@ -76,7 +76,10 @@ struct BarFlareShape: Shape {
 /// 位置/侧别记忆；双击回位；单击弹面板。四角完全透明（无投影 haze）
 @MainActor
 final class SideDockController: ObservableObject {
-    static let barSize = NSSize(width: 64, height: 168)   // 面板恒定；可见舱体由形状内缩参数控制
+    static let barWidth: CGFloat = 64
+    static let barBlockHeight: CGFloat = 168   // 舱体块恒定（已知安全组合）；可见舱体由形状内缩参数控制
+    var rowCount: Int = 0
+    var dockHeight: CGFloat { Self.barBlockHeight + (rowCount > 0 ? 10 + CGFloat(rowCount) * 15 : 0) }
 
     @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合
     @Published var side: String = "right"
@@ -96,10 +99,11 @@ final class SideDockController: ObservableObject {
         guard let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame
         side = useSaved ? (UserDefaults.standard.string(forKey: "dockSide") ?? mode) : mode
+        rowCount = model.visibleDockSources.count
         fuse = 1
 
         let panel = NSPanel(
-            contentRect: NSRect(origin: originFor(side: side, vf: vf, saved: useSaved), size: Self.barSize),
+            contentRect: NSRect(origin: originFor(side: side, vf: vf, saved: useSaved), size: NSSize(width: Self.barWidth, height: dockHeight)),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false)
         panel.isFloatingPanel = true
@@ -181,8 +185,8 @@ final class SideDockController: ObservableObject {
         snapping = true
         let vf = screen.visibleFrame
         let newSide = panel.frame.midX < vf.midX ? "left" : "right"
-        let targetX = newSide == "left" ? vf.minX : vf.maxX - Self.barSize.width
-        let targetY = min(max(panel.frame.origin.y, vf.minY), vf.maxY - Self.barSize.height)
+        let targetX = newSide == "left" ? vf.minX : vf.maxX - Self.barWidth
+        let targetY = min(max(panel.frame.origin.y, vf.minY), vf.maxY - dockHeight)
         let target = NSPoint(x: targetX, y: targetY)
         Self.slidePanel(panel, to: target, duration: 0.26) { [weak self] in
             Task { @MainActor [weak self] in
@@ -210,10 +214,10 @@ final class SideDockController: ObservableObject {
     }
 
     private func originFor(side: String, vf: NSRect, saved: Bool) -> NSPoint {
-        let x = side == "left" ? vf.minX : vf.maxX - Self.barSize.width
-        var y = vf.midY - Self.barSize.height / 2
+        let x = side == "left" ? vf.minX : vf.maxX - Self.barWidth
+        var y = vf.midY - dockHeight / 2
         if saved, let sy = UserDefaults.standard.object(forKey: "dockY") as? Double {
-            y = min(max(sy, vf.minY), vf.maxY - Self.barSize.height)
+            y = min(max(sy, vf.minY), vf.maxY - dockHeight)
         }
         return NSPoint(x: x, y: y)
     }
@@ -294,9 +298,33 @@ struct SideDockView: View {
         }
     }
 
+    /// 坞底 harness 三态行：橙脉冲=运行中 / 绿=待阅读 / 灰=空闲
+    private var harnessRows: some View {
+        VStack(spacing: 3) {
+            ForEach(model.visibleDockSources, id: \.0) { name, state in
+                HStack(spacing: 3) {
+                    if state == 0 {
+                        PulseDot()
+                    } else {
+                        Circle()
+                            .fill(state == 1 ? Color.green : Color.white.opacity(0.3))
+                            .frame(width: 5, height: 5)
+                    }
+                    Text(name)
+                        .font(.system(size: 6.5))
+                        .foregroundStyle(.white.opacity(state == 2 ? 0.4 : 0.75))
+                }
+                .frame(width: 56)
+            }
+        }
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+    }
+
     var body: some View {
         let ink = Color.black
-        return VStack(spacing: 3) {
+        return VStack(spacing: 0) {
+          VStack(spacing: 3) {
             iconView
             Text("今天").font(.system(size: 9)).foregroundStyle(.white.opacity(0.55))
             Text(tokensText)
@@ -313,15 +341,17 @@ struct SideDockView: View {
             HStack(spacing: 3) {
                 if bottomMode == 1 { PulseDot() }
                 Text(bottomText)
-                    .font(.system(size: bottomMode == 1 ? 7 : 7, weight: model.isBurning ? .semibold : .regular))
+                    .font(.system(size: 7, weight: model.isBurning ? .semibold : .regular))
                     .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
             }
+          }
+          .frame(width: 56, height: 112)
+          .frame(width: 64, height: 168)
+          .background(BarFlareShape(side: controller.side, fuse: controller.fuse).fill(ink))
+          .overlay(BarFlareShape(side: controller.side, fuse: controller.fuse).stroke(Color.white.opacity(0.06), lineWidth: 0.5))
+          harnessRows
         }
-        .frame(width: 56, height: 112)
-        .frame(width: 64, height: 168, alignment: controller.side == "right" ? .trailing : .leading)
-        .background(BarFlareShape(side: controller.side, fuse: controller.fuse).fill(ink))
-        .overlay(BarFlareShape(side: controller.side, fuse: controller.fuse).stroke(Color.white.opacity(0.06), lineWidth: 0.5))
-        .frame(width: 64, height: 168)
+        .frame(width: 64, height: controller.dockHeight, alignment: controller.side == "right" ? .topTrailing : .topLeading)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { controller.resetPosition(mode: model.sideDock == "left" ? "left" : "right") }
         .onTapGesture { controller.showDetail(model: model) }
