@@ -81,7 +81,7 @@ final class SideDockController: ObservableObject {
     static let barBlockHeight: CGFloat = 168   // 舱体块恒定（已知安全组合）；可见舱体由形状内缩参数控制
     var rowCount: Int = 0
     var bottomInset: CGFloat { rowCount > 0 ? 10 : 28 }
-    var dockHeight: CGFloat { max(Self.barBlockHeight, 28 + 112 + (rowCount > 0 ? 8 + CGFloat(rowCount) * 19 : 0) + bottomInset) }
+    var dockHeight: CGFloat { max(Self.barBlockHeight, 28 + 112 + (rowCount > 0 ? 10 + CGFloat(rowCount) * 40 : 0) + bottomInset) }
 
     @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合
     @Published var side: String = "right"
@@ -252,7 +252,7 @@ struct PulseDot: View {
     var body: some View {
         Circle()
             .fill(Color.orange)
-            .frame(width: 6, height: 6)
+            .frame(width: 8, height: 8)
             .opacity(on ? 0.3 : 1)
             .onAppear {
                 withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
@@ -320,7 +320,7 @@ struct SideDockView: View {
 
     /// 坞底 harness 三态行：橙脉冲=运行中 / 绿=待阅读 / 灰=空闲；居左 + 图标
     private var harnessRows: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 6) {
             ForEach(model.visibleDockSources, id: \.0) { name, state in
                 HStack(spacing: 6) {
                     if state == 0 {
@@ -328,25 +328,25 @@ struct SideDockView: View {
                     } else {
                         Circle()
                             .fill(state == 1 ? Color.green : Color.white.opacity(0.3))
-                            .frame(width: 6, height: 6)
+                            .frame(width: 8, height: 8)
                             .padding(.leading, 2)
                     }
                     if let img = model.harnessIcons[name] {
                         Image(nsImage: img)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 16, height: 16)
+                            .frame(width: 32, height: 32)
                     } else {
                         Text(monogram(name))
-                            .font(.system(size: 9, weight: .heavy))
+                            .font(.system(size: 16, weight: .heavy))
                             .foregroundStyle(.white)
-                            .frame(width: 16, height: 16)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(badgeColor(name)))
+                            .frame(width: 32, height: 32)
+                            .background(RoundedRectangle(cornerRadius: 7).fill(badgeColor(name)))
                     }
                 }
                 .opacity(state == 2 ? 0.45 : 1)
                 .frame(width: 56, alignment: .leading)
-                .padding(.leading, 12)
+                .padding(.leading, 10)
             }
         }
         .padding(.top, 8)
