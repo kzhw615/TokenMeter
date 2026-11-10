@@ -3,39 +3,58 @@ import SwiftUI
 import AppKit
 import TokenMeterCore
 
-/// CodeBurn 式贴边融合形状：沿屏边一条全高窄条 + 主体圆角条 + 凹圆角过渡（融化进墙里）
-struct DockShape: Shape {
-    let mode: String          // "left" / "right"：窄条靠哪边
-    var strip: CGFloat = 9    // 贴边窄条宽度
-    var wing: CGFloat = 20    // 凹过渡圆角半径
-    var radius: CGFloat = 16  // 主体内侧圆角
+/// 导轨+舱体融合形状：沿屏边全高窄导轨；舱体停在 barY 处，交界处凹弧随 fuse(0...1) 生长/收回
+struct RailShape: Shape {
+    let mode: String        // "left" / "right"
+    var barY: CGFloat       // 舱体中心 y（view 坐标）
+    var barH: CGFloat = 176
+    var fuse: CGFloat = 1   // 0 = 直角交界（分离感），1 = 完全融合凹弧
+    var showBar: Bool = true
+    var strip: CGFloat = 9
+    var wing: CGFloat = 20
+    var radius: CGFloat = 16
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(fuse, barY) }
+        set { fuse = newValue.first; barY = newValue.second }
+    }
 
     func path(in rect: CGRect) -> Path {
         var p = Path()
         let w = rect.width, h = rect.height
-        let s = strip, f = wing, r = radius
+        let s = strip, f = wing * fuse, r = radius
+        let oy = barY - barH / 2
+        let ob = barY + barH / 2
         if mode == "right" {
             p.move(to: CGPoint(x: w, y: 0))
             p.addLine(to: CGPoint(x: w - s, y: 0))
-            p.addQuadCurve(to: CGPoint(x: w - s - f, y: f), control: CGPoint(x: w - s, y: f))
-            p.addLine(to: CGPoint(x: r, y: f))
-            p.addQuadCurve(to: CGPoint(x: 0, y: f + r), control: CGPoint(x: 0, y: f))
-            p.addLine(to: CGPoint(x: 0, y: h - f - r))
-            p.addQuadCurve(to: CGPoint(x: r, y: h - f), control: CGPoint(x: 0, y: h - f))
-            p.addLine(to: CGPoint(x: w - s - f, y: h - f))
-            p.addQuadCurve(to: CGPoint(x: w - s, y: h), control: CGPoint(x: w - s, y: h - f))
+            if showBar {
+                p.addLine(to: CGPoint(x: w - s, y: oy - f))
+                p.addQuadCurve(to: CGPoint(x: w - s - f, y: oy), control: CGPoint(x: w - s, y: oy))
+                p.addLine(to: CGPoint(x: r, y: oy))
+                p.addQuadCurve(to: CGPoint(x: 0, y: oy + r), control: CGPoint(x: 0, y: oy))
+                p.addLine(to: CGPoint(x: 0, y: ob - r))
+                p.addQuadCurve(to: CGPoint(x: r, y: ob), control: CGPoint(x: 0, y: ob))
+                p.addLine(to: CGPoint(x: w - s - f, y: ob))
+                p.addQuadCurve(to: CGPoint(x: w - s, y: ob + f), control: CGPoint(x: w - s, y: ob))
+            }
+            p.addLine(to: CGPoint(x: w - s, y: h))
             p.addLine(to: CGPoint(x: w, y: h))
             p.closeSubpath()
         } else {
             p.move(to: CGPoint(x: 0, y: 0))
             p.addLine(to: CGPoint(x: s, y: 0))
-            p.addQuadCurve(to: CGPoint(x: s + f, y: f), control: CGPoint(x: s, y: f))
-            p.addLine(to: CGPoint(x: w - r, y: f))
-            p.addQuadCurve(to: CGPoint(x: w, y: f + r), control: CGPoint(x: w, y: f))
-            p.addLine(to: CGPoint(x: w, y: h - f - r))
-            p.addQuadCurve(to: CGPoint(x: w - r, y: h - f), control: CGPoint(x: w, y: h - f))
-            p.addLine(to: CGPoint(x: s + f, y: h - f))
-            p.addQuadCurve(to: CGPoint(x: s, y: h), control: CGPoint(x: s, y: h - f))
+            if showBar {
+                p.addLine(to: CGPoint(x: s, y: oy - f))
+                p.addQuadCurve(to: CGPoint(x: s + f, y: oy), control: CGPoint(x: s, y: oy))
+                p.addLine(to: CGPoint(x: w - r, y: oy))
+                p.addQuadCurve(to: CGPoint(x: w, y: oy + r), control: CGPoint(x: w, y: oy))
+                p.addLine(to: CGPoint(x: w, y: ob - r))
+                p.addQuadCurve(to: CGPoint(x: w - r, y: ob), control: CGPoint(x: w, y: ob))
+                p.addLine(to: CGPoint(x: s + f, y: ob))
+                p.addQuadCurve(to: CGPoint(x: s, y: ob + f), control: CGPoint(x: s, y: ob))
+            }
+            p.addLine(to: CGPoint(x: s, y: h))
             p.addLine(to: CGPoint(x: 0, y: h))
             p.closeSubpath()
         }
@@ -43,154 +62,196 @@ struct DockShape: Shape {
     }
 }
 
-/// 侧边悬浮坞：贴边融合黑坞；可拖动，松手按距离自动吸附左/右边；位置记忆；双击回位；点击弹面板
+/// 侧边悬浮坞：全高导轨 + 可拖拽舱体；拖拽中舱体脱离导轨成为独立圆角浮块，
+/// 松手后滑回较近一侧并沿导轨融合（凹弧 fuse 0→1 形变动画）
 @MainActor
 final class SideDockController: ObservableObject {
-    static let size = NSSize(width: 64, height: 176)
+    static let barSize = NSSize(width: 64, height: 176)
 
     @Published var currentMode: String = "right"
-    /// true = 贴边静止（融合形态：凹弧过渡）；false = 拖拽中（独立圆角矩形浮块）
-    @Published var attached: Bool = true
+    @Published var fuse: CGFloat = 1
+    @Published var showBar: Bool = true
+    @Published var barY: CGFloat = 0      // view 坐标（导轨面板内）
+    @Published var floating: Bool = false
 
-    private var dock: NSPanel?
+    private var railPanel: NSPanel?
+    private var floatPanel: NSPanel?
     private var detail: NSWindow?
     private var screenObserver: NSObjectProtocol?
-    private var moveObserver: NSObjectProtocol?
-    private var snapWork: DispatchWorkItem?
-    private var clamping = false
-    private var snapping = false
+    private var mouseUpObserver: Any?
+    private var floatStartOrigin: NSPoint = .zero
+    private var dragStartCenter: CGFloat = 0
 
     func apply(mode: String, model: AppModel) {
-        dock?.orderOut(nil)
-        dock = nil
-        snapWork?.cancel()
-        for obs in [screenObserver, moveObserver].compactMap({ $0 }) {
-            NotificationCenter.default.removeObserver(obs)
-        }
-        screenObserver = nil
-        moveObserver = nil
+        teardown()
         guard mode == "left" || mode == "right" else { return }
-        currentMode = mode
+        guard let screen = NSScreen.main else { return }
+        let vf = screen.visibleFrame
+        let side = savedSide() ?? mode
+        currentMode = side
 
-        let panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: Self.size),
+        // 导轨面板：全高贴边
+        let rail = NSPanel(
+            contentRect: NSRect(x: side == "left" ? vf.minX : vf.maxX - 64, y: vf.minY, width: 64, height: vf.height),
             styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false)
-        panel.isFloatingPanel = true
-        panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary]
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.hidesOnDeactivate = false
-        panel.isMovableByWindowBackground = true
-        panel.contentView = NSHostingView(rootView:
-            SideDockView(controller: self)
-                .environmentObject(model))
-        let start = initialOrigin(mode: mode)
-        currentMode = start.mode
-        panel.setFrameOrigin(start.origin)
-        panel.orderFrontRegardless()
-        dock = panel
+            backing: .buffered, defer: false)
+        configureFloatingPanel(rail)
+        rail.contentView = NSHostingView(rootView: RailView(controller: self).environmentObject(model))
+        rail.orderFrontRegardless()
+        railPanel = rail
 
-        // 拖动中持续记忆；停止 0.3s 后自动吸附到较近的一边
-        moveObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didMoveNotification, object: panel, queue: .main) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    guard let self, let panel = self.dock, !self.clamping, !self.snapping else { return }
-                    let o = panel.frame.origin
-                    UserDefaults.standard.set(Double(o.x), forKey: "dockX")
-                    UserDefaults.standard.set(Double(o.y), forKey: "dockY")
-                    if self.attached { self.attached = false }   // 拖拽开始：切独立浮块形态
-                    self.snapWork?.cancel()
-                    let work = DispatchWorkItem { [weak self] in
-                        Task { @MainActor [weak self] in self?.snapToNearestEdge() }
-                    }
-                    self.snapWork = work
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
-                }
+        // 浮块面板：拖拽时的独立圆角矩形
+        let float = NSPanel(
+            contentRect: NSRect(origin: .zero, size: Self.barSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered, defer: false)
+        configureFloatingPanel(float)
+        float.isMovableByWindowBackground = true
+        float.contentView = NSHostingView(rootView: FloatView(controller: self).environmentObject(model))
+        floatPanel = float
+
+        barY = initialBarY(vf: vf)
+        fuse = 1
+        showBar = true
+        floating = false
+
+        // 全局 mouseUp：浮块态松手即吸附（不再用定时器，按住多久都不会误触）
+        mouseUpObserver = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp, .rightMouseUp]) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.floating else { return }
+                self.snapFloat()
             }
-
+        } as Any?
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
-            object: nil, queue: .main) { [weak self] _ in
+            object: nil, queue: .main) { [weak self, weak model] _ in
                 Task { @MainActor [weak self] in
-                    guard let self, let panel = self.dock else { return }
-                    panel.setFrameOrigin(self.clamped(panel.frame.origin))
+                    guard let self, let model else { return }
+                    self.apply(mode: model.sideDock, model: model)
                 }
             }
     }
 
-    /// 松手后：按坞中心与屏幕中线距离吸附到左/右边缘（x 贴边，y 保持），形状朝向随之翻转
-    func snapToNearestEdge() {
-        guard let panel = dock, let screen = NSScreen.main else { return }
-        snapping = true
-        attached = true   // 滑向边缘的同时衍射融合：凹弧过渡出现
+    private func configureFloatingPanel(_ p: NSPanel) {
+        p.isFloatingPanel = true
+        p.level = .floating
+        p.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = false
+        p.hidesOnDeactivate = false
+    }
+
+    func teardown() {
+        if let obs = mouseUpObserver { NSEvent.removeMonitor(obs); mouseUpObserver = nil }
+        if let obs = screenObserver { NotificationCenter.default.removeObserver(obs); screenObserver = nil }
+        railPanel?.orderOut(nil); railPanel = nil
+        floatPanel?.orderOut(nil); floatPanel = nil
+    }
+
+    // MARK: - 拖拽：导轨舱体 → 浮块
+
+    func beginFloat() {
+        guard !floating, let rail = railPanel, let float = floatPanel else { return }
+        let barScreen = barScreenOrigin()
+        _ = rail
+        floatStartOrigin = barScreen
+        dragStartCenter = barScreen.x + Self.barSize.width / 2
+        floating = true
+        showBar = false
+        fuse = 0
+        float.setFrameOrigin(barScreen)
+        float.orderFrontRegardless()
+    }
+
+    func moveFloat(translation: CGSize) {
+        guard floating, let float = floatPanel else { return }
+        let o = NSPoint(x: floatStartOrigin.x + translation.width,
+                        y: floatStartOrigin.y - translation.height)
+        float.setFrameOrigin(o)
+    }
+
+    /// 松手：滑向较近一侧导轨并融合
+    func snapFloat() {
+        guard floating, let float = floatPanel, let rail = railPanel, let screen = NSScreen.main else { return }
+        floating = false
         let vf = screen.visibleFrame
-        let center = panel.frame.midX
-        let mode = center < vf.midX ? "left" : "right"
-        let targetX = mode == "left" ? vf.minX : vf.maxX - Self.size.width
-        var target = panel.frame.origin
-        target.x = targetX
-        target.y = min(max(target.y, vf.minY), vf.maxY - Self.size.height)
+        let center = float.frame.midX
+        let side = center < vf.midX ? "left" : "right"
+        let targetX = side == "left" ? vf.minX : vf.maxX - Self.barSize.width
+        var targetY = float.frame.origin.y
+        targetY = min(max(targetY, vf.minY), vf.maxY - Self.barSize.height)
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.22
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel.animator().setFrameOrigin(target)
+            float.animator().setFrameOrigin(NSPoint(x: targetX, y: targetY))
         }, completionHandler: { [weak self] in
             Task { @MainActor [weak self] in
-                guard let self, let panel = self.dock else { return }
-                panel.setFrameOrigin(target)   // 兜底：动画失效也保证到位
-                self.snapping = false
-                self.currentMode = mode
-                UserDefaults.standard.set(Double(target.x), forKey: "dockX")
-                UserDefaults.standard.set(Double(target.y), forKey: "dockY")
+                guard let self else { return }
+                float.setFrameOrigin(NSPoint(x: targetX, y: targetY))
+                self.currentMode = side
+                if side != self.railSide() { self.repositionRail(side: side, vf: vf) }
+                // 舱体归位导轨：view 坐标 y = 屏幕顶 - 屏幕y
+                let newBarY = (vf.maxY - targetY) - Self.barSize.height / 2
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                    self.barY = newBarY
+                    self.showBar = true
+                    self.fuse = 1      // 凹弧生长 = 衍射融合
+                }
+                float.orderOut(nil)
+                self.save(side: side, barScreenY: targetY + Self.barSize.height / 2)
+                _ = rail
             }
         })
-        currentMode = mode
     }
 
-    private func initialOrigin(mode: String) -> (origin: NSPoint, mode: String) {
-        guard let screen = NSScreen.main else { return (.zero, mode) }
+    private func railSide() -> String { currentMode }
+
+    private func repositionRail(side: String, vf: NSRect) {
+        guard let rail = railPanel else { return }
+        rail.setFrameOrigin(NSPoint(x: side == "left" ? vf.minX : vf.maxX - 64, y: vf.minY))
+    }
+
+    /// 舱体当前屏幕原点（用于浮块接管位置）
+    func barScreenOrigin() -> NSPoint {
+        guard let rail = railPanel else { return .zero }
+        let rf = rail.frame
+        // view y（顶向下）→ 屏幕 y（底向上）：barTopScreen = rf.maxY - barYView + barH/2 ... 计算原点(左下)
+        let barTopScreen = rf.maxY - (barY - Self.barSize.height / 2)
+        let x = currentMode == "left" ? rf.minX : rf.minX   // 导轨面板宽=舱宽，x 相同
+        return NSPoint(x: x, y: barTopScreen - Self.barSize.height)
+    }
+
+    // MARK: - 持久化
+
+    private func savedSide() -> String? { UserDefaults.standard.string(forKey: "dockSide") }
+    private func save(side: String, barScreenY: Double) {
+        guard let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame
-        let savedX = UserDefaults.standard.double(forKey: "dockX")
-        let savedY = UserDefaults.standard.double(forKey: "dockY")
-        var side = mode
-        var y = vf.midY - Self.size.height / 2
-        if UserDefaults.standard.object(forKey: "dockX") != nil {
-            let savedCenter = savedX + Self.size.width / 2
-            side = savedCenter < vf.midX ? "left" : "right"
-            y = min(max(savedY, vf.minY), vf.maxY - Self.size.height)
-        }
-        let x = side == "left" ? vf.minX : vf.maxX - Self.size.width
-        return (NSPoint(x: x, y: y), side)
+        UserDefaults.standard.set(side, forKey: "dockSide")
+        UserDefaults.standard.set((barScreenY - vf.minY) / max(1, vf.height), forKey: "dockYFrac")
+    }
+    private func initialBarY(vf: NSRect) -> CGFloat {
+        let frac = UserDefaults.standard.object(forKey: "dockYFrac") == nil
+            ? 0.5
+            : UserDefaults.standard.double(forKey: "dockYFrac")
+        let centerScreen = vf.minY + CGFloat(frac) * vf.height
+        let viewY = (vf.maxY - centerScreen)
+        return min(max(viewY, Self.barSize.height / 2 + 30), vf.height - Self.barSize.height / 2 - 30)
     }
 
-    private func defaultOrigin(mode: String) -> NSPoint {
-        guard let screen = NSScreen.main else { return .zero }
-        let vf = screen.visibleFrame
-        let x = mode == "left" ? vf.minX : vf.maxX - Self.size.width
-        return NSPoint(x: x, y: vf.midY - Self.size.height / 2)
-    }
-
-    private func clamped(_ origin: NSPoint) -> NSPoint {
-        guard let screen = NSScreen.main else { return origin }
-        let vf = screen.visibleFrame.insetBy(dx: -20, dy: 0)
-        var o = origin
-        o.x = min(max(o.x, vf.minX - 30), vf.maxX - Self.size.width + 30)
-        o.y = min(max(o.y, vf.minY), vf.maxY - Self.size.height)
-        return o
-    }
-
-    /// 双击回位：设置侧贴边垂直居中
     func resetPosition(mode: String) {
-        guard let panel = dock else { return }
-        panel.setFrameOrigin(defaultOrigin(mode: mode))
+        guard let screen = NSScreen.main, let rail = railPanel else { return }
+        let vf = screen.visibleFrame
         currentMode = mode
-        attached = true
-        UserDefaults.standard.removeObject(forKey: "dockX")
-        UserDefaults.standard.removeObject(forKey: "dockY")
+        repositionRail(side: mode, vf: vf)
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+            barY = rail.frame.height / 2
+            fuse = 1
+            showBar = true
+        }
+        UserDefaults.standard.removeObject(forKey: "dockSide")
+        UserDefaults.standard.removeObject(forKey: "dockYFrac")
     }
 
     func showDetail(model: AppModel) {
@@ -198,8 +259,7 @@ final class SideDockController: ObservableObject {
             let win = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 430, height: 560),
                 styleMask: [.titled, .closable, .miniaturizable],
-                backing: .buffered,
-                defer: false)
+                backing: .buffered, defer: false)
             win.title = "TokenMeter"
             win.contentView = NSHostingView(rootView: PanelView().environmentObject(model))
             win.isReleasedWhenClosed = false
@@ -211,8 +271,8 @@ final class SideDockController: ObservableObject {
     }
 }
 
-struct SideDockView: View {
-    @ObservedObject var controller: SideDockController
+/// 舱体内容（导轨态与浮块态共用）
+struct DockContentView: View {
     @EnvironmentObject var model: AppModel
 
     private var todaySummary: Summary? { model.summariesByRange[.today] }
@@ -241,7 +301,7 @@ struct SideDockView: View {
         }
     }
 
-    private var content: some View {
+    var body: some View {
         VStack(spacing: 5) {
             iconView
             Text("今天").font(.system(size: 8)).foregroundStyle(.white.opacity(0.55))
@@ -260,28 +320,54 @@ struct SideDockView: View {
                 .font(.system(size: 8, weight: model.isBurning ? .semibold : .regular))
                 .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
         }
-        .padding(.vertical, 26)
-        .padding(.horizontal, 4)
+        .frame(width: 64, height: 176)
     }
+}
 
-    private var bgShape: AnyShape {
-        controller.attached
-            ? AnyShape(DockShape(mode: controller.currentMode))
-            : AnyShape(RoundedRectangle(cornerRadius: 16))
-    }
-
-    private var shaped: some View {
-        content
-            .frame(width: 64, height: 176)
-            .background(bgShape.fill(Color(white: 0.08).opacity(0.94)))
-            .overlay(bgShape.stroke(Color.white.opacity(0.08), lineWidth: 0.5))
-            .shadow(color: .black.opacity(controller.attached ? 0 : 0.35), radius: 12, x: 0, y: 6)
-    }
+/// 导轨面板内容：全高融合形状 + 舱体内容（带拖拽/点击手势）
+struct RailView: View {
+    @ObservedObject var controller: SideDockController
+    @EnvironmentObject var model: AppModel
 
     var body: some View {
-        shaped
+        GeometryReader { geo in
+            ZStack {
+                RailShape(mode: controller.currentMode,
+                          barY: controller.barY,
+                          fuse: controller.fuse,
+                          showBar: controller.showBar)
+                    .fill(Color(white: 0.08).opacity(0.94))
+                if controller.showBar {
+                    DockContentView()
+                        .position(x: geo.size.width / 2, y: controller.barY)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 3)
+                                .onChanged { v in
+                                    if !controller.floating { controller.beginFloat() }
+                                    controller.moveFloat(translation: v.translation)
+                                }
+                        )
+                        .onTapGesture(count: 2) { controller.resetPosition(mode: model.sideDock == "left" ? "left" : "right") }
+                        .onTapGesture { controller.showDetail(model: model) }
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+    }
+}
+
+/// 浮块面板内容：独立圆角矩形 + 投影
+struct FloatView: View {
+    @ObservedObject var controller: SideDockController
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        DockContentView()
+            .background(RoundedRectangle(cornerRadius: 16).fill(Color(white: 0.08).opacity(0.96)))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.4), radius: 14, x: 0, y: 8)
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) { controller.resetPosition(mode: model.sideDock == "left" ? "left" : "right") }
             .onTapGesture { controller.showDetail(model: model) }
     }
 }
