@@ -3,45 +3,64 @@ import SwiftUI
 import AppKit
 import TokenMeterCore
 
-/// 贴边融合形态：舱体上下沿以凹曲线向屏边渐隐收尖（CodeBurn 式融合，无导轨、无直角切口）
-struct FlareShape: Shape {
-    let side: String       // "left" / "right"
-    var wing: CGFloat = 18 // 喇叭口高度
+/// 舱体形状：fuse 0→1 单路径参数化形变——
+/// 0 = 完整圆角矩形浮块（上下留 wing 空间）；1 = 贴边喇叭口融合（凹曲线收尖于屏边）
+/// 外侧角弧与喇叭口凹弧共用一组三次贝塞尔控制点插值，全程连续无叠影
+struct BarFlareShape: Shape {
+    let side: String
+    var fuse: CGFloat
+    var wing: CGFloat = 18
+    var radius: CGFloat = 16
+
+    var animatableData: CGFloat {
+        get { fuse }
+        set { fuse = newValue }
+    }
 
     func path(in rect: CGRect) -> Path {
-        var p = Path()
         let w = rect.width, h = rect.height
-        let f = wing
-        let r: CGFloat = 16
-        let oy = f            // 舱体顶
-        let ob = h - f        // 舱体底
+        let r = radius
+        let f = wing * fuse          // 喇叭口外扩量
+        let oR = radius * (1 - fuse) // 外侧圆角半径
+        let oy = wing                // 舱体顶
+        let ob = h - wing            // 舱体底
+        // 外侧上角：浮块角弧端点 (w, oy+oR) ↔ 融合收尖端 (w, 0)
+        let topEndY = oy + oR - wing * fuse
+        let botEndY = ob - oR + wing * fuse
+        // 控制点插值：浮块圆弧近似 (0.55r) ↔ 融合凹弧 (0.75f / 0.45wing)
+        let c1x = w - (r - 0.55 * r) * (1 - fuse) - (wing * 0.75) * fuse
+        let c2yTop = (oy + 0.45 * r) * (1 - fuse) + (wing * 0.45) * fuse
+        let c2yBot = (ob - 0.45 * r) * (1 - fuse) + (h - wing * 0.45) * fuse
+        var p = Path()
         if side == "right" {
-            p.move(to: CGPoint(x: w, y: 0))
-            p.addCurve(to: CGPoint(x: w - f, y: oy),
-                       control1: CGPoint(x: w, y: oy * 0.45),
-                       control2: CGPoint(x: w - f * 0.75, y: oy))
-            p.addLine(to: CGPoint(x: r, y: oy))
-            p.addQuadCurve(to: CGPoint(x: 0, y: oy + r), control: CGPoint(x: 0, y: oy))
-            p.addLine(to: CGPoint(x: 0, y: ob - r))
-            p.addQuadCurve(to: CGPoint(x: r, y: ob), control: CGPoint(x: 0, y: ob))
-            p.addLine(to: CGPoint(x: w - f, y: ob))
-            p.addCurve(to: CGPoint(x: w, y: h),
-                       control1: CGPoint(x: w - f * 0.75, y: ob),
-                       control2: CGPoint(x: w, y: ob + (h - ob) * 0.55))
+            p.move(to: CGPoint(x: r, y: oy))
+            p.addLine(to: CGPoint(x: w - f - oR, y: oy))
+            p.addCurve(to: CGPoint(x: w, y: topEndY),
+                       control1: CGPoint(x: c1x, y: oy),
+                       control2: CGPoint(x: w, y: c2yTop))
+            p.addLine(to: CGPoint(x: w, y: botEndY))
+            p.addCurve(to: CGPoint(x: w - f - oR, y: ob),
+                       control1: CGPoint(x: w, y: c2yBot),
+                       control2: CGPoint(x: c1x, y: ob))
+            p.addLine(to: CGPoint(x: r, y: ob))
+            p.addQuadCurve(to: CGPoint(x: 0, y: ob - r), control: CGPoint(x: 0, y: ob))
+            p.addLine(to: CGPoint(x: 0, y: oy + r))
+            p.addQuadCurve(to: CGPoint(x: r, y: oy), control: CGPoint(x: 0, y: oy))
             p.closeSubpath()
         } else {
-            p.move(to: CGPoint(x: 0, y: 0))
-            p.addCurve(to: CGPoint(x: f, y: oy),
-                       control1: CGPoint(x: 0, y: oy * 0.45),
-                       control2: CGPoint(x: f * 0.75, y: oy))
-            p.addLine(to: CGPoint(x: w - r, y: oy))
-            p.addQuadCurve(to: CGPoint(x: w, y: oy + r), control: CGPoint(x: w, y: oy))
-            p.addLine(to: CGPoint(x: w, y: ob - r))
-            p.addQuadCurve(to: CGPoint(x: w - r, y: ob), control: CGPoint(x: w, y: ob))
-            p.addLine(to: CGPoint(x: f, y: ob))
-            p.addCurve(to: CGPoint(x: 0, y: h),
-                       control1: CGPoint(x: f * 0.75, y: ob),
-                       control2: CGPoint(x: 0, y: ob + (h - ob) * 0.55))
+            p.move(to: CGPoint(x: w - r, y: oy))
+            p.addLine(to: CGPoint(x: f + oR, y: oy))
+            p.addCurve(to: CGPoint(x: 0, y: topEndY),
+                       control1: CGPoint(x: w - c1x, y: oy),
+                       control2: CGPoint(x: 0, y: c2yTop))
+            p.addLine(to: CGPoint(x: 0, y: botEndY))
+            p.addCurve(to: CGPoint(x: f + oR, y: ob),
+                       control1: CGPoint(x: 0, y: c2yBot),
+                       control2: CGPoint(x: w - c1x, y: ob))
+            p.addLine(to: CGPoint(x: w - r, y: ob))
+            p.addQuadCurve(to: CGPoint(x: w, y: ob - r), control: CGPoint(x: w, y: ob))
+            p.addLine(to: CGPoint(x: w, y: oy + r))
+            p.addQuadCurve(to: CGPoint(x: w - r, y: oy), control: CGPoint(x: w, y: oy))
             p.closeSubpath()
         }
         return p
@@ -236,36 +255,28 @@ struct SideDockView: View {
 
     var body: some View {
         let ink = Color(white: 0.08).opacity(0.94)
-        return ZStack {
-            // 浮块态：完整圆角矩形（上下留 wing 空间，与融合态同框）
-            RoundedRectangle(cornerRadius: 16)
-                .fill(ink)
-                .padding(.vertical, 18)
-                .opacity(Double(1 - controller.fuse))
-            // 贴边态：喇叭口融合形态
-            FlareShape(side: controller.side)
-                .fill(ink)
-                .opacity(Double(controller.fuse))
-            VStack(spacing: 4) {
-                iconView
-                Text("今天").font(.system(size: 8)).foregroundStyle(.white.opacity(0.55))
-                Text(tokensText)
-                    .font(.system(size: 13, weight: .bold))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                Text(costText)
-                    .font(.system(size: 9))
-                    .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.7))
-                Rectangle().fill(.white.opacity(0.15)).frame(width: 24, height: 1)
-                Text(bottomText)
-                    .font(.system(size: 8, weight: model.isBurning ? .semibold : .regular))
-                    .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
-            }
-            .frame(width: 64, height: 132)
+        return VStack(spacing: 4) {
+            iconView
+            Text("今天").font(.system(size: 8)).foregroundStyle(.white.opacity(0.55))
+            Text(tokensText)
+                .font(.system(size: 13, weight: .bold))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(costText)
+                .font(.system(size: 9))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.7))
+            Rectangle().fill(.white.opacity(0.15)).frame(width: 24, height: 1)
+            Text(bottomText)
+                .font(.system(size: 8, weight: model.isBurning ? .semibold : .regular))
+                .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
         }
+        .frame(width: 64, height: 132)
+        .frame(width: 64, height: 168)
+        .background(BarFlareShape(side: controller.side, fuse: controller.fuse).fill(ink))
+        .overlay(BarFlareShape(side: controller.side, fuse: controller.fuse).stroke(Color.white.opacity(0.06), lineWidth: 0.5))
         .frame(width: 64, height: 168)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { controller.resetPosition(mode: model.sideDock == "left" ? "left" : "right") }
