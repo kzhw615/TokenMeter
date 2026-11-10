@@ -7,7 +7,7 @@ import TokenMeterCore
 struct RailShape: Shape {
     let mode: String        // "left" / "right"
     var barY: CGFloat       // 舱体中心 y（view 坐标）
-    var barH: CGFloat = 176
+    var barH: CGFloat = 132
     var fuse: CGFloat = 1   // 0 = 直角交界（分离感），1 = 完全融合凹弧
     var showBar: Bool = true
     var strip: CGFloat = 9
@@ -66,7 +66,7 @@ struct RailShape: Shape {
 /// 松手后滑回较近一侧并沿导轨融合（凹弧 fuse 0→1 形变动画）
 @MainActor
 final class SideDockController: ObservableObject {
-    static let barSize = NSSize(width: 64, height: 176)
+    static let barSize = NSSize(width: 64, height: 132)
 
     @Published var currentMode: String = "right"
     @Published var fuse: CGFloat = 1
@@ -302,7 +302,7 @@ struct DockContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 4) {
             iconView
             Text("今天").font(.system(size: 8)).foregroundStyle(.white.opacity(0.55))
             Text(tokensText)
@@ -315,12 +315,12 @@ struct DockContentView: View {
                 .font(.system(size: 9))
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.7))
-            Rectangle().fill(.white.opacity(0.15)).frame(width: 26, height: 1)
+            Rectangle().fill(.white.opacity(0.15)).frame(width: 24, height: 1)
             Text(bottomText)
                 .font(.system(size: 8, weight: model.isBurning ? .semibold : .regular))
                 .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
         }
-        .frame(width: 64, height: 176)
+        .frame(width: 64, height: 132)
     }
 }
 
@@ -335,10 +335,10 @@ struct RailView: View {
                 RailShape(mode: controller.currentMode,
                           barY: controller.barY,
                           fuse: controller.fuse,
-                          showBar: controller.showBar)
+                          showBar: !controller.floating)
                     .fill(Color(white: 0.08).opacity(0.94))
-                if controller.showBar {
-                    DockContentView()
+                DockContentView()
+                        .opacity(controller.floating ? 0 : 1)
                         .position(x: geo.size.width / 2, y: controller.barY)
                         .contentShape(Rectangle())
                         .gesture(
@@ -350,7 +350,6 @@ struct RailView: View {
                         )
                         .onTapGesture(count: 2) { controller.resetPosition(mode: model.sideDock == "left" ? "left" : "right") }
                         .onTapGesture { controller.showDetail(model: model) }
-                }
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
