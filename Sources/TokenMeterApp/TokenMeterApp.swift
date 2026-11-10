@@ -39,6 +39,7 @@ final class AppModel: ObservableObject {
     @Published var range: RangeKind = .today
     @Published var lastScan: Date?
     @Published var scanning = false
+    @Published var scanStartedAt: Date?
     /// 统计口径：true = 含缓存（input+output+cacheRead+cacheWrite），false = 不含缓存（input+output）
     @Published var includeCache: Bool = UserDefaults.standard.object(forKey: "includeCache") as? Bool ?? true {
         didSet { UserDefaults.standard.set(includeCache, forKey: "includeCache") }
@@ -242,6 +243,7 @@ final class AppModel: ObservableObject {
     func refresh() {
         guard !scanning else { return }
         scanning = true
+        scanStartedAt = Date()
         Task.detached(priority: .utility) {
             let pricing = PricingTable.load()
             var cache = CacheStore.lock.withLock { CacheStore.cache } ?? ScanCache.load()
@@ -262,6 +264,7 @@ final class AppModel: ObservableObject {
                 self.summariesByRange = all
                 self.lastScan = Date()
                 self.scanning = false
+                self.scanStartedAt = nil
                 self.evaluateBudget()
             }
         }

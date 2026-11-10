@@ -7,6 +7,14 @@ public struct ScanCache: Codable {
         public var size: Int64
         public var mtime: Double
         public var buckets: [UsageBucket]
+        /// 已解析到的字节偏移（append-only 日志增量解析用）
+        public var offset: Int64
+        public init(size: Int64, mtime: Double, buckets: [UsageBucket], offset: Int64 = 0) {
+            self.size = size
+            self.mtime = mtime
+            self.buckets = buckets
+            self.offset = offset
+        }
     }
     public var version: Int = 3
     public var entries: [String: Entry] = [:]
@@ -55,8 +63,16 @@ public struct ScanCache: Codable {
     }
 
     public mutating func store(path: String, buckets: [UsageBucket]) {
+        store(path: path, buckets: buckets, offset: Self.fingerprint(path: path)?.size ?? 0)
+    }
+
+    public mutating func store(path: String, buckets: [UsageBucket], offset: Int64) {
         guard let fp = Self.fingerprint(path: path) else { return }
-        entries[path] = Entry(size: fp.size, mtime: fp.mtime, buckets: buckets)
+        entries[path] = Entry(size: fp.size, mtime: fp.mtime, buckets: buckets, offset: offset)
         dirty = true
+    }
+
+    public func cachedEntry(path: String) -> Entry? {
+        entries[path]
     }
 }

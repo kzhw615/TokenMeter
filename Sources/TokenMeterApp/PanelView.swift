@@ -105,7 +105,17 @@ struct PanelView: View {
                     footnotes(s)
                     if showSettings { settingsSection }
                 } else {
-                    ProgressView().frame(maxWidth: .infinity)
+                    VStack(spacing: 10) {
+                        ProgressView().controlSize(.large)
+                        if let t = model.scanStartedAt {
+                            Text("正在扫描日志…已 \(Int(Date().timeIntervalSince(t))) 秒")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Text("首启或隔夜新增大量日志时，数 GB 日志需几分钟；\n扫描完成后自动展示，期间不影响菜单栏数字之外的功能。")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 200)
                 }
                 themeRow
                 footer
@@ -452,45 +462,54 @@ struct PanelView: View {
     }
 
     private var themeRow: some View {
-        HStack(spacing: 9) {
-            Text("主题色").font(.caption2).foregroundStyle(.secondary)
-            ForEach(AppTheme.all) { t in
-                Button {
-                    model.themeID = t.id
-                } label: {
-                    Circle()
-                        .fill(t.primary)
-                        .frame(width: 13, height: 13)
-                        .overlay(
-                            Circle().strokeBorder(model.themeID == t.id ? Color.primary.opacity(0.75) : .clear,
-                                                    lineWidth: 2)
-                        )
+        VStack(spacing: 6) {
+            HStack(spacing: 9) {
+                Text("主题色").font(.caption2).foregroundStyle(.secondary)
+                ForEach(AppTheme.all) { t in
+                    Button {
+                        model.themeID = t.id
+                    } label: {
+                        Circle()
+                            .fill(t.primary)
+                            .frame(width: 13, height: 13)
+                            .overlay(
+                                Circle().strokeBorder(model.themeID == t.id ? Color.primary.opacity(0.75) : .clear,
+                                                        lineWidth: 2)
+                            )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                Spacer()
+                Toggle("开机自启", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .font(.caption2)
+                    .fixedSize()
             }
-            Spacer()
-            Picker("侧边坞", selection: Binding(get: { model.sideDock }, set: { model.sideDock = $0 })) {
-                Text("关").tag("off")
-                Text("左").tag("left")
-                Text("右").tag("right")
-            }
-            .pickerStyle(.segmented)
-            .controlSize(.small)
-            .frame(width: 92)
-            Picker("菜单栏", selection: Binding(get: { model.menuBarStyle }, set: { model.menuBarStyle = $0 })) {
-                Text("量+费").tag("both")
-                Text("仅量").tag("tokens")
-                Text("仅费").tag("cost")
-                Text("仅图标").tag("icon")
-            }
-            .pickerStyle(.menu)
-            .controlSize(.small)
-            .frame(width: 84)
-            Toggle("开机自启", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
-                .toggleStyle(.switch)
+            HStack(spacing: 9) {
+                Text("侧边坞").font(.caption2).foregroundStyle(.secondary)
+                Picker("侧边坞", selection: Binding(get: { model.sideDock }, set: { model.sideDock = $0 })) {
+                    Text("关").tag("off")
+                    Text("左").tag("left")
+                    Text("右").tag("right")
+                }
+                .pickerStyle(.segmented)
                 .controlSize(.small)
-                .font(.caption2)
-                .fixedSize()
+                .frame(width: 110)
+                .labelsHidden()
+                Spacer()
+                Text("菜单栏").font(.caption2).foregroundStyle(.secondary)
+                Picker("菜单栏", selection: Binding(get: { model.menuBarStyle }, set: { model.menuBarStyle = $0 })) {
+                    Text("量+费").tag("both")
+                    Text("仅量").tag("tokens")
+                    Text("仅费").tag("cost")
+                    Text("仅图标").tag("icon")
+                }
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .frame(width: 84)
+                .labelsHidden()
+            }
         }
         .padding(.top, 2)
     }

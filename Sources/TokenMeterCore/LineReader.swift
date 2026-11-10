@@ -12,6 +12,13 @@ public final class LineReader {
         self.handle = h
     }
 
+    /// 从指定偏移开始逐行读（append-only 日志的增量解析）
+    public init?(path: String, offset: UInt64) {
+        guard let h = FileHandle(forReadingAtPath: path) else { return nil }
+        do { try h.seek(toOffset: offset) } catch { return nil }
+        self.handle = h
+    }
+
     public func forEachLine(_ body: (String) -> Void) {
         while true {
             let chunk = (try? handle.read(upToCount: chunkSize)) ?? nil
