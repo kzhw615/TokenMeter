@@ -344,6 +344,7 @@ struct SideDockView: View {
                             .background(RoundedRectangle(cornerRadius: 6).fill(badgeColor(name)))
                     }
                 }
+                .padding(.trailing, 5)
                 .opacity(state == 2 ? 0.45 : 1)
                 .frame(width: 44)
                 .frame(width: 56)
