@@ -14,7 +14,6 @@ struct DockShape: Shape {
         let w = rect.width, h = rect.height
         let f = wing, r = radius
         if mode == "right" {
-            // 贴右边：翼在右侧上下外扩
             p.move(to: CGPoint(x: w, y: 0))
             p.addQuadCurve(to: CGPoint(x: w - f, y: f), control: CGPoint(x: w - f, y: 0))
             p.addLine(to: CGPoint(x: r, y: f))
@@ -25,7 +24,6 @@ struct DockShape: Shape {
             p.addQuadCurve(to: CGPoint(x: w, y: h), control: CGPoint(x: w - f, y: h - f))
             p.closeSubpath()
         } else {
-            // 贴左边：镜像
             p.move(to: CGPoint(x: 0, y: 0))
             p.addQuadCurve(to: CGPoint(x: f, y: f), control: CGPoint(x: f, y: 0))
             p.addLine(to: CGPoint(x: w - r, y: f))
@@ -40,7 +38,7 @@ struct DockShape: Shape {
     }
 }
 
-/// 侧边悬浮坞：贴边吸附竖条 glance；可拖动、位置记忆；点击弹完整面板窗口
+/// 侧边悬浮坞：CodeBurn 式贴边融合黑坞；可拖动（原生窗口拖拽）+ 位置记忆 + 双击回位；点击弹完整面板
 @MainActor
 final class SideDockController {
     static let size = NSSize(width: 76, height: 220)
@@ -48,15 +46,17 @@ final class SideDockController {
     private var dock: NSPanel?
     private var detail: NSWindow?
     private var screenObserver: NSObjectProtocol?
-    private var dragStart: NSPoint?
+    private var moveObserver: NSObjectProtocol?
+    private var clamping = false
 
     func apply(mode: String, model: AppModel) {
         dock?.orderOut(nil)
         dock = nil
-        if let obs = screenObserver {
+        for obs in [screenObserver, moveObserver].compactMap({ $0 }) {
             NotificationCenter.default.removeObserver(obs)
-            screenObserver = nil
         }
+        screenObserver = nil
+        moveObserver = nil
         guard mode == "left" || mode == "right" else { return }
 
         let panel = NSPanel(
@@ -71,18 +71,13 @@ final class SideDockController {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
+        panel.isMovableByWindowBackground = true   // 原生窗口拖拽
         panel.contentView = NSHostingView(rootView:
             SideDockView(
                 mode: mode,
                 onTap: { [weak self, weak model] in
                     guard let self, let model else { return }
                     self.showDetail(model: model)
-                },
-                onDrag: { [weak self] translation in
-                    self?.dragPanel(translation: translation)
-                },
-                onDragEnd: { [weak self] in
-                    self?.endDrag()
                 },
                 onReset: { [weak self] in
                     self?.resetPosition(mode: mode)
@@ -91,6 +86,23 @@ final class SideDockController {
         panel.setFrameOrigin(initialOrigin(mode: mode))
         panel.orderFrontRegardless()
         dock = panel
+
+        // 拖动后记忆位置 + 边界钳制
+        moveObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didMoveNotification, object: panel, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, let panel = self.dock, !self.clamping else { return }
+                    let o = panel.frame.origin
+                    UserDefaults.standard.set(Double(o.x), forKey: "dockX")
+                    UserDefaults.standard.set(Double(o.y), forKey: "dockY")
+                    let c = self.clamped(o, mode: mode)
+                    if abs(c.x - o.x) > 0.5 || abs(c.y - o.y) > 0.5 {
+                        self.clamping = true
+                        panel.setFrameOrigin(c)
+                        self.clamping = false
+                    }
+                }
+            }
 
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -106,10 +118,10 @@ final class SideDockController {
     private func initialOrigin(mode: String) -> NSPoint {
         let savedX = UserDefaults.standard.double(forKey: "dockX")
         let savedY = UserDefaults.standard.double(forKey: "dockY")
-        if let screen = NSScreen.main, savedX.isFinite, savedY.isFinite,
-           UserDefaults.standard.object(forKey: "dockX") != nil {
-            let pt = NSPoint(x: savedX, y: savedY)
-            if screen.visibleFrame.insetBy(dx: -40, dy: -40).contains(pt) { return pt }
+        if let screen = NSScreen.main,
+           UserDefaults.standard.object(forKey: "dockX") != nil,
+           screen.visibleFrame.insetBy(dx: -40, dy: -40).contains(NSPoint(x: savedX, y: savedY)) {
+            return NSPoint(x: savedX, y: savedY)
         }
         return defaultOrigin(mode: mode)
     }
@@ -128,22 +140,6 @@ final class SideDockController {
         o.x = min(max(o.x, vf.minX - 30), vf.maxX - Self.size.width + 30)
         o.y = min(max(o.y, vf.minY), vf.maxY - Self.size.height)
         return o
-    }
-
-    func dragPanel(translation: CGSize) {
-        guard let panel = dock else { return }
-        if dragStart == nil { dragStart = panel.frame.origin }
-        guard let start = dragStart else { return }
-        // SwiftUI translation y 向下为正，AppKit y 向上为正
-        let target = NSPoint(x: start.x + translation.width, y: start.y - translation.height)
-        panel.setFrameOrigin(clamped(target, mode: panel.frame.origin.x < (NSScreen.main?.visibleFrame.midX ?? 0) ? "left" : "right"))
-    }
-
-    func endDrag() {
-        guard let panel = dock else { return }
-        dragStart = nil
-        UserDefaults.standard.set(Double(panel.frame.origin.x), forKey: "dockX")
-        UserDefaults.standard.set(Double(panel.frame.origin.y), forKey: "dockY")
     }
 
     /// 双击回位：贴边垂直居中
@@ -176,8 +172,6 @@ struct SideDockView: View {
     @EnvironmentObject var model: AppModel
     let mode: String
     let onTap: () -> Void
-    let onDrag: (CGSize) -> Void
-    let onDragEnd: () -> Void
     let onReset: () -> Void
 
     private var todaySummary: Summary? { model.summariesByRange[.today] }
@@ -186,18 +180,10 @@ struct SideDockView: View {
         return Fmt.compactTokens(t)
     }
     private var costText: String { Fmt.cost(todaySummary?.cost ?? 0) }
+    private var bottomIsRate: Bool { model.isBurning && (model.burnRate ?? 0) > 0 }
     private var bottomText: String {
-        if model.isBurning, let r = model.burnRate, r > 0 { return Fmt.compactTokens(r) + "/s" }
+        if bottomIsRate { return Fmt.compactTokens(model.burnRate ?? 0) + "/s" }
         return Fmt.percent(todaySummary?.cacheHitRate ?? 0)
-    }
-    private var bottomIsRate: Bool {
-        model.isBurning && (model.burnRate ?? 0) > 0
-    }
-
-    private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 3)
-            .onChanged { onDrag($0.translation) }
-            .onEnded { _ in onDragEnd() }
     }
 
     @ViewBuilder
@@ -231,21 +217,23 @@ struct SideDockView: View {
                 .foregroundStyle(.white.opacity(0.7))
             Rectangle().fill(.white.opacity(0.15)).frame(width: 32, height: 1)
             Text(bottomText)
-                .font(.system(size: bottomIsRate ? 9 : 9, weight: bottomIsRate ? .semibold : .regular))
-                .foregroundStyle(bottomIsRate ? .orange : .white.opacity(0.55))
+                .font(.system(size: 9, weight: bottomIsRate ? .semibold : .regular))
+                .foregroundStyle(bottomIsRate ? Color.orange : Color.white.opacity(0.55))
         }
-        .padding(.vertical, 30)
+        .padding(.vertical, 30)   // 上下留给外扩翼
         .padding(.horizontal, 6)
     }
 
-    var body: some View {
-        let shape = DockShape(mode: mode)
-        return content
+    private var shaped: some View {
+        content
             .frame(width: 76, height: 220)
-            .background(shape.fill(Color(white: 0.08).opacity(0.94)))
-            .overlay(shape.strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
-            .contentShape(shape)
-            .gesture(dragGesture)
+            .background(DockShape(mode: mode).fill(Color(white: 0.08).opacity(0.94)))
+            .overlay(DockShape(mode: mode).stroke(Color.white.opacity(0.08), lineWidth: 0.5))
+    }
+
+    var body: some View {
+        shaped
+            .contentShape(Rectangle())
             .onTapGesture(count: 2, perform: onReset)
             .onTapGesture(perform: onTap)
     }
