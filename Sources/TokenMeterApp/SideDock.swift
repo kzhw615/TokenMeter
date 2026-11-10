@@ -3,46 +3,58 @@ import SwiftUI
 import AppKit
 import TokenMeterCore
 
-/// 舱体形状：内侧两角恒圆角；外侧（贴屏边）两角半径可动画——
-/// 浮块态 16（完整圆角矩形），贴边态 0（方角融进屏边）
-struct BarShape: Shape {
-    let side: String          // "left" / "right"：哪侧贴屏边
-    var outerR: CGFloat       // 贴边侧圆角半径（0 = 融合）
-    var innerR: CGFloat = 16
-
-    var animatableData: CGFloat {
-        get { outerR }
-        set { outerR = newValue }
-    }
+/// 贴边融合形态：舱体上下沿以凹曲线向屏边渐隐收尖（CodeBurn 式融合，无导轨、无直角切口）
+struct FlareShape: Shape {
+    let side: String       // "left" / "right"
+    var wing: CGFloat = 18 // 喇叭口高度
 
     func path(in rect: CGRect) -> Path {
-        let w = rect.width, h = rect.height
-        let tl = side == "left" ? outerR : innerR
-        let tr = side == "right" ? outerR : innerR
-        let bl = side == "left" ? outerR : innerR
-        let br = side == "right" ? outerR : innerR
         var p = Path()
-        p.move(to: CGPoint(x: tl, y: 0))
-        p.addLine(to: CGPoint(x: w - tr, y: 0))
-        if tr > 0 { p.addArc(center: CGPoint(x: w - tr, y: tr), radius: tr, startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false) } else { p.addLine(to: CGPoint(x: w, y: 0)) }
-        p.addLine(to: CGPoint(x: w, y: h - br))
-        if br > 0 { p.addArc(center: CGPoint(x: w - br, y: h - br), radius: br, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false) } else { p.addLine(to: CGPoint(x: w, y: h)) }
-        p.addLine(to: CGPoint(x: bl, y: h))
-        if bl > 0 { p.addArc(center: CGPoint(x: bl, y: h - bl), radius: bl, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false) } else { p.addLine(to: CGPoint(x: 0, y: h)) }
-        p.addLine(to: CGPoint(x: 0, y: tl))
-        if tl > 0 { p.addArc(center: CGPoint(x: tl, y: tl), radius: tl, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false) } else { p.addLine(to: CGPoint(x: 0, y: 0)) }
-        p.closeSubpath()
+        let w = rect.width, h = rect.height
+        let f = wing
+        let r: CGFloat = 16
+        let oy = f            // 舱体顶
+        let ob = h - f        // 舱体底
+        if side == "right" {
+            p.move(to: CGPoint(x: w, y: 0))
+            p.addCurve(to: CGPoint(x: w - f, y: oy),
+                       control1: CGPoint(x: w, y: oy * 0.45),
+                       control2: CGPoint(x: w - f * 0.75, y: oy))
+            p.addLine(to: CGPoint(x: r, y: oy))
+            p.addQuadCurve(to: CGPoint(x: 0, y: oy + r), control: CGPoint(x: 0, y: oy))
+            p.addLine(to: CGPoint(x: 0, y: ob - r))
+            p.addQuadCurve(to: CGPoint(x: r, y: ob), control: CGPoint(x: 0, y: ob))
+            p.addLine(to: CGPoint(x: w - f, y: ob))
+            p.addCurve(to: CGPoint(x: w, y: h),
+                       control1: CGPoint(x: w - f * 0.75, y: ob),
+                       control2: CGPoint(x: w, y: ob + (h - ob) * 0.55))
+            p.closeSubpath()
+        } else {
+            p.move(to: CGPoint(x: 0, y: 0))
+            p.addCurve(to: CGPoint(x: f, y: oy),
+                       control1: CGPoint(x: 0, y: oy * 0.45),
+                       control2: CGPoint(x: f * 0.75, y: oy))
+            p.addLine(to: CGPoint(x: w - r, y: oy))
+            p.addQuadCurve(to: CGPoint(x: w, y: oy + r), control: CGPoint(x: w, y: oy))
+            p.addLine(to: CGPoint(x: w, y: ob - r))
+            p.addQuadCurve(to: CGPoint(x: w - r, y: ob), control: CGPoint(x: w, y: ob))
+            p.addLine(to: CGPoint(x: f, y: ob))
+            p.addCurve(to: CGPoint(x: 0, y: h),
+                       control1: CGPoint(x: f * 0.75, y: ob),
+                       control2: CGPoint(x: 0, y: ob + (h - ob) * 0.55))
+            p.closeSubpath()
+        }
         return p
     }
 }
 
-/// 侧边悬浮坞：单窗口。拖动=独立圆角浮块（带投影）；松手=滑向较近屏边，
-/// 外侧圆角 16→0 形变"融入"屏边；位置/侧别记忆；双击回位；单击弹面板
+/// 侧边悬浮坞：单窗口。拖动=独立圆角浮块；松手=滑向较近屏边并 cross-fade 成贴边融合形态；
+/// 位置/侧别记忆；双击回位；单击弹面板。四角完全透明（无投影 haze）
 @MainActor
 final class SideDockController: ObservableObject {
-    static let barSize = NSSize(width: 64, height: 132)
+    static let barSize = NSSize(width: 64, height: 168)   // 含上下 wing 18
 
-    @Published var attached: Bool = true
+    @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合
     @Published var side: String = "right"
 
     private var panel: NSPanel?
@@ -59,7 +71,7 @@ final class SideDockController: ObservableObject {
         guard let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame
         side = UserDefaults.standard.string(forKey: "dockSide") ?? mode
-        attached = true
+        fuse = 1
 
         let panel = NSPanel(
             contentRect: NSRect(origin: originFor(side: side, vf: vf, saved: true), size: Self.barSize),
@@ -78,21 +90,19 @@ final class SideDockController: ObservableObject {
         panel.orderFrontRegardless()
         self.panel = panel
 
-        // 拖动开始（窗口移动）→ 脱离贴边态
         moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification, object: panel, queue: .main) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    guard let self, !self.snapping, self.attached else { return }
+                    guard let self, !self.snapping, self.fuse == 1 else { return }
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                        self.attached = false
+                        self.fuse = 0      // 脱边：融合形态淡出为圆角浮块
                     }
                 }
             }
 
-        // 松手（本 App 内或别的 App 上）→ 吸附
         let handler: (NSEvent) -> Void = { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, !self.attached, !self.snapping else { return }
+                guard let self, self.fuse == 0, !self.snapping else { return }
                 self.snap()
             }
         }
@@ -124,7 +134,7 @@ final class SideDockController: ObservableObject {
         panel = nil
     }
 
-    /// 松手：按中心距离吸附到较近屏边；水平滑动 + 外角 16→0 形变融合
+    /// 松手：按中心距离吸附到较近屏边；水平滑动 + 形态 cross-fade 融合
     func snap() {
         guard let panel, let screen = NSScreen.main else { return }
         snapping = true
@@ -142,9 +152,9 @@ final class SideDockController: ObservableObject {
                 guard let self else { return }
                 panel.setFrameOrigin(target)
                 self.snapping = false
+                self.side = newSide
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    self.side = newSide
-                    self.attached = true     // 外角 16→0：融入屏边
+                    self.fuse = 1      // 圆角浮块淡入为贴边融合形态
                 }
                 self.save(side: newSide, originY: targetY)
             }
@@ -154,11 +164,10 @@ final class SideDockController: ObservableObject {
     func resetPosition(mode: String) {
         guard let panel, let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame
-        let o = originFor(side: mode, vf: vf, saved: false)
-        panel.setFrameOrigin(o)
+        panel.setFrameOrigin(originFor(side: mode, vf: vf, saved: false))
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
             self.side = mode
-            self.attached = true
+            self.fuse = 1
         }
         UserDefaults.standard.removeObject(forKey: "dockSide")
         UserDefaults.standard.removeObject(forKey: "dockY")
@@ -225,33 +234,39 @@ struct SideDockView: View {
         }
     }
 
-    private var shape: BarShape {
-        BarShape(side: controller.side, outerR: controller.attached ? 0 : 16)
-    }
-
     var body: some View {
-        VStack(spacing: 4) {
-            iconView
-            Text("今天").font(.system(size: 8)).foregroundStyle(.white.opacity(0.55))
-            Text(tokensText)
-                .font(.system(size: 13, weight: .bold))
-                .monospacedDigit()
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Text(costText)
-                .font(.system(size: 9))
-                .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.7))
-            Rectangle().fill(.white.opacity(0.15)).frame(width: 24, height: 1)
-            Text(bottomText)
-                .font(.system(size: 8, weight: model.isBurning ? .semibold : .regular))
-                .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
+        let ink = Color(white: 0.08).opacity(0.94)
+        return ZStack {
+            // 浮块态：完整圆角矩形（上下留 wing 空间，与融合态同框）
+            RoundedRectangle(cornerRadius: 16)
+                .fill(ink)
+                .padding(.vertical, 18)
+                .opacity(Double(1 - controller.fuse))
+            // 贴边态：喇叭口融合形态
+            FlareShape(side: controller.side)
+                .fill(ink)
+                .opacity(Double(controller.fuse))
+            VStack(spacing: 4) {
+                iconView
+                Text("今天").font(.system(size: 8)).foregroundStyle(.white.opacity(0.55))
+                Text(tokensText)
+                    .font(.system(size: 13, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Text(costText)
+                    .font(.system(size: 9))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.7))
+                Rectangle().fill(.white.opacity(0.15)).frame(width: 24, height: 1)
+                Text(bottomText)
+                    .font(.system(size: 8, weight: model.isBurning ? .semibold : .regular))
+                    .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
+            }
+            .frame(width: 64, height: 132)
         }
-        .frame(width: 64, height: 132)
-        .background(shape.fill(Color(white: 0.08).opacity(0.94)))
-        .overlay(shape.stroke(Color.white.opacity(0.08), lineWidth: 0.5))
-        .shadow(color: .black.opacity(controller.attached ? 0 : 0.35), radius: 12, x: 0, y: 6)
+        .frame(width: 64, height: 168)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { controller.resetPosition(mode: model.sideDock == "left" ? "left" : "right") }
         .onTapGesture { controller.showDetail(model: model) }
