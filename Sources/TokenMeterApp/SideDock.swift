@@ -274,7 +274,7 @@ struct SideDockView: View {
         let ink = Color.black
         return VStack(spacing: 3) {
             iconView
-            Text("今天").font(.system(size: 7)).foregroundStyle(.white.opacity(0.55))
+            Text("今天").font(.system(size: 9)).foregroundStyle(.white.opacity(0.55))
             Text(tokensText)
                 .font(.system(size: 12, weight: .bold))
                 .monospacedDigit()

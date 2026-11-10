@@ -179,7 +179,7 @@ final class AppModel: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.refresh() }
         }
-        activityTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+        activityTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.pollActivity() }
         }
         flameTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
@@ -226,10 +226,10 @@ final class AppModel: ObservableObject {
                 if active != self.burningSources { self.burningSources = active }
                 if let hot {
                     self.rateSamples.append((now, hot))
-                    self.rateSamples.removeAll { now.timeIntervalSince($0.0) > 300 }
-                    // 5 分钟窗口平均速率：工具执行间隙（无新 token）也不会掉零消失
+                    self.rateSamples.removeAll { now.timeIntervalSince($0.0) > 35 }
+                    // 30s 窗口平均速率（5s 采样）：跟手且平滑，工具执行间隙不掉零
                     if let first = self.rateSamples.first, let last = self.rateSamples.last,
-                       first.0 < last.0, now.timeIntervalSince(first.0) >= 30 {
+                       first.0 < last.0, now.timeIntervalSince(first.0) >= 10 {
                         let dt = last.0.timeIntervalSince(first.0)
                         self.burnRate = max(0, Int64(Double(last.1 - first.1) / dt))
                     } else if self.burnRate == nil {
