@@ -10,7 +10,8 @@ struct BarFlareShape: Shape {
     let side: String
     var fuse: CGFloat
     var ix: CGFloat = 8       // 非贴边侧内缩（可见宽度 = w - ix）
-    var barInsetY: CGFloat = 28  // 上下内缩（可见高度 = h - 2*barInsetY）
+    var barInsetY: CGFloat = 28  // 顶部内缩
+    var bottomInset: CGFloat = 28  // 底部内缩（有 harness 行时收窄）
     var flare: CGFloat = 5    // 喇叭口水平外扩（凹弧大小）
     var rise: CGFloat = 7     // 凹弧沿屏边爬升高度
     var radius: CGFloat = 14
@@ -26,7 +27,7 @@ struct BarFlareShape: Shape {
         let f = flare * fuse         // 喇叭口水平外扩量
         let oR = radius * (1 - fuse) // 外侧圆角半径
         let oy = barInsetY           // 舱体顶
-        let ob = h - barInsetY       // 舱体底
+        let ob = h - bottomInset     // 舱体底
         let ixL = side == "right" ? ix : 0     // 内侧边 x
         let ixR = side == "right" ? w : w - ix
         // 外侧上角：浮块角弧端点 (w, oy+oR) ↔ 融合收尖端 (w, oy-rise)
@@ -79,7 +80,8 @@ final class SideDockController: ObservableObject {
     static let barWidth: CGFloat = 64
     static let barBlockHeight: CGFloat = 168   // 舱体块恒定（已知安全组合）；可见舱体由形状内缩参数控制
     var rowCount: Int = 0
-    var dockHeight: CGFloat { Self.barBlockHeight + (rowCount > 0 ? 10 + CGFloat(rowCount) * 15 : 0) }
+    var bottomInset: CGFloat { rowCount > 0 ? 10 : 28 }
+    var dockHeight: CGFloat { max(Self.barBlockHeight, 28 + 112 + (rowCount > 0 ? 8 + CGFloat(rowCount) * 15 : 0) + bottomInset) }
 
     @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合
     @Published var side: String = "right"
@@ -298,11 +300,25 @@ struct SideDockView: View {
         }
     }
 
-    /// 坞底 harness 三态行：橙脉冲=运行中 / 绿=待阅读 / 灰=空闲
+    /// harness 图标映射（无对应符号时回退首字母）
+    private func harnessIcon(_ name: String) -> String {
+        switch name {
+        case "Claude Code": return "sparkles"
+        case "Codex": return "terminal"
+        case "DSH": return "bolt.fill"
+        case "WorkBuddy": return "person.2.fill"
+        case "OpenCode": return "curlybraces"
+        case "Hermes": return "paperplane.fill"
+        case "ZCode": return "square.stack.3d.up.fill"
+        default: return ""
+        }
+    }
+
+    /// 坞底 harness 三态行：橙脉冲=运行中 / 绿=待阅读 / 灰=空闲；居左 + 图标
     private var harnessRows: some View {
-        VStack(spacing: 3) {
+        VStack(spacing: 4) {
             ForEach(model.visibleDockSources, id: \.0) { name, state in
-                HStack(spacing: 3) {
+                HStack(spacing: 4) {
                     if state == 0 {
                         PulseDot()
                     } else {
@@ -310,15 +326,22 @@ struct SideDockView: View {
                             .fill(state == 1 ? Color.green : Color.white.opacity(0.3))
                             .frame(width: 5, height: 5)
                     }
-                    Text(name)
-                        .font(.system(size: 6.5))
-                        .foregroundStyle(.white.opacity(state == 2 ? 0.4 : 0.75))
+                    let sym = harnessIcon(name)
+                    if sym.isEmpty {
+                        Text(String(name.prefix(1)))
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(.white.opacity(state == 2 ? 0.4 : 0.8))
+                    } else {
+                        Image(systemName: sym)
+                            .font(.system(size: 7))
+                            .foregroundStyle(.white.opacity(state == 2 ? 0.4 : 0.8))
+                    }
                 }
-                .frame(width: 56)
+                .frame(width: 56, alignment: .leading)
+                .padding(.leading, 12)
             }
         }
         .padding(.top, 8)
-        .padding(.bottom, 6)
     }
 
     var body: some View {
@@ -346,12 +369,14 @@ struct SideDockView: View {
             }
           }
           .frame(width: 56, height: 112)
-          .frame(width: 64, height: 168)
-          .background(BarFlareShape(side: controller.side, fuse: controller.fuse).fill(ink))
-          .overlay(BarFlareShape(side: controller.side, fuse: controller.fuse).stroke(Color.white.opacity(0.06), lineWidth: 0.5))
+          .padding(.top, 28)
           harnessRows
+          Spacer(minLength: 0)
         }
+        .padding(.bottom, controller.bottomInset)
         .frame(width: 64, height: controller.dockHeight, alignment: controller.side == "right" ? .topTrailing : .topLeading)
+        .background(BarFlareShape(side: controller.side, fuse: controller.fuse, bottomInset: controller.bottomInset).fill(ink))
+        .overlay(BarFlareShape(side: controller.side, fuse: controller.fuse, bottomInset: controller.bottomInset).stroke(Color.white.opacity(0.06), lineWidth: 0.5))
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { controller.resetPosition(mode: model.sideDock == "left" ? "left" : "right") }
         .onTapGesture { controller.showDetail(model: model) }

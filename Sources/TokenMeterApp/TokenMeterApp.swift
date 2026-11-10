@@ -125,7 +125,17 @@ final class AppModel: ObservableObject {
             dockController.apply(mode: sideDock, model: self, useSaved: true)
         }
     }
-    var visibleDockSources: [(String, Int)] { sourceStates.filter { !hiddenDockSources.contains($0.0) } }
+    /// 侧边坞是否展示 harness 状态条（总开关）
+    @Published var dockShowHarness: Bool = UserDefaults.standard.object(forKey: "dockShowHarness") == nil ? true : UserDefaults.standard.bool(forKey: "dockShowHarness") {
+        didSet {
+            UserDefaults.standard.set(dockShowHarness, forKey: "dockShowHarness")
+            dockController.apply(mode: sideDock, model: self, useSaved: true)
+        }
+    }
+    var visibleDockSources: [(String, Int)] {
+        guard dockShowHarness else { return [] }
+        return sourceStates.filter { !hiddenDockSources.contains($0.0) }
+    }
 
     func menuBarText(_ s: Summary) -> String {
         let shown = includeCache ? s.counts.total : s.counts.input + s.counts.output

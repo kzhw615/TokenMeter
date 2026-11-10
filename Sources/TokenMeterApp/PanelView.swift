@@ -546,6 +546,10 @@ struct PanelView: View {
                       cost: model.summariesByRange[.thisMonth]?.cost)
             if !model.sourceStates.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
+                    Toggle("侧边坞展示 harness 状态", isOn: Binding(get: { model.dockShowHarness }, set: { model.dockShowHarness = $0 }))
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .font(.caption2)
                     Text("侧边坞展示源").font(.caption).foregroundStyle(.secondary)
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 4), spacing: 4) {
                         ForEach(model.sourceStates, id: \.0) { name, _ in
