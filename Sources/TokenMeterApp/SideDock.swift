@@ -9,10 +9,11 @@ import TokenMeterCore
 struct BarFlareShape: Shape {
     let side: String
     var fuse: CGFloat
-    var wing: CGFloat = 18
-    var flare: CGFloat = 6    // 喇叭口水平外扩（凹弧大小）
-    var rise: CGFloat = 9     // 凹弧沿屏边爬升高度
-    var radius: CGFloat = 16
+    var ix: CGFloat = 8       // 非贴边侧内缩（可见宽度 = w - ix）
+    var barInsetY: CGFloat = 28  // 上下内缩（可见高度 = h - 2*barInsetY）
+    var flare: CGFloat = 5    // 喇叭口水平外扩（凹弧大小）
+    var rise: CGFloat = 7     // 凹弧沿屏边爬升高度
+    var radius: CGFloat = 14
 
     var animatableData: CGFloat {
         get { fuse }
@@ -24,8 +25,10 @@ struct BarFlareShape: Shape {
         let r = radius
         let f = flare * fuse         // 喇叭口水平外扩量
         let oR = radius * (1 - fuse) // 外侧圆角半径
-        let oy = wing                // 舱体顶
-        let ob = h - wing            // 舱体底
+        let oy = barInsetY           // 舱体顶
+        let ob = h - barInsetY       // 舱体底
+        let ixL = side == "right" ? ix : 0     // 内侧边 x
+        let ixR = side == "right" ? w : w - ix
         // 外侧上角：浮块角弧端点 (w, oy+oR) ↔ 融合收尖端 (w, oy-rise)
         let topEndY = oy + oR * (1 - fuse) - rise * fuse
         let botEndY = ob - oR * (1 - fuse) + rise * fuse
@@ -35,7 +38,7 @@ struct BarFlareShape: Shape {
         let c2yBot = (ob - 0.45 * r) * (1 - fuse) + (ob + rise * 0.55) * fuse
         var p = Path()
         if side == "right" {
-            p.move(to: CGPoint(x: r, y: oy))
+            p.move(to: CGPoint(x: ixL + r, y: oy))
             p.addLine(to: CGPoint(x: w - f - oR, y: oy))
             p.addCurve(to: CGPoint(x: w, y: topEndY),
                        control1: CGPoint(x: c1x, y: oy),
@@ -44,13 +47,13 @@ struct BarFlareShape: Shape {
             p.addCurve(to: CGPoint(x: w - f - oR, y: ob),
                        control1: CGPoint(x: w, y: c2yBot),
                        control2: CGPoint(x: c1x, y: ob))
-            p.addLine(to: CGPoint(x: r, y: ob))
-            p.addQuadCurve(to: CGPoint(x: 0, y: ob - r), control: CGPoint(x: 0, y: ob))
-            p.addLine(to: CGPoint(x: 0, y: oy + r))
-            p.addQuadCurve(to: CGPoint(x: r, y: oy), control: CGPoint(x: 0, y: oy))
+            p.addLine(to: CGPoint(x: ixL + r, y: ob))
+            p.addQuadCurve(to: CGPoint(x: ixL, y: ob - r), control: CGPoint(x: ixL, y: ob))
+            p.addLine(to: CGPoint(x: ixL, y: oy + r))
+            p.addQuadCurve(to: CGPoint(x: ixL + r, y: oy), control: CGPoint(x: ixL, y: oy))
             p.closeSubpath()
         } else {
-            p.move(to: CGPoint(x: w - r, y: oy))
+            p.move(to: CGPoint(x: ixR - r, y: oy))
             p.addLine(to: CGPoint(x: f + oR, y: oy))
             p.addCurve(to: CGPoint(x: 0, y: topEndY),
                        control1: CGPoint(x: w - c1x, y: oy),
@@ -59,10 +62,10 @@ struct BarFlareShape: Shape {
             p.addCurve(to: CGPoint(x: f + oR, y: ob),
                        control1: CGPoint(x: 0, y: c2yBot),
                        control2: CGPoint(x: w - c1x, y: ob))
-            p.addLine(to: CGPoint(x: w - r, y: ob))
-            p.addQuadCurve(to: CGPoint(x: w, y: ob - r), control: CGPoint(x: w, y: ob))
-            p.addLine(to: CGPoint(x: w, y: oy + r))
-            p.addQuadCurve(to: CGPoint(x: w - r, y: oy), control: CGPoint(x: w, y: oy))
+            p.addLine(to: CGPoint(x: ixR - r, y: ob))
+            p.addQuadCurve(to: CGPoint(x: ixR, y: ob - r), control: CGPoint(x: ixR, y: ob))
+            p.addLine(to: CGPoint(x: ixR, y: oy + r))
+            p.addQuadCurve(to: CGPoint(x: ixR - r, y: oy), control: CGPoint(x: ixR, y: oy))
             p.closeSubpath()
         }
         return p
@@ -73,7 +76,7 @@ struct BarFlareShape: Shape {
 /// 位置/侧别记忆；双击回位；单击弹面板。四角完全透明（无投影 haze）
 @MainActor
 final class SideDockController: ObservableObject {
-    static let barSize = NSSize(width: 64, height: 168)   // 含上下 wing 18
+    static let barSize = NSSize(width: 64, height: 168)   // 面板恒定；可见舱体由形状内缩参数控制
 
     @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合
     @Published var side: String = "right"
@@ -258,37 +261,37 @@ struct SideDockView: View {
             let frames = model.currentFlameFrames
             if !frames.isEmpty {
                 Image(nsImage: frames[model.flameFrame % frames.count])
-                    .frame(width: 15, height: 15)
+                    .frame(width: 13, height: 13)
             }
         } else {
             Image(systemName: "circle.hexagongrid.fill")
-                .font(.system(size: 13))
+                .font(.system(size: 12))
                 .foregroundStyle(.white.opacity(0.75))
         }
     }
 
     var body: some View {
         let ink = Color.black
-        return VStack(spacing: 4) {
+        return VStack(spacing: 3) {
             iconView
-            Text("今天").font(.system(size: 8)).foregroundStyle(.white.opacity(0.55))
+            Text("今天").font(.system(size: 7)).foregroundStyle(.white.opacity(0.55))
             Text(tokensText)
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 12, weight: .bold))
                 .monospacedDigit()
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(costText)
-                .font(.system(size: 9))
+                .font(.system(size: 8))
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.7))
-            Rectangle().fill(.white.opacity(0.15)).frame(width: 24, height: 1)
+            Rectangle().fill(.white.opacity(0.15)).frame(width: 20, height: 1)
             Text(bottomText)
-                .font(.system(size: 8, weight: model.isBurning ? .semibold : .regular))
+                .font(.system(size: 7, weight: model.isBurning ? .semibold : .regular))
                 .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
         }
-        .frame(width: 64, height: 132)
-        .frame(width: 64, height: 168)
+        .frame(width: 56, height: 112)
+        .frame(width: 64, height: 168, alignment: controller.side == "right" ? .trailing : .leading)
         .background(BarFlareShape(side: controller.side, fuse: controller.fuse).fill(ink))
         .overlay(BarFlareShape(side: controller.side, fuse: controller.fuse).stroke(Color.white.opacity(0.06), lineWidth: 0.5))
         .frame(width: 64, height: 168)
