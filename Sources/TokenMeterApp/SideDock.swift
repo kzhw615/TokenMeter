@@ -49,6 +49,8 @@ final class SideDockController: ObservableObject {
     static let size = NSSize(width: 64, height: 176)
 
     @Published var currentMode: String = "right"
+    /// true = 贴边静止（融合形态：凹弧过渡）；false = 拖拽中（独立圆角矩形浮块）
+    @Published var attached: Bool = true
 
     private var dock: NSPanel?
     private var detail: NSWindow?
@@ -56,6 +58,7 @@ final class SideDockController: ObservableObject {
     private var moveObserver: NSObjectProtocol?
     private var snapWork: DispatchWorkItem?
     private var clamping = false
+    private var snapping = false
 
     func apply(mode: String, model: AppModel) {
         dock?.orderOut(nil)
@@ -95,10 +98,11 @@ final class SideDockController: ObservableObject {
         moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification, object: panel, queue: .main) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    guard let self, let panel = self.dock, !self.clamping else { return }
+                    guard let self, let panel = self.dock, !self.clamping, !self.snapping else { return }
                     let o = panel.frame.origin
                     UserDefaults.standard.set(Double(o.x), forKey: "dockX")
                     UserDefaults.standard.set(Double(o.y), forKey: "dockY")
+                    if self.attached { self.attached = false }   // 拖拽开始：切独立浮块形态
                     self.snapWork?.cancel()
                     let work = DispatchWorkItem { [weak self] in
                         Task { @MainActor [weak self] in self?.snapToNearestEdge() }
@@ -121,6 +125,8 @@ final class SideDockController: ObservableObject {
     /// 松手后：按坞中心与屏幕中线距离吸附到左/右边缘（x 贴边，y 保持），形状朝向随之翻转
     func snapToNearestEdge() {
         guard let panel = dock, let screen = NSScreen.main else { return }
+        snapping = true
+        attached = true   // 滑向边缘的同时衍射融合：凹弧过渡出现
         let vf = screen.visibleFrame
         let center = panel.frame.midX
         let mode = center < vf.midX ? "left" : "right"
@@ -136,6 +142,7 @@ final class SideDockController: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self, let panel = self.dock else { return }
                 panel.setFrameOrigin(target)   // 兜底：动画失效也保证到位
+                self.snapping = false
                 self.currentMode = mode
                 UserDefaults.standard.set(Double(target.x), forKey: "dockX")
                 UserDefaults.standard.set(Double(target.y), forKey: "dockY")
@@ -181,6 +188,7 @@ final class SideDockController: ObservableObject {
         guard let panel = dock else { return }
         panel.setFrameOrigin(defaultOrigin(mode: mode))
         currentMode = mode
+        attached = true
         UserDefaults.standard.removeObject(forKey: "dockX")
         UserDefaults.standard.removeObject(forKey: "dockY")
     }
@@ -256,11 +264,18 @@ struct SideDockView: View {
         .padding(.horizontal, 4)
     }
 
+    private var bgShape: AnyShape {
+        controller.attached
+            ? AnyShape(DockShape(mode: controller.currentMode))
+            : AnyShape(RoundedRectangle(cornerRadius: 16))
+    }
+
     private var shaped: some View {
         content
             .frame(width: 64, height: 176)
-            .background(DockShape(mode: controller.currentMode).fill(Color(white: 0.08).opacity(0.94)))
-            .overlay(DockShape(mode: controller.currentMode).stroke(Color.white.opacity(0.08), lineWidth: 0.5))
+            .background(bgShape.fill(Color(white: 0.08).opacity(0.94)))
+            .overlay(bgShape.stroke(Color.white.opacity(0.08), lineWidth: 0.5))
+            .shadow(color: .black.opacity(controller.attached ? 0 : 0.35), radius: 12, x: 0, y: 6)
     }
 
     var body: some View {
