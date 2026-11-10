@@ -118,7 +118,7 @@ Scripts/install.sh             安装到 /Applications
 ## 更新与发布
 
 - **发版流程**：`./Scripts/release.sh 0.2.0 "变更说明"` 一条命令完成——按新版本号构建、打并推送 `v0.2.0` tag、打包 `TokenMeter.app.zip` 与 `tokenmeter.zip` 附件、创建 GitHub Release；**Watch 了仓库的用户会收到 GitHub 通知**。
-- **应用内更新检查与一键更新**：启动时及每 20 小时匿名 GET 一次 GitHub Releases API（仅比对版本号，不上传任何数据）；发现新版本时面板顶部显示提示条、右上角出现橙色更新图标；点击「一键更新」后自动下载 Release 附件、**sha256 校验（GitHub 官方 digest）**、解压替换应用并重启，失败自动回滚旧版本；也可点「下载页」手动下载。不强制自动替换：提示可 × 忽略。关闭检查：`defaults write local.tokenmeter.menubar disableUpdateCheck -bool YES`。
+- **应用内更新检查与一键更新**：**启动时**（距上次不足 20 小时跳过）+ **每天 10:00 定检**（App 运行中则在 10 点后的第一个整点触发，每天仅一次）匿名 GET GitHub Releases API（仅比对版本号，不上传任何数据）；发现新版本时面板顶部显示提示条、右上角出现橙色更新图标；点击「一键更新」后自动下载 Release 附件、**sha256 校验（GitHub 官方 digest）**、解压替换应用并重启，失败自动回滚旧版本；也可点「下载页」手动下载。不强制自动替换：提示可 × 忽略。关闭检查：`defaults write local.tokenmeter.menubar disableUpdateCheck -bool YES`。
 - **手动更新**：从 Releases 下载 `TokenMeter.app.zip` 替换旧 App；或拉源码后 `./Scripts/install.sh`。
 
 ## 跨平台桌面端（实验性：Tauri 托盘应用）

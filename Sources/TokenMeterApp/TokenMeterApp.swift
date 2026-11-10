@@ -151,15 +151,20 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
     private var activityTimer: Timer?
     private var flameTimer: Timer?
+    private var updateTimer: Timer?
     private var watcher: FolderWatcher?
     private var debouncedRefresh: DispatchWorkItem?
 
     init() {
         refresh()
         checkForUpdates()
+        maybeDailyUpdateCheck()
         pollActivity()
         Self.cleanupOldBackups()
         startWatcher()
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.maybeDailyUpdateCheck() }
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.refresh() }
         }

@@ -75,6 +75,17 @@ extension AppModel {
         }
     }
 
+    /// 每日定检：10:00 及之后的第一个整点 tick 触发（每天仅一次）；
+    /// 若当天尚未检查过且启动时已过 10 点，启动即补检
+    func maybeDailyUpdateCheck() {
+        let now = Date()
+        guard Calendar.current.component(.hour, from: now) >= 10 else { return }
+        let day = DayKey.key(for: now)
+        guard UserDefaults.standard.string(forKey: "lastDailyUpdateCheckDay") != day else { return }
+        UserDefaults.standard.set(day, forKey: "lastDailyUpdateCheckDay")
+        checkForUpdates(force: true)
+    }
+
     func dismissUpdate() {
         guard let v = latestVersion else { return }
         UserDefaults.standard.set(v, forKey: "dismissedUpdateVersion")
