@@ -85,7 +85,9 @@ final class SideDockController: ObservableObject {
         panel.contentView = NSHostingView(rootView:
             SideDockView(controller: self)
                 .environmentObject(model))
-        panel.setFrameOrigin(initialOrigin(mode: mode))
+        let start = initialOrigin(mode: mode)
+        currentMode = start.mode
+        panel.setFrameOrigin(start.origin)
         panel.orderFrontRegardless()
         dock = panel
 
@@ -132,7 +134,8 @@ final class SideDockController: ObservableObject {
             panel.animator().setFrameOrigin(target)
         }, completionHandler: { [weak self] in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self, let panel = self.dock else { return }
+                panel.setFrameOrigin(target)   // 兜底：动画失效也保证到位
                 self.currentMode = mode
                 UserDefaults.standard.set(Double(target.x), forKey: "dockX")
                 UserDefaults.standard.set(Double(target.y), forKey: "dockY")
@@ -141,15 +144,20 @@ final class SideDockController: ObservableObject {
         currentMode = mode
     }
 
-    private func initialOrigin(mode: String) -> NSPoint {
+    private func initialOrigin(mode: String) -> (origin: NSPoint, mode: String) {
+        guard let screen = NSScreen.main else { return (.zero, mode) }
+        let vf = screen.visibleFrame
         let savedX = UserDefaults.standard.double(forKey: "dockX")
         let savedY = UserDefaults.standard.double(forKey: "dockY")
-        if let screen = NSScreen.main,
-           UserDefaults.standard.object(forKey: "dockX") != nil,
-           screen.visibleFrame.insetBy(dx: -40, dy: -40).contains(NSPoint(x: savedX, y: savedY)) {
-            return NSPoint(x: savedX, y: savedY)
+        var side = mode
+        var y = vf.midY - Self.size.height / 2
+        if UserDefaults.standard.object(forKey: "dockX") != nil {
+            let savedCenter = savedX + Self.size.width / 2
+            side = savedCenter < vf.midX ? "left" : "right"
+            y = min(max(savedY, vf.minY), vf.maxY - Self.size.height)
         }
-        return defaultOrigin(mode: mode)
+        let x = side == "left" ? vf.minX : vf.maxX - Self.size.width
+        return (NSPoint(x: x, y: y), side)
     }
 
     private func defaultOrigin(mode: String) -> NSPoint {
