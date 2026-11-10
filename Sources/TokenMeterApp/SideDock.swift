@@ -322,15 +322,15 @@ struct SideDockView: View {
     private var harnessRows: some View {
         VStack(spacing: 6) {
             ForEach(model.visibleDockSources, id: \.0) { name, state in
-                HStack(spacing: 6) {
+                HStack(spacing: 0) {
                     if state == 0 {
-                        PulseDot().padding(.leading, 2)
+                        PulseDot()
                     } else {
                         Circle()
                             .fill(state == 1 ? Color.green : Color.white.opacity(0.3))
                             .frame(width: 7, height: 7)
-                            .padding(.leading, 2)
                     }
+                    Spacer(minLength: 6)
                     if let img = model.harnessIcons[name] {
                         Image(nsImage: img)
                             .resizable()
@@ -345,8 +345,8 @@ struct SideDockView: View {
                     }
                 }
                 .opacity(state == 2 ? 0.45 : 1)
-                .frame(width: 56, alignment: .leading)
-                .padding(.leading, 10)
+                .frame(width: 44)
+                .frame(width: 56)
             }
         }
         .padding(.top, 8)
@@ -373,7 +373,8 @@ struct SideDockView: View {
                 .font(.system(size: 7, weight: model.isBurning ? .semibold : .regular))
                 .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
           }
-          .frame(width: 56, height: 112)
+          .frame(width: 44, height: 112)
+          .frame(width: 56)
           .padding(.top, 28)
           harnessRows
           Spacer(minLength: 0)
