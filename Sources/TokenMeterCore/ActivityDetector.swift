@@ -30,6 +30,41 @@ public enum ActivityDetector {
         ]
     }
 
+    /// WorkBuddy 三态（macOS，基于 sessions 表真实状态；其他平台 nil 回退 mtime 启发式）：
+    /// 0 运行中 = status working / active 且 60s 内活动；
+    /// 1 待阅读 = 24h 内未读回执 / 最近 10min 内有 completed 会话；
+    /// 2 空闲 = 其余（背景同步写日志不再误判）
+    public static func workBuddyState(now: Date = Date()) -> Int? {
+        #if os(macOS)
+        let path = NSString(string: "~/.workbuddy/workbuddy.db").expandingTildeInPath
+        guard FileManager.default.fileExists(atPath: path) else { return nil }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { return nil }
+        defer { sqlite3_close(db) }
+        func scalar(_ sql: String) -> Int64? {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return nil }
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+            return sqlite3_column_int64(stmt, 0)
+        }
+        let nowMs = Int64(now.timeIntervalSince1970 * 1000)
+        if let n = scalar("SELECT COUNT(*) FROM sessions WHERE status='working' OR (status='active' AND last_activity_at > \(nowMs - 60_000))"), n > 0 {
+            return 0
+        }
+        if let n = scalar("SELECT COUNT(*) FROM sessions WHERE unread = 1 AND last_activity_at > \(nowMs - 86_400_000)"), n > 0 {
+            return 1
+        }
+        if let last = scalar("SELECT MAX(last_activity_at) FROM sessions WHERE status='completed'"),
+           nowMs - last < 600_000 {
+            return 1
+        }
+        return 2
+        #else
+        return nil
+        #endif
+    }
+
     /// WorkBuddy 真实已读态：sessions.unread=1 的会话数（macOS；其他平台 0）
     public static func workBuddyUnreadCount() -> Int {
         #if os(macOS)

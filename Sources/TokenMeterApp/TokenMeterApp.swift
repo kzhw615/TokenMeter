@@ -280,8 +280,8 @@ final class AppModel: ObservableObject {
                     guard let date else { return nil }   // 无日志 = 未安装，不展示
                     let age = now.timeIntervalSince(date)
                     var st = active.contains(name) ? 0 : (age < 600 ? 1 : 2)
-                    // WorkBuddy 有真实未读回执：unread>0 即"待阅读"（不受 10min 限制）
-                    if name == "WorkBuddy", st == 2, ActivityDetector.workBuddyUnreadCount() > 0 { st = 1 }
+                    // WorkBuddy 用 sessions 表真实状态裁决（背景同步写日志不再误判）
+                    if name == "WorkBuddy", let wb = ActivityDetector.workBuddyState(now: now) { st = wb }
                     return (name, st)
                 }
                 let installedChanged = states.map { $0.0 } != self.sourceStates.map { $0.0 }
