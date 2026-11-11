@@ -417,6 +417,16 @@ final class AppModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
+    /// 已读闩锁：记录每个源「已查看到的完成时间」，避免切走后绿灯又亮
+    func markRead(name: String, completedAt: Date) {
+        UserDefaults.standard.set(completedAt.timeIntervalSince1970, forKey: "readUpTo-\(name)")
+    }
+
+    func isRead(name: String, completedAt: Date) -> Bool {
+        let stored = UserDefaults.standard.double(forKey: "readUpTo-\(name)")
+        return stored > 0 && completedAt.timeIntervalSince1970 <= stored + 1
+    }
+
     /// 速率 = 今日总量在滑动窗口内的平均增速（采样来自统计刷新，无额外扫描开销）
     func updateRate(todayTotal: Int64, at now: Date) {
         rateSamples.append((now, todayTotal))
@@ -446,7 +456,7 @@ final class AppModel: ObservableObject {
             let codexTurn = ActivityDetector.codexTurnState(now: now)
             let wbState = ActivityDetector.workBuddyState(now: now)
 
-            let states: [(String, Int)] = snapshot.compactMap { item in
+            let states: [(name: String, st: Int, done: Date?)] = snapshot.compactMap { item in
                 guard let last = item.lastActive else { return nil }   // 无日志 = 未安装
                 let top = item.topLevel ?? last
                 let age = now.timeIntervalSince(top)
@@ -454,6 +464,7 @@ final class AppModel: ObservableObject {
                 // 有宿主 App 能判断「是否正在看」的源，待阅读窗口收窄到 3 分钟
                 let readWindow: TimeInterval = ActivityDetector.sourceBundleIDs[item.name] != nil ? 180 : 600
                 var st = fresh ? 0 : (age < readWindow ? 1 : 2)
+                var done: Date? = top
 
                 switch item.name {
                 case "DSH":
@@ -464,8 +475,9 @@ final class AppModel: ObservableObject {
                     if let cs = codexTurn {
                         if cs.running {
                             st = 0
-                        } else if let done = cs.lastCompleted, now.timeIntervalSince(done) < 180 {
-                            st = max(st, 1)
+                        } else if let cdone = cs.lastCompleted {
+                            done = cdone
+                            if now.timeIntervalSince(cdone) < 180 { st = max(st, 1) }
                         }
                     }
                 case "WorkBuddy":
@@ -473,11 +485,11 @@ final class AppModel: ObservableObject {
                 default:
                     break
                 }
-                return (item.name, st)
+                return (item.name, st, done)
             }
 
             // 「燃烧中」直接由三态推导：状态准确，菜单栏火苗就不会在大任务中途熄灭
-            let active = states.filter { $0.1 == 0 }.map { $0.0 }
+            let active = states.filter { $0.st == 0 }.map { $0.name }
 
             await MainActor.run { [weak self] in
                 guard let self else { return }
@@ -489,15 +501,23 @@ final class AppModel: ObservableObject {
                 if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
                     let desc = snapshot.map { "\($0.name):last=\($0.lastActive.map { String(format: "%.0fs", now.timeIntervalSince($0)) } ?? "-")" }.joined(separator: " ")
                     FileHandle.standardError.write(Data("DBG snapshot \(desc)\n".utf8))
-                    FileHandle.standardError.write(Data("DBG active=\(active) states=\(states.map { "\($0.0)=\($0.1)" })\n".utf8))
+                    FileHandle.standardError.write(Data("DBG active=\(active) states=\(states.map { "\($0.name)=\($0.st)" })\n".utf8))
                 }
-                // 用户正看着某个工具时，它的「待阅读」直接算已读（否则点了消息还一直绿）
+                // 已读闩锁：只要「正在看着某个工具」时它有待阅读任务，就把该完成时间记为已读，
+                // 之后即使切走也不再亮绿（此前只在当前台时抑制，一离开就绿回来）
                 let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-                let adjusted = states.map { name, st -> (String, Int) in
-                    if st == 1, let bid = ActivityDetector.sourceBundleIDs[name], bid == front {
-                        return (name, 2)
+                let adjusted = states.map { item -> (String, Int) in
+                    guard item.st == 1, let bid = ActivityDetector.sourceBundleIDs[item.name] else {
+                        return (item.name, item.st)
                     }
-                    return (name, st)
+                    if bid == front {
+                        if let done = item.done { self.markRead(name: item.name, completedAt: done) }
+                        return (item.name, 2)
+                    }
+                    if let done = item.done, self.isRead(name: item.name, completedAt: done) {
+                        return (item.name, 2)
+                    }
+                    return (item.name, item.st)
                 }
                 let installedChanged = adjusted.map { $0.0 } != self.sourceStates.map { $0.0 }
                 self.sourceStates = adjusted
