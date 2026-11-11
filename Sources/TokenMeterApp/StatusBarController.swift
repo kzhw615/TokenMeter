@@ -36,7 +36,6 @@ final class StatusBarController: NSObject {
     private var panel: NSPanel?
     private var settingsWindow: SettingsWindowController?
     private var cancellables = Set<AnyCancellable>()
-    private var flameTimer: Timer?
     private var outsideMonitor: Any?
     private var keyMonitor: Any?
     private var settingsObservers: [NSObjectProtocol] = []
@@ -51,7 +50,6 @@ final class StatusBarController: NSObject {
 
         configureButton()
         rebuildPanel()
-        startFlameTimer()
 
         actions.openPanel = { [weak self] in self?.showPanel() }
         actions.closePanel = { [weak self] in self?.hidePanel() }
@@ -75,6 +73,13 @@ final class StatusBarController: NSObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] in self?.refreshButton() }
             .store(in: &cancellables)
+        // 火苗帧由独立 ticker 驱动：只在帧变化时重绘状态栏按钮（不再轮询）
+        model.flame.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in
+                DispatchQueue.main.async { self?.refreshButton() }
+            }
+            .store(in: &cancellables)
         refreshButton()
     }
 
@@ -97,8 +102,30 @@ final class StatusBarController: NSObject {
     }
 
     /// 同步按钮图标与文字
+    /// 上次渲染结果，用于跳过无变化的重绘（状态栏文字排版较贵）
+    private var lastRendered: (frame: Int, size: CGFloat, text: String, red: Bool)?
+
     private func refreshButton() {
         guard let button = item.button else { return }
+
+        // 先算好本次要渲染的内容，与上次一致则直接返回
+        let frameIdx = model.isBurning ? model.flame.frame % max(1, model.currentFlameFrames.count) : -1
+        let size = model.isBurning ? model.flamePointSize : 20
+        let displayText: String
+        if model.menuBarStyle == "icon" {
+            displayText = ""
+        } else if let s = model.summary, s.counts.total > 0 {
+            displayText = " " + model.menuBarText(s)
+        } else {
+            displayText = model.scanning ? " …" : " 0"
+        }
+        let red = model.budgetOver
+        if let last = lastRendered, last.frame == frameIdx, last.size == size,
+           last.text == displayText, last.red == red {
+            return
+        }
+        lastRendered = (frameIdx, size, displayText, red)
+
         if model.isBurning {
             let frames = model.currentFlameFrames
             if !frames.isEmpty {
@@ -110,7 +137,7 @@ final class StatusBarController: NSObject {
                 button.image = NSImage(systemSymbolName: "flame.fill", accessibilityDescription: "燃烧中")
             }
         } else {
-            button.image = MenuBarLabel.barIcon
+            button.image = MenuBarAssets.barIcon
                 ?? NSImage(systemSymbolName: "circle.hexagongrid.fill", accessibilityDescription: "TokenMeter")
         }
 
@@ -129,18 +156,7 @@ final class StatusBarController: NSObject {
             attributes: [.foregroundColor: color, .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)])
     }
 
-    private func startFlameTimer() {
-        flameTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self, self.model.isBurning else { return }
-                self.refreshButton()
-            }
-        }
-        // 火苗帧推进由 AppModel 内部计时器负责，这里只需重绘按钮
-        flameTimer.map { RunLoop.main.add($0, forMode: .common) }
-    }
-
-    // MARK: - 面板
+// MARK: - 面板
 
     private func rebuildPanel() {
         panel?.orderOut(nil)

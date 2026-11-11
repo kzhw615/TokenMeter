@@ -1,5 +1,40 @@
 import Foundation
 
+/// 分块 + 限流并行：边解析边回收，避免上千个压缩日志全量驻留造成内存尖峰
+public enum BoundedParallel {
+    /// 分块并行：每块用 concurrentPerform 并行解析，块间串行入库，
+    /// 峰值内存只与块大小相关（避免上千个解压日志同时驻留）
+    public static func chunkedMap<T, R>(
+        _ items: [T],
+        chunkSize: Int = 32,
+        transform: @escaping (T) -> R,
+        handle: (T, R) -> Void
+    ) {
+        guard !items.isEmpty else { return }
+        var index = 0
+        while index < items.count {
+            let end = min(index + chunkSize, items.count)
+            let slice = Array(items[index..<end])
+            let lock = NSLock()
+            var results = [R?](repeating: nil, count: slice.count)
+            DispatchQueue.concurrentPerform(iterations: slice.count) { i in
+                let value = transform(slice[i])
+                lock.lock()
+                results[i] = value
+                lock.unlock()
+            }
+            for (i, item) in slice.enumerated() {
+                if let value = results[i] { handle(item, value) }
+            }
+            index = end
+        }
+    }
+
+    public static func forEach<T>(_ items: [T], _ body: @escaping (T) -> Void) {
+        chunkedMap(items, transform: { body($0); return () }, handle: { _, _ in })
+    }
+}
+
 public protocol UsageSource {
     var id: String { get }
     var displayName: String { get }

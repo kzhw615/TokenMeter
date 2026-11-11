@@ -48,12 +48,8 @@ public enum Aggregator {
                             cache: inout ScanCache,
                             progress: ScanProgress? = nil) -> (buckets: [UsageBucket], statuses: [SourceStatus]) {
         let sources = allSources()
-        if let progress {
-            // 预统计文件总数（一次目录列举），用于显示 x/y 进度
-            let total = sources.filter { enabled?.contains($0.id) ?? $0.enabledByDefault }
-                .reduce(0) { $0 + $1.logFiles().count }
-            progress.start(total: total)
-        }
+        // 进度总数由调用方通过 progress.start(total:) 传入（上次扫描的文件数），
+        // 避免为了拿总数而重复遍历一遍目录
         ScanProgressReporter.current = progress
         defer { ScanProgressReporter.current = nil }
 
@@ -155,18 +151,4 @@ public enum Aggregator {
     }
 
     /// 热扫描：只解析最近活跃的文件，返回今日含缓存总量（用于燃烧速率）
-    public static func hotTodayTotal(since: Date, now: Date = Date()) -> Int64 {
-        let todayKey = DayKey.key(for: now)
-        var total: Int64 = 0
-        let sources: [UsageSource] = [ClaudeCodeSource(), CodexSource(), DshSource(), WorkBuddySource()]
-        for source in sources {
-            for f in source.logFiles() {
-                guard let m = SourcePaths.mtime(f), m >= since else { continue }
-                for b in source.parseFile(path: f) where b.day == todayKey {
-                    total += b.counts.total
-                }
-            }
-        }
-        return total
-    }
 }

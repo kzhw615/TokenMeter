@@ -1,7 +1,7 @@
 import Foundation
 
 /// 四个口径的 token 计数（与各家 harness 日志对齐）
-public struct TokenCounts: Codable, Equatable {
+public struct TokenCounts: Codable, Equatable, Sendable {
     public var input: Int64       // 未命中缓存的输入
     public var output: Int64      // 输出（含 reasoning）
     public var cacheRead: Int64   // 缓存读取
@@ -28,7 +28,7 @@ public struct TokenCounts: Codable, Equatable {
 }
 
 /// 一个文件解析/缓存复用后的聚合桶：某天 + 某小时 + 某工具 + 某模型 + 某项目
-public struct UsageBucket: Codable, Equatable {
+public struct UsageBucket: Codable, Equatable, Sendable {
     public var day: String        // yyyy-MM-dd（本地时区）
     public var hour: Int          // 0...23
     public var tool: String
@@ -48,7 +48,7 @@ public struct UsageBucket: Codable, Equatable {
     }
 }
 
-public enum RangeKind: String, CaseIterable, Codable {
+public enum RangeKind: String, CaseIterable, Codable, Sendable {
     case today, yesterday, d7, d30, thisMonth, lastMonth, all
     public var label: String {
         switch self {
@@ -121,7 +121,7 @@ public enum DayKey {
     }
 }
 
-public struct ToolStat: Codable {
+public struct ToolStat: Codable, Sendable {
     public var tool: String
     public var counts: TokenCounts
     public var cost: Double
@@ -129,7 +129,7 @@ public struct ToolStat: Codable {
     public var share: Double   // 0...1，按含缓存总量
 }
 
-public struct ModelStat: Codable {
+public struct ModelStat: Codable, Sendable {
     public var model: String
     public var counts: TokenCounts
     public var cost: Double
@@ -138,13 +138,13 @@ public struct ModelStat: Codable {
     public var tools: [String]
 }
 
-public struct DayStat: Codable {
+public struct DayStat: Codable, Sendable {
     public var day: String
     public var counts: TokenCounts
     public var cost: Double
 }
 
-public struct ProjectStat: Codable {
+public struct ProjectStat: Codable, Sendable {
     public var project: String
     public var counts: TokenCounts
     public var cost: Double
@@ -152,13 +152,13 @@ public struct ProjectStat: Codable {
     public var tools: [String]
 }
 
-public struct HourStat: Codable {
+public struct HourStat: Codable, Sendable {
     public var hour: Int
     public var counts: TokenCounts
     public var cost: Double
 }
 
-public struct Summary: Codable {
+public struct Summary: Codable, Sendable {
     public var range: RangeKind
     public var generatedAt: Date
     public var counts: TokenCounts
@@ -176,7 +176,7 @@ public struct Summary: Codable {
     public var sourceStatuses: [SourceStatus]
 }
 
-public struct SourceStatus: Codable {
+public struct SourceStatus: Codable, Sendable {
     public var id: String
     public var name: String
     public var enabled: Bool

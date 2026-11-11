@@ -2,8 +2,8 @@ import Foundation
 
 /// 文件级扫描缓存：path -> (size, mtime, 已聚合桶)。
 /// 只有指纹变化的文件才会重新解析，codex 6.9GB 日志二次扫描接近零成本。
-public struct ScanCache: Codable {
-    public struct Entry: Codable {
+public struct ScanCache: Codable, Sendable {
+    public struct Entry: Codable, Sendable {
         public var size: Int64
         public var mtime: Double
         public var buckets: [UsageBucket]

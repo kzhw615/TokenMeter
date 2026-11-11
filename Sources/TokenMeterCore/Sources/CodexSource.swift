@@ -29,19 +29,15 @@ public struct CodexSource: UsageSource {
                 toParse.append(path)
             }
         }
-        let lock = NSLock()
-        var pairs: [(String, [UsageBucket])] = []
-        DispatchQueue.concurrentPerform(iterations: toParse.count) { i in
-            let b = parseFile(path: toParse[i])
+        // 分块解析：每块解析完立刻入库并释放，峰值内存只与块大小相关
+        BoundedParallel.chunkedMap(toParse, chunkSize: 32, transform: { path in
+            let buckets = parseFile(path: path)
             ScanProgressReporter.current?.bump()
-            lock.lock()
-            pairs.append((toParse[i], b))
-            lock.unlock()
-        }
-        for (path, b) in pairs {
-            cache.store(path: path, buckets: b)
-            builder.merge(b)
-        }
+            return buckets
+        }, handle: { path, buckets in
+            cache.store(path: path, buckets: buckets)
+            builder.merge(buckets)
+        })
         return ScanResult(buckets: builder.buckets, files: files.count)
     }
 

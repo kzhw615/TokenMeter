@@ -62,13 +62,10 @@ extension AppModel {
             let current = UpdateKit.currentVersion()
             guard UpdateKit.isNewer(latest, than: current) else { return }
             // 取 TokenMeter.app.zip 附件的下载地址与 sha256 digest
-            var assetURL: URL?
-            var digest: String?
-            if let assets = json["assets"] as? [[String: Any]],
-               let asset = assets.first(where: { ($0["name"] as? String) == "TokenMeter.app.zip" }) {
-                assetURL = (asset["browser_download_url"] as? String).flatMap(URL.init(string:))
-                digest = asset["digest"] as? String
-            }
+            let asset: [String: Any]? = (json["assets"] as? [[String: Any]])?
+                .first { ($0["name"] as? String) == "TokenMeter.app.zip" }
+            let assetURL: URL? = (asset?["browser_download_url"] as? String).flatMap(URL.init(string:))
+            let digest: String? = asset?["digest"] as? String
             await MainActor.run {
                 self.latestVersion = latest
                 self.releaseURL = url
@@ -109,16 +106,17 @@ extension AppModel {
         guard let assetURL = latestAssetURL, let digest = latestDigest else { return }
         updatePhase = .downloading
         Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
             do {
                 let (data, resp) = try await URLSession.shared.data(from: assetURL)
                 guard (resp as? HTTPURLResponse)?.statusCode == 200, data.count > 100_000 else {
                     throw UpdateError.badDownload
                 }
-                await MainActor.run { self?.updatePhase = .verifying }
+                await MainActor.run { self.updatePhase = .verifying }
                 let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
                 let expected = digest.lowercased().replacingOccurrences(of: "sha256:", with: "")
                 guard hash == expected else { throw UpdateError.digestMismatch }
-                await MainActor.run { self?.updatePhase = .installing }
+                await MainActor.run { self.updatePhase = .installing }
                 let fm = FileManager.default
                 let tmp = fm.temporaryDirectory
                 let zipURL = tmp.appendingPathComponent("TokenMeter-update-\(UUID().uuidString).zip")
@@ -144,13 +142,13 @@ extension AppModel {
                 }
                 try? fm.removeItem(at: zipURL)
                 try? fm.removeItem(at: unzipDir)
-                await MainActor.run { self?.updatePhase = .restarting }
+                await MainActor.run { self.updatePhase = .restarting }
                 NSWorkspace.shared.open(current)
                 try? await Task.sleep(nanoseconds: 800_000_000)
                 await MainActor.run { NSApplication.shared.terminate(nil) }
             } catch {
                 let msg = (error as? UpdateError)?.message ?? error.localizedDescription
-                await MainActor.run { self?.updatePhase = .failed(msg) }
+                await MainActor.run { self.updatePhase = .failed(msg) }
             }
         }
     }

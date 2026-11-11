@@ -2,7 +2,7 @@
 import SwiftUI
 import AppKit
 import ServiceManagement
-import TokenMeterCore
+@preconcurrency import TokenMeterCore
 
 @main
 struct TokenMeterApp: App {
@@ -191,7 +191,10 @@ final class AppModel: ObservableObject {
         "Hermes": "hermes",            // 用户提供：黑白女孩标
         "ZCode": "zcode",              // 用户提供：黑底白 Z
     ]
+    private var harnessIconsLoaded = false
     func loadHarnessIcons() {
+        guard !harnessIconsLoaded else { return }
+        harnessIconsLoaded = true
         var icons: [String: NSImage] = [:]
         for (name, res) in Self.harnessBundledIcons {
             if let url = Bundle.module.url(forResource: res, withExtension: "png", subdirectory: "harness"),
@@ -296,13 +299,14 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
     private var activityTimer: Timer?
     private var flameTimer: Timer?
-    private var progressTimer: Timer?
     private var updateTimer: Timer?
     private var watcher: FolderWatcher?
     private var debouncedRefresh: DispatchWorkItem?
     /// 上次统计刷新时刻（节流用）
     private var lastRefreshAt: Date = .distantPast
     private var lastPollAt: Date = .distantPast
+    /// 上次扫描的文件总数（用作下次进度条分母）
+    private var lastFileTotal: Int = 0
 
     init() {
         refresh()
@@ -332,18 +336,19 @@ final class AppModel: ObservableObject {
                 self.pollActivity()
             }
         }
-        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self, self.scanning, let p = self.scanProgress else { return }
-                self.scanFraction = p.fraction
-                self.scanDone = p.done
-                self.scanTotal = p.total
-            }
-        }
+        // 单一 UI 心跳：扫描进度 4Hz、火苗帧 5/10fps，全部空闲时不做任何工作
         flameTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, self.isBurning, !self.currentFlameFrames.isEmpty else { return }
+                guard let self else { return }
                 self.flameTick += 1
+
+                if self.scanning, let p = self.scanProgress, self.flameTick % 3 == 0 {
+                    self.scanFraction = p.fraction
+                    self.scanDone = p.done
+                    self.scanTotal = p.total
+                }
+
+                guard self.isBurning, !self.currentFlameFrames.isEmpty else { return }
                 // 旺盛档 10fps，平稳档 5fps
                 let step = self.flameIntense ? 1 : 2
                 guard self.flameTick % step == 0 else { return }
@@ -365,9 +370,15 @@ final class AppModel: ObservableObject {
         watcher?.start()
     }
 
-    /// 节流式刷新：持续写入时也保证每 20 秒最多扫一次（旧防抖会无限推迟直到日志静止）
+    /// 刷新最小间隔：面板打开 20s（看数据要新）；面板关闭 45s；完全空闲（无燃烧）120s
+    private var refreshInterval: TimeInterval {
+        if panelOpen { return 20 }
+        return isBurning ? 45 : 120
+    }
+
+    /// 节流式刷新：持续写入时也保证按间隔最多扫一次（旧防抖会无限推迟直到日志静止）
     func scheduleDebouncedRefresh() {
-        let minInterval: TimeInterval = 20
+        let minInterval = refreshInterval
         let elapsed = Date().timeIntervalSince(lastRefreshAt)
         if elapsed >= minInterval {
             refresh()
@@ -441,6 +452,8 @@ final class AppModel: ObservableObject {
         scanDone = 0
         scanTotal = 0
         let progress = ScanProgress()
+        // 用上一次扫描的文件总数作为进度分母：省掉一次全量目录遍历
+        progress.start(total: lastFileTotal)
         scanProgress = progress
         lastRefreshAt = Date()
         Task.detached(priority: .utility) {
@@ -448,18 +461,19 @@ final class AppModel: ObservableObject {
             var cache = CacheStore.lock.withLock { CacheStore.cache } ?? ScanCache.load()
             let scanned = Aggregator.scan(cache: &cache, progress: progress)
             // 一次扫描，七个范围的 Summary 全部预计算
-            var all: [RangeKind: Summary] = [:]
-            for r in RangeKind.allCases {
-                all[r] = Aggregator.summarize(buckets: scanned.buckets, range: r, pricing: pricing, statuses: scanned.statuses)
-            }
+            let all: [RangeKind: Summary] = Dictionary(uniqueKeysWithValues: RangeKind.allCases.map { r in
+                (r, Aggregator.summarize(buckets: scanned.buckets, range: r, pricing: pricing, statuses: scanned.statuses))
+            })
             // 落盘后释放内存中的全量分桶缓存（约 150-200MB），下次从磁盘按需加载
             if cache.dirty {
-                var snapshot = cache
-                snapshot.dirty = false
+                var mutable = cache
+                mutable.dirty = false
+                let snapshot = mutable
                 Config.saveQueue.async { snapshot.save() }
             }
             CacheStore.lock.withLock { CacheStore.cache = nil }
             let todayTotal = all[.today]?.counts.total ?? 0
+            let fileTotal = scanned.statuses.reduce(0) { $0 + $1.files }
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.summariesByRange = all
@@ -467,6 +481,8 @@ final class AppModel: ObservableObject {
                 self.lastScan = Date()
                 self.scanning = false
                 self.scanStartedAt = nil
+                self.scanProgress = nil
+                self.lastFileTotal = fileTotal
                 self.updateRate(todayTotal: todayTotal, at: Date())
                 self.evaluateBudget()
             }
@@ -474,10 +490,9 @@ final class AppModel: ObservableObject {
     }
 }
 
-struct MenuBarLabel: View {
-    @EnvironmentObject var model: AppModel
-
-    /// 菜单栏专用单色模板图标（Assets/menubar_icon@2x.png），缺失时回退 SF Symbol
+/// 菜单栏图标资源（NSStatusItem 使用）
+enum MenuBarAssets {
+    /// 单色模板图标（Assets/menubar_icon@2x.png），缺失时回退 SF Symbol
     static let barIcon: NSImage? = {
         guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_icon@2x.png"),
               let img = NSImage(contentsOf: url) else { return nil }
@@ -485,39 +500,8 @@ struct MenuBarLabel: View {
         img.isTemplate = true
         return img
     }()
-
-    /// 燃烧状态的彩色火苗（非模板图，保留橙红渐变）
-    static let flameIcon: NSImage? = {
-        guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame@2x.png"),
-              let img = NSImage(contentsOf: url) else { return nil }
-        img.size = NSSize(width: 19, height: 19)
-        img.isTemplate = false
-        return img
-    }()
-
-    var body: some View {
-        HStack(spacing: 4) {
-            if model.isBurning {
-                FlameIcon(ticker: model.flame, frames: model.currentFlameFrames)
-            } else if let img = Self.barIcon {
-                Image(nsImage: img)
-            } else {
-                Image(systemName: "circle.hexagongrid.fill")
-            }
-            if model.menuBarStyle != "icon" {
-                if let s = model.summary, s.counts.total > 0 {
-                    Text(model.menuBarText(s))
-                        .monospacedDigit()
-                        .foregroundStyle(model.budgetOver ? Color.red : Color.primary)
-                } else if model.scanning {
-                    Text("…")
-                } else {
-                    Text("0")
-                }
-            }
-        }
-    }
 }
+
 
 #else
 import Foundation
