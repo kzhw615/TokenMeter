@@ -8,6 +8,14 @@ import SQLite3
 public enum ActivityDetector {
     public static let defaultWindow: TimeInterval = 60
 
+    /// 各 harness 的桌面/CLI 宿主 App（bundle id）。
+    /// 用途：用户正盯着某个 App 时，它的「待阅读」应视为已读——避免读完还绿着。
+    public static let sourceBundleIDs: [String: String] = [
+        "Codex": "com.openai.codex",
+        "DSH": "com.deepseek.dsh",
+        "WorkBuddy": "com.tencent.workbuddy.mac",
+    ]
+
     public struct SourceActivity {
         public let name: String
         /// 任意日志文件的最后写入（用于「是否在跑」）

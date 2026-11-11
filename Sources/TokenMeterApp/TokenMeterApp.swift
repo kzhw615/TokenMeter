@@ -451,7 +451,9 @@ final class AppModel: ObservableObject {
                 let top = item.topLevel ?? last
                 let age = now.timeIntervalSince(top)
                 let fresh = now.timeIntervalSince(last) <= ActivityDetector.defaultWindow
-                var st = fresh ? 0 : (age < 600 ? 1 : 2)
+                // 有宿主 App 能判断「是否正在看」的源，待阅读窗口收窄到 3 分钟
+                let readWindow: TimeInterval = ActivityDetector.sourceBundleIDs[item.name] != nil ? 180 : 600
+                var st = fresh ? 0 : (age < readWindow ? 1 : 2)
 
                 switch item.name {
                 case "DSH":
@@ -462,7 +464,7 @@ final class AppModel: ObservableObject {
                     if let cs = codexTurn {
                         if cs.running {
                             st = 0
-                        } else if let done = cs.lastCompleted, now.timeIntervalSince(done) < 600 {
+                        } else if let done = cs.lastCompleted, now.timeIntervalSince(done) < 180 {
                             st = max(st, 1)
                         }
                     }
@@ -489,8 +491,16 @@ final class AppModel: ObservableObject {
                     FileHandle.standardError.write(Data("DBG snapshot \(desc)\n".utf8))
                     FileHandle.standardError.write(Data("DBG active=\(active) states=\(states.map { "\($0.0)=\($0.1)" })\n".utf8))
                 }
-                let installedChanged = states.map { $0.0 } != self.sourceStates.map { $0.0 }
-                self.sourceStates = states
+                // 用户正看着某个工具时，它的「待阅读」直接算已读（否则点了消息还一直绿）
+                let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                let adjusted = states.map { name, st -> (String, Int) in
+                    if st == 1, let bid = ActivityDetector.sourceBundleIDs[name], bid == front {
+                        return (name, 2)
+                    }
+                    return (name, st)
+                }
+                let installedChanged = adjusted.map { $0.0 } != self.sourceStates.map { $0.0 }
+                self.sourceStates = adjusted
                 if installedChanged {
                     self.dockController.apply(mode: self.sideDock, model: self, useSaved: true)
                 }
