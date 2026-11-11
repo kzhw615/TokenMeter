@@ -19,6 +19,7 @@ macOS 菜单栏（状态栏）token 用量统计器，灵感来自 [CodeBurn](ht
   - 逐小时用量图：今天/昨天范围为当日 24 小时明细；其他范围为按钟点分布汇总
   - 燃烧状态：任一 harness 日志近 2 分钟有写入时，菜单栏图标变跳动的彩色火苗并显示实时速率（tokens/s）；**火势随速率变化**：≥15K tokens/s 切换旺盛版火苗（侧舌+白热芯+火星，10fps），低速为平稳版（5fps）；面板头部显示燃烧中的工具
   - 设置行：6 种主题色、菜单栏显示样式（量+费 / 仅量 / 仅费 / 仅图标）、**侧边悬浮坞（关/左/右）**、开机自启开关（SMAppService 一键注册登录项）
+  - 悬浮坞底部工具状态列：13 个 harness 全部配官方品牌图标，三态指示灯（运行/待阅读/空闲）
   - 侧边悬浮坞：贴边吸附在屏幕左/右边缘的**纯黑舱体**（凹弧喇叭口融进屏边、始终置顶、全空间可见、四角全透明），显示今日用量/费用/燃烧速率或命中率；按住拖拽脱离为圆角浮块，松手滑向较近一侧并形变融合；设置可切换左/右、位置记忆、双击回位；**点击弹出完整大面板窗口**，解决菜单栏空间被其他 App 挤压的问题
   - 数据源诊断不在面板展示；用 CLI `tokenmeter sources` 查看（文件数 / 禁用 / 说明）
 - CLI：`tokenmeter report [--range today|7d|30d|all] [--json] [--exclude-cache]`、`tokenmeter sources`
@@ -44,7 +45,6 @@ macOS 菜单栏（状态栏）token 用量统计器，灵感来自 [CodeBurn](ht
 | Qoder | `~/.qoder*/db.sqlite`（或 `QODER_BASE_PATH`） | `chat_message.token_info/model_info` JSON 字段 |
 | Reasonix | `~/.reasonix/usage.jsonl` | 每行 usage 字段 |
 | Droid | `~/.factory/sessions/**` | 会话 JSON 的 `tokenUsage` 字段 |
-| CC Switch（默认关闭） | `~/.cc-switch/cc-switch.db` 的 `proxy_request_logs` | 代理层镜像日志；默认关闭是因为这些请求通常也记录在 Claude/Codex 自身日志里，开启会重复计数 |
 
 所有来源均为「存在即扫描」：本机没有对应日志时自动跳过，不影响其他来源。
 Cursor、Gemini CLI、Trae、Grok Bot 的本地日志不含可解析的 token 级用量（云端计费 / 加密库），未接入。
@@ -109,7 +109,7 @@ Scripts/install.sh             安装到 /Applications
 
 ## 已知限制
 
-- Cursor、Gemini CLI、CodeBuddy、Pi、Grok、OpenClaw、Kimi、Antigravity 无可解析的 token 级本地日志，未接入；CC Switch 源默认关闭防重复计数
+- Cursor、Gemini CLI、CodeBuddy、Pi、Grok、OpenClaw、Kimi、Antigravity 无可解析的 token 级本地日志，未接入
 - **Trae / Trae SOLO CN 无法支持**：`ModularData/ai-agent/database.db` 为加密库（文件头非 SQLite），其余仅 Electron 会话日志
 - 费用为**估算**：按官方公开单价 × 本地日志口径折算，不等于实际账单（折扣、Batch、区域加价、高峰时段等未计入）
 - Codex `token_count` 为会话内增量事件，极早期版本日志若无该事件则统计不到

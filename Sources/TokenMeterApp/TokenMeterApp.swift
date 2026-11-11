@@ -194,6 +194,12 @@ final class AppModel: ObservableObject {
         "OpenCode": "opencode",        // opencode block glyph
         "Hermes": "hermes",            // 用户提供：黑白女孩标
         "ZCode": "zcode",              // 用户提供：黑底白 Z
+        "Reasonix": "reasonix",        // reasonix.io favicon
+        "Droid": "droid",              // Factory AI 官方 avatar
+        "Kiro": "kiro",                // kiro.dev favicon（紫底幽灵）
+        "Copilot CLI": "copilot",      // GitHub Copilot 官方 mark（反白）
+        "MiniMax Code": "minimax",     // minimax.io favicon
+        "Qoder": "qoder",              // Qoder 官方 avatar
     ]
     private var harnessIconsLoaded = false
     func loadHarnessIcons() {
@@ -367,7 +373,7 @@ final class AppModel: ObservableObject {
         let roots = [
             "~/.claude/projects", "~/.codex/sessions", "~/.codex/archived_sessions",
             "~/.dsh/sessions", "~/.workbuddy/traces", "~/.local/share/opencode",
-            "~/.hermes", "~/.zcode/cli/db", "~/.cc-switch",
+            "~/.hermes", "~/.zcode/cli/db",
         ].map { SourcePaths.expand($0) }
         watcher = FolderWatcher(paths: roots) { [weak self] in
             self?.scheduleDebouncedRefresh()
