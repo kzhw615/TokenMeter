@@ -26,6 +26,7 @@ public struct DshSource: UsageSource {
         let builder = BucketBuilder(tool: "DSH")
         for path in files {
             if let cached = cache.cachedBuckets(path: path) {
+                ScanProgressReporter.current?.bump()
                 builder.merge(cached)
                 continue
             }
@@ -38,6 +39,7 @@ public struct DshSource: UsageSource {
             }
             cache.store(path: path, buckets: local)
             builder.merge(local)
+            ScanProgressReporter.current?.bump()
         }
         return ScanResult(buckets: builder.buckets, files: files.count)
     }
@@ -45,8 +47,12 @@ public struct DshSource: UsageSource {
     private func scanPlain(_ files: [String], cache: inout ScanCache) -> [UsageBucket] {
         let builder = BucketBuilder(tool: "DSH")
         for path in files {
-            if let cached = cache.cachedBuckets(path: path) { builder.merge(cached); continue }
+            if let cached = cache.cachedBuckets(path: path) {
+                ScanProgressReporter.current?.bump()
+                builder.merge(cached); continue
+            }
             let local = parseFile(path: path)
+            ScanProgressReporter.current?.bump()
             cache.store(path: path, buckets: local)
             builder.merge(local)
         }

@@ -8,6 +8,7 @@ import sys
 from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TOTAL = 16
 ASSETS = os.path.join(ROOT, "Assets")
 os.makedirs(ASSETS, exist_ok=True)
 
@@ -99,7 +100,7 @@ def menubar_glyph(px: int) -> Image.Image:
     return out
 
 
-def menubar_flame(px: int, frame: int = 0, total: int = 6) -> Image.Image:
+def menubar_flame(px: int, frame: int = 0, total: int = 16) -> Image.Image:
     """彩色火苗（非模板图）：橙红渐变外焰 + 黄色内焰；frame 决定摆动相位"""
     import math
     s = px
@@ -133,7 +134,7 @@ def menubar_flame(px: int, frame: int = 0, total: int = 6) -> Image.Image:
     return out
 
 
-def menubar_flame_intense(px: int, frame: int = 0, total: int = 6) -> Image.Image:
+def menubar_flame_intense(px: int, frame: int = 0, total: int = 16) -> Image.Image:
     """旺盛版火苗：更大轮廓 + 侧舌 + 白热内芯 + 飞溅火星；摆幅与帧率由 App 侧配合"""
     import math
     s = px
@@ -201,11 +202,14 @@ def main():
 
     menubar_glyph(88).save(os.path.join(ASSETS, "menubar_icon@2x.png"))
     menubar_glyph(44).save(os.path.join(ASSETS, "menubar_icon.png"))
-    for i in range(6):
-        menubar_flame(88, i).save(os.path.join(ASSETS, f"menubar_flame_{i}@2x.png"))
-        menubar_flame_intense(88, i).save(os.path.join(ASSETS, f"menubar_flame_hot_{i}@2x.png"))
+    for i in range(TOTAL):
+        menubar_flame(88, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_{i}@2x.png"))
+        menubar_flame_intense(88, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_hot_{i}@2x.png"))
+        # 更大尺寸档（高速率时放大显示）
+        menubar_flame(112, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_big_{i}@2x.png"))
+        menubar_flame_intense(112, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_hot_big_{i}@2x.png"))
     menubar_flame(88, 0).save(os.path.join(ASSETS, "menubar_flame@2x.png"))
-    print("wrote menubar icons + 6 calm frames + 6 intense frames")
+    print(f"wrote menubar icons + {TOTAL} calm + {TOTAL} intense frames (+big variants)")
 
     master.resize((512, 512), Image.LANCZOS).save(os.path.join(ROOT, ".research", "icon-preview.png"))
     print("preview:", os.path.join(ROOT, ".research", "icon-preview.png"))

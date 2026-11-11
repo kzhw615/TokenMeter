@@ -119,6 +119,8 @@ final class SideDockController: ObservableObject {
         panel.contentView = NSHostingView(rootView:
             SideDockView(controller: self).environmentObject(model))
         panel.orderFrontRegardless()
+        // 右键菜单：与菜单栏右键一致
+        panel.contentView?.menu = AppActions.shared.buildMenu(model: model)
         self.panel = panel
 
         moveObserver = NotificationCenter.default.addObserver(
@@ -236,7 +238,11 @@ final class SideDockController: ObservableObject {
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered, defer: false)
             win.title = "TokenMeter"
-            win.contentView = NSHostingView(rootView: PanelView().environmentObject(model))
+            win.contentView = NSHostingView(rootView:
+                PanelView()
+                    .environmentObject(model)
+                    .environmentObject(AppActions.shared)
+                    .background(.regularMaterial))
             win.isReleasedWhenClosed = false
             detail = win
         }

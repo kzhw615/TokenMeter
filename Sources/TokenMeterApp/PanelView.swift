@@ -61,11 +61,12 @@ extension View {
 
 struct PanelView: View {
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var actions: AppActions
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hoveredDay: String?
     @State private var hoveredHour: Int?
     @State private var hoveredRow: String?
-    @State private var showSettings = false
+
 
     private var palette: [Color] { model.theme.palette }
 
@@ -123,23 +124,11 @@ struct PanelView: View {
                     trendSection(s)
                     hoursSection(s)
                     footnotes(s)
-                    if showSettings { settingsSection }
                     }
                     .transition(.opacity)
                 } else {
-                    VStack(spacing: 10) {
-                        ProgressView().controlSize(.large)
-                        if let t = model.scanStartedAt {
-                            Text("正在扫描日志…已 \(Int(Date().timeIntervalSince(t))) 秒")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text("首启或隔夜新增大量日志时，数 GB 日志需几分钟；\n扫描完成后自动展示，期间不影响菜单栏数字之外的功能。")
-                                .font(.caption2).foregroundStyle(.tertiary)
-                                .multilineTextAlignment(.center)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 200)
+                    skeletonView
                 }
-                themeRow
                 footer
             }
             .padding(.horizontal, 20)
@@ -148,6 +137,57 @@ struct PanelView: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: model.summary == nil)
         }
         .frame(width: 430, height: 560)
+        .onExitCommand { actions.closePanel() }
+        .onAppear { model.panelOpen = true }
+        .onDisappear { model.panelOpen = false }
+    }
+
+    /// 扫描中的骨架屏：真实进度条 + 灰色占位块（减少「卡住」的错觉）
+    private var skeletonView: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("正在统计历史用量…")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if model.scanTotal > 0 {
+                        Text("\(model.scanDone) / \(model.scanTotal)")
+                            .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
+                    } else if let t = model.scanStartedAt {
+                        Text("已 \(Int(Date().timeIntervalSince(t))) 秒")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+                ProgressView(value: model.scanFraction)
+                    .progressViewStyle(.linear)
+                    .tint(model.theme.primary)
+                Text("首次运行或日志有大量变动时需要几分钟；已完成的文件会被缓存，之后是秒级增量。")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // 占位块
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.primary.opacity(0.06))
+                .frame(height: 92)
+            ForEach(0..<3, id: \.self) { i in
+                VStack(alignment: .leading, spacing: 6) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.primary.opacity(0.10))
+                        .frame(width: 60 + CGFloat(i * 12), height: 9)
+                    ForEach(0..<3, id: \.self) { j in
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.primary.opacity(0.05))
+                            .frame(height: 12)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(model.scanStartedAt == nil ? 0.5 : 1)
+        .allowsHitTesting(false)
     }
 
     // MARK: - 区块
@@ -510,60 +550,7 @@ struct PanelView: View {
         }
     }
 
-    private var themeRow: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 9) {
-                Text("主题色").font(.caption2).foregroundStyle(.secondary)
-                ForEach(AppTheme.all) { t in
-                    Button {
-                        model.themeID = t.id
-                    } label: {
-                        Circle()
-                            .fill(t.primary)
-                            .frame(width: 13, height: 13)
-                            .overlay(
-                                Circle().strokeBorder(model.themeID == t.id ? Color.primary.opacity(0.75) : .clear,
-                                                        lineWidth: 2)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-                Spacer()
-                Toggle("开机自启", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .font(.caption2)
-                    .fixedSize()
-            }
-            HStack(spacing: 9) {
-                Text("侧边坞").font(.caption2).foregroundStyle(.secondary)
-                Picker("侧边坞", selection: Binding(get: { model.sideDock }, set: { model.sideDock = $0 })) {
-                    Text("关").tag("off")
-                    Text("左").tag("left")
-                    Text("右").tag("right")
-                }
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .frame(width: 110)
-                .labelsHidden()
-                Spacer()
-                Text("菜单栏").font(.caption2).foregroundStyle(.secondary)
-                Picker("菜单栏", selection: Binding(get: { model.menuBarStyle }, set: { model.menuBarStyle = $0 })) {
-                    Text("量+费").tag("both")
-                    Text("仅量").tag("tokens")
-                    Text("仅费").tag("cost")
-                    Text("仅图标").tag("icon")
-                }
-                .pickerStyle(.menu)
-                .controlSize(.small)
-                .frame(width: 84)
-                .labelsHidden()
-            }
-        }
-        .padding(.top, 2)
-    }
-
-    private var footer: some View {
+private var footer: some View {
         HStack(spacing: 10) {
             if let t = model.lastScan {
                 Text("上次统计 \(timeFormatter.string(from: t))").font(.caption2).foregroundStyle(.secondary)
@@ -574,93 +561,17 @@ struct PanelView: View {
             Spacer()
             Button("刷新") { model.refresh() }
                 .buttonStyle(.borderless)
-            Button("设置") {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { showSettings.toggle() }
-            }
-            .buttonStyle(.borderless)
+                .keyboardShortcut("r", modifiers: .command)
+            Button("设置") { actions.openSettings() }
+                .buttonStyle(.borderless)
         }
         .padding(.top, 4)
     }
 
-    private var settingsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            settingsCard("预算提醒") {
-                budgetRow(label: "每日", value: Binding(get: { model.dailyBudget }, set: { model.dailyBudget = $0 }),
-                          cost: model.summariesByRange[.today]?.cost)
-                budgetRow(label: "每月", value: Binding(get: { model.monthlyBudget }, set: { model.monthlyBudget = $0 }),
-                          cost: model.summariesByRange[.thisMonth]?.cost)
-                Text("达到 80% 和 100% 时发送系统通知；设为 0 表示不提醒。")
-                    .font(.caption2).foregroundStyle(.tertiary)
-            }
-
-            if !model.sourceStates.isEmpty {
-                settingsCard("悬浮坞显示的工具") {
-                    Toggle("显示工具状态", isOn: Binding(get: { model.dockShowHarness }, set: { model.dockShowHarness = $0 }))
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .font(.caption)
-                    if model.dockShowHarness {
-                        Text("点名称可隐藏，灰色为当前不显示。")
-                            .font(.caption2).foregroundStyle(.tertiary)
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3), spacing: 6) {
-                            ForEach(model.sourceStates, id: \.0) { name, _ in
-                                sourceChip(name)
-                            }
-                        }
-                    }
-                }
-            }
-
-            settingsCard("模型价格") {
-                PriceEditorView()
-            }
-        }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
-    }
-
-    /// 设置卡片：小标题 + 内容
+/// 设置卡片：小标题 + 内容
     @ViewBuilder
-    private func settingsCard<C: View>(_ title: String, @ViewBuilder content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// 源开关胶囊
-    private func sourceChip(_ name: String) -> some View {
-        let hidden = model.hiddenDockSources.contains(name)
-        return Button {
-            if hidden { model.hiddenDockSources.remove(name) }
-            else { model.hiddenDockSources.insert(name) }
-        } label: {
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(hidden ? Color.secondary.opacity(0.35) : model.theme.primary)
-                    .frame(width: 5, height: 5)
-                Text(name)
-                    .font(.caption2)
-                    .lineLimit(1)
-                    .foregroundStyle(hidden ? Color.secondary.opacity(0.6) : Color.primary.opacity(0.85))
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(hidden ? Color.primary.opacity(0.04) : model.theme.primary.opacity(0.12))
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-        .help(hidden ? "点击显示" : "点击隐藏")
-    }
-
-    private func budgetRow(label: String, value: Binding<Double>, cost: Double?) -> some View {
+/// 源开关胶囊
+private func budgetRow(label: String, value: Binding<Double>, cost: Double?) -> some View {
         HStack(spacing: 8) {
             Text(label).font(.caption).frame(width: 44, alignment: .leading)
             TextField("0", value: value, format: .number)

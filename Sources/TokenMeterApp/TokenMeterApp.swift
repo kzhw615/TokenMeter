@@ -6,21 +6,29 @@ import TokenMeterCore
 
 @main
 struct TokenMeterApp: App {
-    @StateObject private var model = AppModel()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     init() {
         PricingTable.writeTemplateIfMissing()
     }
 
     var body: some Scene {
-        MenuBarExtra {
-            PanelView()
-                .environmentObject(model)
-        } label: {
-            MenuBarLabel()
-                .environmentObject(model)
-        }
-        .menuBarExtraStyle(.window)
+        Settings { EmptyView() }
+    }
+}
+
+/// 应用入口：NSStatusItem 承载菜单栏图标（左键面板 / 右键菜单）
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusBar: StatusBarController?
+    private var model: AppModel?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+        let model = AppModel()
+        self.model = model
+        statusBar = StatusBarController(model: model, actions: AppActions.shared)
+        AppActions.shared.closePanel()
     }
 }
 
@@ -40,6 +48,7 @@ struct FlameIcon: View {
     @ObservedObject var ticker: FlameTicker
     let frames: [NSImage]
     var size: CGFloat = 12
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if frames.isEmpty {
@@ -47,7 +56,9 @@ struct FlameIcon: View {
                 .foregroundStyle(.orange)
                 .font(.system(size: size * 0.8))
         } else {
-            Image(nsImage: frames[ticker.frame % frames.count])
+            Image(nsImage: frames[(reduceMotion ? 0 : ticker.frame) % frames.count])
+                .resizable()
+                .interpolation(.high)
                 .frame(width: size, height: size)
         }
     }
@@ -73,7 +84,14 @@ final class AppModel: ObservableObject {
     @Published var lastScan: Date?
     @Published var scanning = false
     @Published var scanStartedAt: Date?
+    /// 扫描进度（0...1）与已处理/总文件数
+    @Published var scanFraction: Double = 0
+    @Published var scanDone: Int = 0
+    @Published var scanTotal: Int = 0
+    private var scanProgress: ScanProgress?
     @Published var updateChecking = false
+    /// 面板是否展开（用于降低后台轮询频率省电）
+    @Published var panelOpen = false
     /// 统计口径：true = 含缓存（input+output+cacheRead+cacheWrite），false = 不含缓存（input+output）
     @Published var includeCache: Bool = UserDefaults.standard.object(forKey: "includeCache") as? Bool ?? true {
         didSet { UserDefaults.standard.set(includeCache, forKey: "includeCache") }
@@ -217,7 +235,7 @@ final class AppModel: ObservableObject {
     }
 
     /// 燃烧状态的彩色火苗帧（平稳版）
-    static let flameFrames: [NSImage] = (0..<6).compactMap { i in
+    static let flameFrames: [NSImage] = (0..<16).compactMap { i in
         guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame_\(i)@2x.png"),
               let img = NSImage(contentsOf: url) else { return nil }
         img.size = NSSize(width: 19, height: 19)
@@ -226,7 +244,7 @@ final class AppModel: ObservableObject {
     }
 
     /// 旺盛版火苗帧：燃烧速率超过阈值时切换（更大轮廓+侧舌+白热芯+火星）
-    static let flameFramesIntense: [NSImage] = (0..<6).compactMap { i in
+    static let flameFramesIntense: [NSImage] = (0..<16).compactMap { i in
         guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame_hot_\(i)@2x.png"),
               let img = NSImage(contentsOf: url) else { return nil }
         img.size = NSSize(width: 19, height: 19)
@@ -234,10 +252,42 @@ final class AppModel: ObservableObject {
         return img
     }
 
+    /// 大尺寸火苗帧（高速率时用，避免放大失真）
+    static let flameFramesBig: [NSImage] = (0..<16).compactMap { i in
+        guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame_big_\(i)@2x.png"),
+              let img = NSImage(contentsOf: url) else { return nil }
+        img.isTemplate = false
+        return img
+    }
+
+    static let flameFramesIntenseBig: [NSImage] = (0..<16).compactMap { i in
+        guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame_hot_big_\(i)@2x.png"),
+              let img = NSImage(contentsOf: url) else { return nil }
+        img.isTemplate = false
+        return img
+    }
+
     /// 旺盛档阈值：15K tokens/s
     static let intenseRateThreshold: Int64 = 15_000
     var flameIntense: Bool { (burnRate ?? 0) >= Self.intenseRateThreshold }
-    var currentFlameFrames: [NSImage] { flameIntense && !Self.flameFramesIntense.isEmpty ? Self.flameFramesIntense : Self.flameFrames }
+
+    /// 火苗点尺寸随速率连续变化（13 → 20pt，对数压缩让低速也有变化）
+    var flamePointSize: CGFloat {
+        let rate = Double(burnRate ?? 0)
+        guard rate > 0 else { return 13 }
+        let t = min(1.0, pow(rate / 60_000.0, 0.45))
+        return 13 + 7 * t
+    }
+
+    var currentFlameFrames: [NSImage] {
+        let big = flamePointSize >= 17
+        if flameIntense {
+            let set = big && !Self.flameFramesIntenseBig.isEmpty ? Self.flameFramesIntenseBig : Self.flameFramesIntense
+            return set.isEmpty ? Self.flameFrames : set
+        }
+        let set = big && !Self.flameFramesBig.isEmpty ? Self.flameFramesBig : Self.flameFrames
+        return set.isEmpty ? Self.flameFrames : set
+    }
 
     /// 火苗帧计数器独立成小对象：只让火苗图标重绘，避免 10fps 重绘整个面板树
     let flame = FlameTicker()
@@ -246,11 +296,13 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
     private var activityTimer: Timer?
     private var flameTimer: Timer?
+    private var progressTimer: Timer?
     private var updateTimer: Timer?
     private var watcher: FolderWatcher?
     private var debouncedRefresh: DispatchWorkItem?
     /// 上次统计刷新时刻（节流用）
     private var lastRefreshAt: Date = .distantPast
+    private var lastPollAt: Date = .distantPast
 
     init() {
         refresh()
@@ -267,7 +319,26 @@ final class AppModel: ObservableObject {
             Task { @MainActor [weak self] in self?.refresh() }
         }
         activityTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.pollActivity() }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // 面板收起时降到 15s 一次（省电）；燃烧中保持 5s 以便及时更新状态
+                if !self.panelOpen && !self.isBurning {
+                    let now = Date()
+                    if now.timeIntervalSince(self.lastPollAt) < 15 { return }
+                    self.lastPollAt = now
+                } else {
+                    self.lastPollAt = Date()
+                }
+                self.pollActivity()
+            }
+        }
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.scanning, let p = self.scanProgress else { return }
+                self.scanFraction = p.fraction
+                self.scanDone = p.done
+                self.scanTotal = p.total
+            }
         }
         flameTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -366,11 +437,16 @@ final class AppModel: ObservableObject {
         guard !scanning else { return }
         scanning = true
         scanStartedAt = Date()
+        scanFraction = 0
+        scanDone = 0
+        scanTotal = 0
+        let progress = ScanProgress()
+        scanProgress = progress
         lastRefreshAt = Date()
         Task.detached(priority: .utility) {
             let pricing = PricingTable.load()
             var cache = CacheStore.lock.withLock { CacheStore.cache } ?? ScanCache.load()
-            let scanned = Aggregator.scan(cache: &cache)
+            let scanned = Aggregator.scan(cache: &cache, progress: progress)
             // 一次扫描，七个范围的 Summary 全部预计算
             var all: [RangeKind: Summary] = [:]
             for r in RangeKind.allCases {

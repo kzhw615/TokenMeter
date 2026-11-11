@@ -19,6 +19,7 @@ public struct ClaudeCodeSource: UsageSource {
         var toParse: [String] = []
         for path in files {
             if let cached = cache.cachedBuckets(path: path) {
+                ScanProgressReporter.current?.bump()
                 builder.merge(cached)
             } else {
                 toParse.append(path)
@@ -28,6 +29,7 @@ public struct ClaudeCodeSource: UsageSource {
         var pairs: [(String, [UsageBucket])] = []
         DispatchQueue.concurrentPerform(iterations: toParse.count) { i in
             let b = parseFile(path: toParse[i])
+            ScanProgressReporter.current?.bump()
             lock.lock()
             pairs.append((toParse[i], b))
             lock.unlock()

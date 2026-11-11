@@ -1,5 +1,33 @@
 import Foundation
 
+/// 扫描进度：线程安全计数，供 App 显示真实进度条
+public final class ScanProgress: @unchecked Sendable {
+    private let lock = NSLock()
+    private var doneCount = 0
+    private var totalCount = 0
+
+    public init() {}
+
+    public func start(total: Int) {
+        lock.lock(); totalCount = total; doneCount = 0; lock.unlock()
+    }
+    public func bump(_ n: Int = 1) {
+        lock.lock(); doneCount += n; lock.unlock()
+    }
+    public var done: Int { lock.lock(); defer { lock.unlock() }; return doneCount }
+    public var total: Int { lock.lock(); defer { lock.unlock() }; return totalCount }
+    public var fraction: Double {
+        lock.lock(); defer { lock.unlock() }
+        guard totalCount > 0 else { return 0 }
+        return min(1, Double(doneCount) / Double(totalCount))
+    }
+}
+
+/// 当前扫描的进度上报口（扫描期间由 Aggregator 设置，各数据源按文件 bump）
+public enum ScanProgressReporter {
+    public nonisolated(unsafe) static var current: ScanProgress?
+}
+
 public enum Aggregator {
     /// 由 day key + hour 还原本地时间（用于时段敏感计价）
     static func bucketDate(day: String, hour: Int, calendar: Calendar) -> Date? {
@@ -17,10 +45,21 @@ public enum Aggregator {
 
     /// 扫描所有来源；enabled 为来源 id 集合（nil = 用默认）
     public static func scan(enabled: Set<String>? = nil,
-                            cache: inout ScanCache) -> (buckets: [UsageBucket], statuses: [SourceStatus]) {
+                            cache: inout ScanCache,
+                            progress: ScanProgress? = nil) -> (buckets: [UsageBucket], statuses: [SourceStatus]) {
+        let sources = allSources()
+        if let progress {
+            // 预统计文件总数（一次目录列举），用于显示 x/y 进度
+            let total = sources.filter { enabled?.contains($0.id) ?? $0.enabledByDefault }
+                .reduce(0) { $0 + $1.logFiles().count }
+            progress.start(total: total)
+        }
+        ScanProgressReporter.current = progress
+        defer { ScanProgressReporter.current = nil }
+
         var buckets: [UsageBucket] = []
         var statuses: [SourceStatus] = []
-        for source in allSources() {
+        for source in sources {
             let on = enabled?.contains(source.id) ?? source.enabledByDefault
             guard on else {
                 statuses.append(SourceStatus(id: source.id, name: source.displayName, enabled: false, files: 0, note: "已禁用"))
