@@ -40,6 +40,7 @@ final class AppModel: ObservableObject {
     @Published var lastScan: Date?
     @Published var scanning = false
     @Published var scanStartedAt: Date?
+    @Published var updateChecking = false
     /// 统计口径：true = 含缓存（input+output+cacheRead+cacheWrite），false = 不含缓存（input+output）
     @Published var includeCache: Bool = UserDefaults.standard.object(forKey: "includeCache") as? Bool ?? true {
         didSet { UserDefaults.standard.set(includeCache, forKey: "includeCache") }

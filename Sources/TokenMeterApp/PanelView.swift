@@ -166,8 +166,11 @@ struct PanelView: View {
                 .help("新版本 v\(v) 可用，点击一键更新")
             }
             Button(action: { model.checkForUpdates(force: true) }) {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .symbolEffect(.rotate, options: .repeating, isActive: model.updateChecking)
+                if model.updateChecking {
+                    ProgressView().controlSize(.mini).frame(width: 14, height: 14)
+                } else {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                }
             }
             .buttonStyle(.borderless)
             .disabled(model.updateChecking)

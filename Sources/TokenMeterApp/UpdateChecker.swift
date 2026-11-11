@@ -39,8 +39,6 @@ enum UpdateKit {
 /// 仅匿名 GET 一次 Releases API（启动时 + 每 20 小时），不上传任何数据；
 /// 发现新版本只在面板提示并跳转 Release 页，不自动替换二进制。
 extension AppModel {
-    @Published var updateChecking = false
-
     func checkForUpdates(force: Bool = false) {
         guard !UserDefaults.standard.bool(forKey: "disableUpdateCheck") else { return }
         let last = UserDefaults.standard.double(forKey: "lastUpdateCheck")
