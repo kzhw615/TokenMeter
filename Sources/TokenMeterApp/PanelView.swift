@@ -165,6 +165,13 @@ struct PanelView: View {
                 .buttonStyle(.borderless)
                 .help("新版本 v\(v) 可用，点击一键更新")
             }
+            Button(action: { model.checkForUpdates(force: true) }) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .symbolEffect(.rotate, options: .repeating, isActive: model.updateChecking)
+            }
+            .buttonStyle(.borderless)
+            .disabled(model.updateChecking)
+            .help("手动检查更新")
             Button(action: { confirmQuit() }) {
                 Image(systemName: "power")
                     .font(.callout)

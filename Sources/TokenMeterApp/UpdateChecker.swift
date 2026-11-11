@@ -39,14 +39,18 @@ enum UpdateKit {
 /// 仅匿名 GET 一次 Releases API（启动时 + 每 20 小时），不上传任何数据；
 /// 发现新版本只在面板提示并跳转 Release 页，不自动替换二进制。
 extension AppModel {
+    @Published var updateChecking = false
+
     func checkForUpdates(force: Bool = false) {
         guard !UserDefaults.standard.bool(forKey: "disableUpdateCheck") else { return }
         let last = UserDefaults.standard.double(forKey: "lastUpdateCheck")
         let now = Date().timeIntervalSince1970
         if !force, now - last < 20 * 3600 { return }
         UserDefaults.standard.set(now, forKey: "lastUpdateCheck")
+        updateChecking = true
         Task.detached(priority: .utility) { [weak self] in
             guard let self else { return }
+            defer { Task { @MainActor [weak self] in self?.updateChecking = false } }
             var req = URLRequest(url: URL(string: "https://api.github.com/repos/\(UpdateKit.repo)/releases/latest")!)
             req.setValue("TokenMeterApp", forHTTPHeaderField: "User-Agent")
             req.timeoutInterval = 10
