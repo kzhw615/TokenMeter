@@ -165,6 +165,10 @@ struct PanelView: View {
                 .buttonStyle(.borderless)
                 .help("新版本 v\(v) 可用，点击一键更新")
             }
+            Text("v\(UpdateKit.currentVersion())")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
             Button(action: { model.checkForUpdates(force: true) }) {
                 if model.updateChecking {
                     ProgressView().controlSize(.mini).frame(width: 14, height: 14)
@@ -529,7 +533,6 @@ struct PanelView: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            Text("v\(UpdateKit.currentVersion())").font(.caption2).foregroundStyle(.tertiary)
             if let t = model.lastScan {
                 Text("更新 \(timeFormatter.string(from: t))").font(.caption2).foregroundStyle(.secondary)
             }
