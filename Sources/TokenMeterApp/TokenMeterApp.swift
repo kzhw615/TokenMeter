@@ -35,6 +35,34 @@ enum CacheStore {
     static var cache: ScanCache?
 }
 
+/// 火苗图标：只订阅 FlameTicker，不牵动面板其它内容重绘
+struct FlameIcon: View {
+    @ObservedObject var ticker: FlameTicker
+    let frames: [NSImage]
+    var size: CGFloat = 12
+
+    var body: some View {
+        if frames.isEmpty {
+            Image(systemName: "flame.fill")
+                .foregroundStyle(.orange)
+                .font(.system(size: size * 0.8))
+        } else {
+            Image(nsImage: frames[ticker.frame % frames.count])
+                .frame(width: size, height: size)
+        }
+    }
+}
+
+/// 火苗逐帧计数器：独立 ObservableObject，避免整树重绘
+@MainActor
+final class FlameTicker: ObservableObject {
+    @Published var frame: Int = 0
+    func advance(count: Int) {
+        guard count > 0 else { return }
+        frame = (frame + 1) % count
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     /// 所有范围的预计算结果：切换范围 = 内存查表，瞬时响应
@@ -211,7 +239,8 @@ final class AppModel: ObservableObject {
     var flameIntense: Bool { (burnRate ?? 0) >= Self.intenseRateThreshold }
     var currentFlameFrames: [NSImage] { flameIntense && !Self.flameFramesIntense.isEmpty ? Self.flameFramesIntense : Self.flameFrames }
 
-    @Published var flameFrame: Int = 0
+    /// 火苗帧计数器独立成小对象：只让火苗图标重绘，避免 10fps 重绘整个面板树
+    let flame = FlameTicker()
     private var flameTick = 0
 
     private var timer: Timer?
@@ -220,6 +249,8 @@ final class AppModel: ObservableObject {
     private var updateTimer: Timer?
     private var watcher: FolderWatcher?
     private var debouncedRefresh: DispatchWorkItem?
+    /// 上次统计刷新时刻（节流用）
+    private var lastRefreshAt: Date = .distantPast
 
     init() {
         refresh()
@@ -245,7 +276,7 @@ final class AppModel: ObservableObject {
                 // 旺盛档 10fps，平稳档 5fps
                 let step = self.flameIntense ? 1 : 2
                 guard self.flameTick % step == 0 else { return }
-                self.flameFrame = (self.flameFrame + 1) % self.currentFlameFrames.count
+                self.flame.advance(count: self.currentFlameFrames.count)
             }
         }
     }
@@ -263,54 +294,69 @@ final class AppModel: ObservableObject {
         watcher?.start()
     }
 
+    /// 节流式刷新：持续写入时也保证每 20 秒最多扫一次（旧防抖会无限推迟直到日志静止）
     func scheduleDebouncedRefresh() {
-        debouncedRefresh?.cancel()
+        let minInterval: TimeInterval = 20
+        let elapsed = Date().timeIntervalSince(lastRefreshAt)
+        if elapsed >= minInterval {
+            refresh()
+            return
+        }
+        guard debouncedRefresh == nil else { return }   // 已有待执行任务，合并本次事件
+        let delay = minInterval - elapsed
         let work = DispatchWorkItem { [weak self] in
-            Task { @MainActor [weak self] in self?.refresh() }
+            self?.debouncedRefresh = nil
+            self?.refresh()
         }
         debouncedRefresh = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// 速率 = 今日总量在滑动窗口内的平均增速（采样来自统计刷新，无额外扫描开销）
+    func updateRate(todayTotal: Int64, at now: Date) {
+        rateSamples.append((now, todayTotal))
+        rateSamples.removeAll { now.timeIntervalSince($0.0) > 25 }
+        if let first = rateSamples.first, let last = rateSamples.last,
+           first.0 < last.0, now.timeIntervalSince(first.0) >= 8 {
+            let dt = last.0.timeIntervalSince(first.0)
+            burnRate = max(0, Int64(Double(last.1 - first.1) / dt))
+        } else if burnRate == nil {
+            burnRate = 0
+        }
+    }
+
+    /// 停止燃烧时清空速率
+    func clearRate() {
+        rateSamples.removeAll()
+        burnRate = nil
     }
 
     func pollActivity() {
         Task.detached(priority: .utility) { [weak self] in
-            let active = ActivityDetector.activeSources()
-            let topActivity = Dictionary(uniqueKeysWithValues: ActivityDetector.topLevelActivity().compactMap { n, d in d.map { (n, $0) } })
+            // 单次合并遍历：同时得到「是否在跑」和「顶层任务最后活动」
+            let snapshot = ActivityDetector.activitySnapshot()
             let now = Date()
-            let hot: Int64? = active.isEmpty ? nil : Aggregator.hotTodayTotal(since: now.addingTimeInterval(-180), now: now)
+            let active = snapshot.compactMap { $0.lastActive != nil && now.timeIntervalSince($0.lastActive!) <= ActivityDetector.defaultWindow ? $0.name : nil }
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                if active != self.burningSources { self.burningSources = active }
+                if active != self.burningSources {
+                    self.burningSources = active
+                    if active.isEmpty { self.clearRate() }
+                }
                 // 三态：运行中(<60s) / 待阅读(60s~10min) / 空闲(>10min)
-                let states: [(String, Int)] = ActivityDetector.lastActivity(now: now).compactMap { name, date in
-                    guard let date else { return nil }   // 无日志 = 未安装，不展示
-                    // 顶层活动（排除子智能体）：绿灯只认「主任务跑完」
-                    let top = topActivity[name] ?? date
+                let states: [(String, Int)] = snapshot.compactMap { item in
+                    guard let last = item.lastActive else { return nil }   // 无日志 = 未安装
+                    let top = item.topLevel ?? last
                     let age = now.timeIntervalSince(top)
-                    var st = active.contains(name) ? 0 : (age < 600 ? 1 : 2)
-                    // WorkBuddy 用 sessions 表真实状态裁决（背景同步写日志不再误判）
-                    if name == "WorkBuddy", let wb = ActivityDetector.workBuddyState(now: now) { st = wb }
-                    return (name, st)
+                    var st = active.contains(item.name) ? 0 : (age < 600 ? 1 : 2)
+                    // WorkBuddy 用 sessions 表真实状态裁决
+                    if item.name == "WorkBuddy", let wb = ActivityDetector.workBuddyState(now: now) { st = wb }
+                    return (item.name, st)
                 }
                 let installedChanged = states.map { $0.0 } != self.sourceStates.map { $0.0 }
                 self.sourceStates = states
                 if installedChanged {
                     self.dockController.apply(mode: self.sideDock, model: self, useSaved: true)
-                }
-                if let hot {
-                    self.rateSamples.append((now, hot))
-                    self.rateSamples.removeAll { now.timeIntervalSince($0.0) > 25 }
-                    // 20s 窗口平均速率（5s 采样）：跟手且平滑；停止出 token 后较快回落
-                    if let first = self.rateSamples.first, let last = self.rateSamples.last,
-                       first.0 < last.0, now.timeIntervalSince(first.0) >= 10 {
-                        let dt = last.0.timeIntervalSince(first.0)
-                        self.burnRate = max(0, Int64(Double(last.1 - first.1) / dt))
-                    } else if self.burnRate == nil {
-                        self.burnRate = 0   // 燃烧中但样本不足：显示 0/s 而非隐藏
-                    }
-                } else {
-                    self.rateSamples.removeAll()
-                    self.burnRate = nil
                 }
             }
         }
@@ -320,6 +366,7 @@ final class AppModel: ObservableObject {
         guard !scanning else { return }
         scanning = true
         scanStartedAt = Date()
+        lastRefreshAt = Date()
         Task.detached(priority: .utility) {
             let pricing = PricingTable.load()
             var cache = CacheStore.lock.withLock { CacheStore.cache } ?? ScanCache.load()
@@ -329,13 +376,14 @@ final class AppModel: ObservableObject {
             for r in RangeKind.allCases {
                 all[r] = Aggregator.summarize(buckets: scanned.buckets, range: r, pricing: pricing, statuses: scanned.statuses)
             }
-            // 先更新内存缓存，再整体落盘（scan 已完整返回，不会再出现半成品快照）
-            CacheStore.lock.withLock { CacheStore.cache = cache }
+            // 落盘后释放内存中的全量分桶缓存（约 150-200MB），下次从磁盘按需加载
             if cache.dirty {
                 var snapshot = cache
                 snapshot.dirty = false
                 Config.saveQueue.async { snapshot.save() }
             }
+            CacheStore.lock.withLock { CacheStore.cache = nil }
+            let todayTotal = all[.today]?.counts.total ?? 0
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.summariesByRange = all
@@ -343,6 +391,7 @@ final class AppModel: ObservableObject {
                 self.lastScan = Date()
                 self.scanning = false
                 self.scanStartedAt = nil
+                self.updateRate(todayTotal: todayTotal, at: Date())
                 self.evaluateBudget()
             }
         }
@@ -373,12 +422,7 @@ struct MenuBarLabel: View {
     var body: some View {
         HStack(spacing: 4) {
             if model.isBurning {
-                let frames = model.currentFlameFrames
-                if !frames.isEmpty {
-                    Image(nsImage: frames[model.flameFrame % frames.count])
-                } else {
-                    Image(systemName: "flame.fill").foregroundStyle(.orange)
-                }
+                FlameIcon(ticker: model.flame, frames: model.currentFlameFrames)
             } else if let img = Self.barIcon {
                 Image(nsImage: img)
             } else {

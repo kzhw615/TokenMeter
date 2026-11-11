@@ -8,44 +8,52 @@ import SQLite3
 public enum ActivityDetector {
     public static let defaultWindow: TimeInterval = 60
 
-    /// 每个源「顶层会话」的最后活动（排除子智能体；nil = 未安装）
-    public static func topLevelActivity(now: Date = Date()) -> [(String, Date?)] {
-        let farPast = now.addingTimeInterval(-1e9)
+    public struct SourceActivity {
+        public let name: String
+        /// 任意日志文件的最后写入（用于「是否在跑」）
+        public let lastActive: Date?
+        /// 顶层会话（排除子智能体）的最后写入（用于「主任务是否完成」）
+        public let topLevel: Date?
+    }
+
+    /// 一次遍历拿到全部源的活动信息（避免重复扫目录造成高 CPU）。
+    /// 只有最近 window 内被写入的文件才会读头部判断子智能体，开销极小。
+    public static func activitySnapshot(now: Date = Date()) -> [SourceActivity] {
+        let recentCutoff = now.addingTimeInterval(-600)
         return [
-            ("Claude Code", latestMtime(under: "~/.claude/projects", suffixes: [".jsonl"], topLevelOnly: true)),
-            ("Codex", latestCodexMtime(now: now, cutoff: farPast)),
-            ("DSH", latestMtime(under: "~/.dsh/sessions", suffixes: [".zstd", ".jsonl"], topLevelOnly: true)),
-            ("WorkBuddy", latestMtime(under: "~/.workbuddy/traces", suffixes: [".jsonl"], topLevelOnly: true)),
-            ("OpenCode", fileMtime("~/.local/share/opencode/opencode.db")),
-            ("Hermes", newer(fileMtime("~/.hermes/state.db"), latestMtime(under: "~/.hermes/profiles", suffixes: ["state.db"]))),
-            ("ZCode", fileMtime("~/.zcode/cli/db/db.sqlite")),
+            SourceActivity(name: "Claude Code",
+                           lastActive: latestMtime(under: "~/.claude/projects", suffixes: [".jsonl"]),
+                           topLevel: latestTopLevelMtime(under: "~/.claude/projects", suffixes: [".jsonl"], recentCutoff: recentCutoff)),
+            SourceActivity(name: "Codex",
+                           lastActive: codexMtime(now: now, topLevelOnly: false, recentCutoff: recentCutoff),
+                           topLevel: codexMtime(now: now, topLevelOnly: true, recentCutoff: recentCutoff)),
+            SourceActivity(name: "DSH",
+                           lastActive: latestMtime(under: "~/.dsh/sessions", suffixes: [".zstd", ".jsonl"]),
+                           topLevel: latestTopLevelMtime(under: "~/.dsh/sessions", suffixes: [".zstd", ".jsonl"], recentCutoff: recentCutoff)),
+            SourceActivity(name: "WorkBuddy",
+                           lastActive: latestMtime(under: "~/.workbuddy/traces", suffixes: [".jsonl"]),
+                           topLevel: latestMtime(under: "~/.workbuddy/traces", suffixes: [".jsonl"])),
+            SourceActivity(name: "OpenCode",
+                           lastActive: fileMtime("~/.local/share/opencode/opencode.db"),
+                           topLevel: fileMtime("~/.local/share/opencode/opencode.db")),
+            SourceActivity(name: "Hermes",
+                           lastActive: newer(fileMtime("~/.hermes/state.db"), latestMtime(under: "~/.hermes/profiles", suffixes: ["state.db"])),
+                           topLevel: newer(fileMtime("~/.hermes/state.db"), latestMtime(under: "~/.hermes/profiles", suffixes: ["state.db"]))),
+            SourceActivity(name: "ZCode",
+                           lastActive: fileMtime("~/.zcode/cli/db/db.sqlite"),
+                           topLevel: fileMtime("~/.zcode/cli/db/db.sqlite")),
         ]
     }
 
-    /// 每个可识别 harness 的最后活动时间（nil = 本机无日志/未安装）；顺序即展示顺序
+    /// 兼容旧接口：是否正在燃烧
     public static func activeSources(now: Date = Date(), window: TimeInterval = defaultWindow) -> [String] {
-        let cutoff = now.addingTimeInterval(-window)
-        return lastActivity(now: now).compactMap { name, date in
-            // WorkBuddy 以 sessions 表裁决：背景同步写日志不算燃烧
-            if name == "WorkBuddy", let st = workBuddyState(now: now) {
-                return st == 0 ? name : nil
+        activitySnapshot(now: now).compactMap { item in
+            if item.name == "WorkBuddy", let st = workBuddyState(now: now) {
+                return st == 0 ? item.name : nil
             }
-            if let date, date >= cutoff { return name }
+            if let d = item.lastActive, now.timeIntervalSince(d) <= window { return item.name }
             return nil
         }
-    }
-
-    public static func lastActivity(now: Date = Date()) -> [(String, Date?)] {
-        let farPast = now.addingTimeInterval(-1e9)
-        return [
-            ("Claude Code", latestMtime(under: "~/.claude/projects", suffixes: [".jsonl"], topLevelOnly: true)),
-            ("Codex", latestCodexMtime(now: now, cutoff: farPast)),
-            ("DSH", latestMtime(under: "~/.dsh/sessions", suffixes: [".zstd", ".jsonl"], topLevelOnly: true)),
-            ("WorkBuddy", latestMtime(under: "~/.workbuddy/traces", suffixes: [".jsonl"])),
-            ("OpenCode", fileMtime("~/.local/share/opencode/opencode.db")),
-            ("Hermes", newer(fileMtime("~/.hermes/state.db"), latestMtime(under: "~/.hermes/profiles", suffixes: ["state.db"]))),
-            ("ZCode", fileMtime("~/.zcode/cli/db/db.sqlite")),
-        ]
     }
 
     /// WorkBuddy 三态（macOS，基于 sessions 表真实状态；其他平台 nil 回退 mtime 启发式）：
@@ -102,20 +110,47 @@ public enum ActivityDetector {
     }
 
     /// Codex 只扫今天/昨天的日期目录，避免遍历全部 6000+ 文件
-    private static func latestCodexMtime(now: Date, cutoff: Date) -> Date? {
+    private static func codexMtime(now: Date, topLevelOnly: Bool, recentCutoff: Date) -> Date? {
         let cal = Calendar.current
         var latest: Date?
         for offset in 0...1 {
             guard let day = cal.date(byAdding: .day, value: -offset, to: now) else { continue }
             let comps = cal.dateComponents([.year, .month, .day], from: day)
             let dir = String(format: "~/.codex/sessions/%04d/%02d/%02d", comps.year!, comps.month!, comps.day!)
-            let d = latestMtime(under: dir, suffixes: [".jsonl", ".zst"], topLevelOnly: true)
+            let d = topLevelOnly
+                ? latestTopLevelMtime(under: dir, suffixes: [".jsonl", ".zst"], recentCutoff: recentCutoff)
+                : latestMtime(under: dir, suffixes: [".jsonl", ".zst"])
             if let d, latest == nil || d > latest! { latest = d }
         }
         return latest
     }
 
-    private static func latestMtime(under dir: String, suffixes: [String], topLevelOnly: Bool = false) -> Date? {
+    /// 顶层会话的最后写入时间：只对「近期被写入」的文件读头部判子智能体，
+    /// 更早的文件直接按 mtime 计入（不可能是最大值来源，省掉全部文件 IO）
+    private static func latestTopLevelMtime(under dir: String, suffixes: [String], recentCutoff: Date) -> Date? {
+        let fm = FileManager.default
+        let path = SourcePaths.expand(dir)
+        guard fm.fileExists(atPath: path),
+              let enumerator = fm.enumerator(at: URL(fileURLWithPath: path),
+                                             includingPropertiesForKeys: [.contentModificationDateKey]) else { return nil }
+        var recent: [(String, Date)] = []
+        var olderMax: Date?
+        for case let url as URL in enumerator {
+            let p = url.path
+            guard suffixes.contains(where: p.hasSuffix) else { continue }
+            guard let v = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate else { continue }
+            if v >= recentCutoff { recent.append((p, v)) }
+            else if olderMax == nil || v > olderMax! { olderMax = v }
+        }
+        var latest = olderMax
+        for (p, v) in recent.sorted(by: { $0.1 > $1.1 }) {
+            if isSubagentFile(p) { continue }
+            if latest == nil || v > latest! { latest = v }
+        }
+        return latest
+    }
+
+    private static func latestMtime(under dir: String, suffixes: [String]) -> Date? {
         let fm = FileManager.default
         let path = SourcePaths.expand(dir)
         guard fm.fileExists(atPath: path),
@@ -125,7 +160,6 @@ public enum ActivityDetector {
         for case let url as URL in enumerator {
             let p = url.path
             guard suffixes.contains(where: p.hasSuffix) else { continue }
-            if topLevelOnly, isSubagentFile(p) { continue }
             if let v = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate {
                 if latest == nil || v > latest! { latest = v }
             }

@@ -7,6 +7,7 @@ struct SlidingTabs<Option: Hashable>: View {
     let options: [(option: Option, label: String)]
     @Binding var selection: Option
     @Namespace private var ns
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 2) {
@@ -15,7 +16,7 @@ struct SlidingTabs<Option: Hashable>: View {
                 let selected = selection == opt.option
                 Button {
                     guard !selected else { return }
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.86)) {
                         selection = opt.option
                     }
                 } label: {
@@ -42,16 +43,34 @@ struct SlidingTabs<Option: Hashable>: View {
     }
 }
 
+/// 数字滚动：内容过渡 + 仅该文本参与的动画（避免整页重绘动画导致的抖动）
+struct RollingNumber: ViewModifier {
+    let value: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .contentTransition(reduceMotion ? .identity : .numericText())
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: value)
+    }
+}
+
+extension View {
+    func rolling(_ value: String) -> some View { modifier(RollingNumber(value: value)) }
+}
+
 struct PanelView: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hoveredDay: String?
     @State private var hoveredHour: Int?
+    @State private var hoveredRow: String?
     @State private var showSettings = false
 
     private var palette: [Color] { model.theme.palette }
 
     var body: some View {
-        ScrollView {
+        ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 if model.updateVisible, let v = model.latestVersion {
@@ -96,6 +115,7 @@ struct PanelView: View {
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
                 }
                 if let s = model.summary {
+                    Group {
                     summaryCards(s)
                     toolsSection(s)
                     modelsSection(s)
@@ -104,6 +124,8 @@ struct PanelView: View {
                     hoursSection(s)
                     footnotes(s)
                     if showSettings { settingsSection }
+                    }
+                    .transition(.opacity)
                 } else {
                     VStack(spacing: 10) {
                         ProgressView().controlSize(.large)
@@ -122,8 +144,8 @@ struct PanelView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
-            .animation(.easeInOut(duration: 0.3), value: model.summary?.counts.total)
-            .animation(.easeInOut(duration: 0.3), value: model.includeCache)
+            // 仅在「扫描中 ↔ 有数据」切换时淡入，不做整树动画
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: model.summary == nil)
         }
         .frame(width: 430, height: 560)
     }
@@ -135,13 +157,7 @@ struct PanelView: View {
             Text("TokenMeter").font(.title3.bold())
             if model.isBurning {
                 HStack(spacing: 3) {
-                    let frames = model.currentFlameFrames
-                    if !frames.isEmpty {
-                        Image(nsImage: frames[model.flameFrame % frames.count])
-                            .frame(width: 12, height: 12)
-                    } else {
-                        Image(systemName: "flame.fill").foregroundStyle(.orange).font(.caption)
-                    }
+                    FlameIcon(ticker: model.flame, frames: model.currentFlameFrames, size: 12)
                     Text("燃烧中 \(model.burningSources.joined(separator: ", "))")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -242,7 +258,7 @@ struct PanelView: View {
                 Text(value).font(.title2.bold()).monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.55)
-                    .contentTransition(.numericText())
+                    .rolling(value)
                 if !unit.isEmpty {
                     Text(unit).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -256,6 +272,15 @@ struct PanelView: View {
         .padding(.horizontal, 6)
     }
 
+    /// 行悬停高亮（轻微的底色，提示可交互）
+    @ViewBuilder
+    private func rowBackground(_ key: String) -> some View {
+        RoundedRectangle(cornerRadius: 6)
+            .fill(Color.primary.opacity(hoveredRow == key ? 0.05 : 0))
+            .padding(.horizontal, -6)
+            .padding(.vertical, -2)
+    }
+
     private func toolsSection(_ s: Summary) -> some View {
         let totalDisp = s.tools.reduce(Int64(0)) { $0 + disp($1.counts) }
         return VStack(alignment: .leading, spacing: 8) {
@@ -266,11 +291,13 @@ struct PanelView: View {
                     Text(t.tool).font(.callout).frame(width: 88, alignment: .leading).lineLimit(1)
                     bar(share: dispShare(t.counts, total: totalDisp), color: palette[idx % palette.count])
                     Text(Fmt.tokens(disp(t.counts))).font(.callout).monospacedDigit()
-                        .contentTransition(.numericText())
+                        .rolling(Fmt.tokens(disp(t.counts)))
                         .frame(width: 62, alignment: .trailing)
                     Text(Fmt.percent(dispShare(t.counts, total: totalDisp))).font(.caption).foregroundStyle(.secondary).monospacedDigit().frame(width: 46, alignment: .trailing)
                     Text(Fmt.cost(t.cost)).font(.callout).monospacedDigit().frame(width: 58, alignment: .trailing)
                 }
+                .background(rowBackground("tool-\(t.tool)"))
+                .onHover { hoveredRow = $0 ? "tool-\(t.tool)" : nil }
             }
         }
     }
@@ -286,7 +313,7 @@ struct PanelView: View {
                         Text(m.model).font(.callout).lineLimit(1).truncationMode(.middle)
                         Spacer()
                         Text(Fmt.tokens(disp(m.counts))).font(.callout).monospacedDigit()
-                            .contentTransition(.numericText())
+                            .rolling(Fmt.tokens(disp(m.counts)))
                         Text(Fmt.percent(dispShare(m.counts, total: totalDisp))).font(.caption).foregroundStyle(.secondary).monospacedDigit().frame(width: 46, alignment: .trailing)
                         Text(Fmt.cost(m.cost)).font(.callout).monospacedDigit().frame(width: 58, alignment: .trailing)
                     }
@@ -294,6 +321,8 @@ struct PanelView: View {
                         .frame(height: 3)
                     Text(m.tools.joined(separator: " · ")).font(.caption2).foregroundStyle(.tertiary)
                 }
+                .background(rowBackground("model-\(m.model)"))
+                .onHover { hoveredRow = $0 ? "model-\(m.model)" : nil }
             }
         }
     }
@@ -310,11 +339,13 @@ struct PanelView: View {
                         .lineLimit(1).truncationMode(.middle)
                     bar(share: dispShare(p.counts, total: totalDisp), color: palette[idx % palette.count])
                     Text(Fmt.tokens(disp(p.counts))).font(.callout).monospacedDigit()
-                        .contentTransition(.numericText()).frame(width: 62, alignment: .trailing)
+                        .rolling(Fmt.tokens(disp(p.counts))).frame(width: 62, alignment: .trailing)
                     Text(Fmt.percent(dispShare(p.counts, total: totalDisp))).font(.caption)
                         .foregroundStyle(.secondary).monospacedDigit().frame(width: 46, alignment: .trailing)
                     Text(Fmt.cost(p.cost)).font(.callout).monospacedDigit().frame(width: 58, alignment: .trailing)
                 }
+                .background(rowBackground("proj-\(p.project)"))
+                .onHover { hoveredRow = $0 ? "proj-\(p.project)" : nil }
             }
         }
     }
@@ -544,7 +575,7 @@ struct PanelView: View {
             Button("刷新") { model.refresh() }
                 .buttonStyle(.borderless)
             Button("设置") {
-                withAnimation(.easeInOut(duration: 0.2)) { showSettings.toggle() }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { showSettings.toggle() }
             }
             .buttonStyle(.borderless)
         }
