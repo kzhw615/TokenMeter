@@ -53,11 +53,22 @@ func pad(_ s: String, _ w: Int) -> String {
 
 let opts = parseArgs(Array(CommandLine.arguments.dropFirst()))
 
-var cache = opts.noCache ? ScanCache() : ScanCache.load()
-let scanned = Aggregator.scan(cache: &cache)
-if !opts.noCache { cache.save() }
+@discardableResult
+func phase<T>(_ label: String, _ block: () -> T) -> T {
+    let t0 = Date()
+    let value = block()
+    FileHandle.standardError.write(Data(String(format: "  %-14s %7.1f ms\n", (label as NSString).utf8String!, Date().timeIntervalSince(t0) * 1000).utf8))
+    return value
+}
+let verbose = CommandLine.arguments.contains("--timing")
+Aggregator.timingEnabled = verbose
+func timed<T>(_ label: String, _ block: () -> T) -> T { verbose ? phase(label, block) : block() }
+
+var cache = timed("cache-load") { opts.noCache ? ScanCache() : ScanCache.load() }
+let scanned = timed("scan") { Aggregator.scan(cache: &cache) }
+if !opts.noCache { timed("cache-save") { cache.save() } }
 let pricing = PricingTable.load()
-let summary = Aggregator.summarize(buckets: scanned.buckets, range: opts.range, pricing: pricing, statuses: scanned.statuses)
+let summary = timed("summarize") { Aggregator.summarize(buckets: scanned.buckets, range: opts.range, pricing: pricing, statuses: scanned.statuses) }
 
 switch opts.command {
 case "activity":

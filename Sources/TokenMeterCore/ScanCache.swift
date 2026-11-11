@@ -9,14 +9,17 @@ public struct ScanCache: Codable, Sendable {
         public var buckets: [UsageBucket]
         /// 已解析到的字节偏移（append-only 日志增量解析用）
         public var offset: Int64
-        public init(size: Int64, mtime: Double, buckets: [UsageBucket], offset: Int64 = 0) {
+        /// 增量解析时需要沿用的上下文（如 DSH 会话当前模型）
+        public var lastModel: String?
+        public init(size: Int64, mtime: Double, buckets: [UsageBucket], offset: Int64 = 0, lastModel: String? = nil) {
             self.size = size
             self.mtime = mtime
             self.buckets = buckets
             self.offset = offset
+            self.lastModel = lastModel
         }
     }
-    public var version: Int = 5   // v5: 空桶缓存失效修复，强制重建
+    public var version: Int = 7   // v7: 允许空结果落盘（避免无用量文件每次重解析）+ 增量 offset
     public var entries: [String: Entry] = [:]
     /// 本次会话是否有新解析（决定是否值得写回磁盘），不持久化
     public var dirty: Bool = false
@@ -34,7 +37,9 @@ public struct ScanCache: Codable, Sendable {
     public static func load() -> ScanCache {
         guard let data = try? Data(contentsOf: url),
               let c = try? JSONDecoder().decode(ScanCache.self, from: data),
-              c.version == 5 else { return ScanCache() }
+              // v5+ 的缓存结构向后兼容：新字段（offset/lastModel）缺失时按默认值处理，
+              // 因此不强制全量重建，用户升级后无需再等数分钟
+              c.version >= 5 else { return ScanCache() }
         return c
     }
 
@@ -54,12 +59,17 @@ public struct ScanCache: Codable, Sendable {
         return (size, mtime.timeIntervalSince1970)
     }
 
-    /// 若文件未变化返回缓存桶；否则返回 nil 表示需要重新解析。
-    /// 注意：空桶（[]）视为无效缓存 —— 曾因扫描中途写盘导致大量空桶被复用而丢数据。
+    /// 用调用方已取得的指纹判断（避免重复 stat）
+    public func cachedBuckets(path: String, size: Int64, mtime: Double) -> [UsageBucket]? {
+        guard let e = entries[path],
+              e.size == size, abs(e.mtime - mtime) < 0.001 else { return nil }
+        return e.buckets
+    }
+
+    /// 若文件未变化返回缓存桶（可能为空数组，表示该文件确实无用量）；未变化才返回，否则 nil
     public func cachedBuckets(path: String) -> [UsageBucket]? {
         guard let fp = Self.fingerprint(path: path),
               let e = entries[path],
-              !e.buckets.isEmpty,
               e.size == fp.size, abs(e.mtime - fp.mtime) < 0.001 else { return nil }
         return e.buckets
     }
@@ -68,15 +78,30 @@ public struct ScanCache: Codable, Sendable {
         store(path: path, buckets: buckets, offset: Self.fingerprint(path: path)?.size ?? 0)
     }
 
-    public mutating func store(path: String, buckets: [UsageBucket], offset: Int64) {
-        // 空桶不落盘：避免"未扫描完/解析失败"的文件被永久缓存为空
-        guard !buckets.isEmpty else { return }
+    public mutating func store(path: String, buckets: [UsageBucket], offset: Int64, lastModel: String? = nil) {
+        // 空桶也可以落盘：条目只在「解析完成」后写入，空结果代表该文件确实没有用量。
+        // （历史上曾因 App 与 CLI 并发写半成品缓存导致空桶被当有效缓存，现已用串行落盘 + 全量原子写修复）
+
         guard let fp = Self.fingerprint(path: path) else { return }
-        entries[path] = Entry(size: fp.size, mtime: fp.mtime, buckets: buckets, offset: offset)
+        entries[path] = Entry(size: fp.size, mtime: fp.mtime, buckets: buckets, offset: offset, lastModel: lastModel)
         dirty = true
     }
 
     public func cachedEntry(path: String) -> Entry? {
         entries[path]
+    }
+
+    /// 仅当文件指纹未变时返回条目（含 offset，即使 buckets 为空也可用于增量解析）
+    public func freshEntry(path: String) -> Entry? {
+        guard let fp = Self.fingerprint(path: path), let e = entries[path] else { return nil }
+        guard e.size == fp.size, abs(e.mtime - fp.mtime) < 0.001 else { return nil }
+        return e
+    }
+
+    /// 更新条目（保留增量 offset 与解析上下文）
+    public mutating func update(path: String, buckets: [UsageBucket], offset: Int64, lastModel: String? = nil) {
+        guard let fp = Self.fingerprint(path: path) else { return }
+        entries[path] = Entry(size: fp.size, mtime: fp.mtime, buckets: buckets, offset: offset, lastModel: lastModel)
+        dirty = true
     }
 }

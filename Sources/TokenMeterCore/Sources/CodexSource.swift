@@ -21,8 +21,10 @@ public struct CodexSource: UsageSource {
         let files = logFiles()
         let builder = BucketBuilder(tool: "Codex")
         var toParse: [String] = []
-        for path in files {
-            if let cached = cache.cachedBuckets(path: path) {
+        // 并行取指纹（数千个 stat 串行是主要耗时）
+        let prints = SourcePaths.parallelFingerprints(files)
+        for (i, path) in files.enumerated() {
+            if let fp = prints[i], let cached = cache.cachedBuckets(path: path, size: fp.size, mtime: fp.mtime) {
                 ScanProgressReporter.current?.bump()
                 builder.merge(cached)
             } else {

@@ -65,6 +65,56 @@ public enum Zstd {
         #endif
     }
 
+    static let frameMagic: [UInt8] = [0x28, 0xB5, 0x2F, 0xFD]
+
+    /// zstd 流式写入会把每次 flush 存成一个独立帧（同一文件内多帧拼接）。
+    /// 这里返回「最后一个帧的起始偏移」——从它之前的内容都已完整落盘，可安全增量解析。
+    public static func lastFrameStart(path: String) -> Int64? {
+        guard let fh = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? fh.close() }
+        guard let size = try? fh.seekToEnd() else { return nil }
+        guard size > 0 else { return nil }
+        // 只需找到「最后一个帧起点」，扫尾部 4MB 足够（活跃日志可达数 MB，全读没有必要）
+        let window: UInt64 = 4 * 1024 * 1024
+        let start: UInt64 = size > window ? size - window : 0
+        do { try fh.seek(toOffset: start) } catch { return nil }
+        guard let data = try? fh.readToEnd(), !data.isEmpty else { return nil }
+        let bytes = [UInt8](data)
+        var last: Int64 = 0
+        var i = 0
+        let n = bytes.count
+        while i + 4 <= n {
+            if bytes[i] == 0x28, bytes[i+1] == 0xB5, bytes[i+2] == 0x2F, bytes[i+3] == 0xFD {
+                last = Int64(start) + Int64(i)
+                i += 4
+            } else {
+                i += 1
+            }
+        }
+        return last
+    }
+
+    /// 解压 [offset, boundary) 区间（即新追加且已完整的帧）
+    public static func decompressRange(path: String, from offset: Int64, to boundary: Int64) -> Data? {
+        guard boundary > offset, let zstd = zstdPath() else { return nil }
+        guard let fh = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? fh.close() }
+        let len = Int(boundary - offset)
+        guard len > 0 else { return nil }
+        do { try fh.seek(toOffset: UInt64(offset)) } catch { return nil }
+        // 只读需要的字节数（readToEnd 会把整个尾部读进内存）
+        guard let chunk = try? fh.read(upToCount: len), chunk.count == len else { return nil }
+        let tail = chunk
+        // 写临时文件交给 zstd 解压（进程方式最稳，支持多帧拼接）
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tm-zstd-\(UUID().uuidString).zst")
+        do {
+            try tail.write(to: tmp)
+        } catch { return nil }
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        return decompress(path: tmp.path)
+    }
+
     public static func decompress(path: String) -> Data? {
         guard let zstd = zstdPath() else { return nil }
         let p = Process()

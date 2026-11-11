@@ -29,6 +29,8 @@ public enum ScanProgressReporter {
 }
 
 public enum Aggregator {
+    /// 诊断开关：扫描时把每个数据源耗时打到 stderr
+    public nonisolated(unsafe) static var timingEnabled = false
     /// 由 day key + hour 还原本地时间（用于时段敏感计价）
     static func bucketDate(day: String, hour: Int, calendar: Calendar) -> Date? {
         guard let base = DayKey.date(for: day) else { return nil }
@@ -61,7 +63,13 @@ public enum Aggregator {
                 statuses.append(SourceStatus(id: source.id, name: source.displayName, enabled: false, files: 0, note: "已禁用"))
                 continue
             }
+            let t0 = Date()
             let r = source.scan(cache: &cache)
+            if Self.timingEnabled {
+                let ms = Date().timeIntervalSince(t0) * 1000
+                FileHandle.standardError.write(Data(String(format: "    %-14s %7.1f ms  files=%d\n",
+                    (source.id as NSString).utf8String!, ms, r.files).utf8))
+            }
             buckets.append(contentsOf: r.buckets)
             statuses.append(SourceStatus(id: source.id, name: source.displayName, enabled: true, files: r.files, note: r.note))
         }

@@ -179,4 +179,16 @@ public enum SourcePaths {
     static func mtime(_ path: String) -> Date? {
         try? URL(fileURLWithPath: path).resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
     }
+
+    /// 并行取文件指纹：数千个 stat 串行是扫描的主要开销
+    public static func parallelFingerprints(_ paths: [String]) -> [(size: Int64, mtime: Double)?] {
+        guard !paths.isEmpty else { return [] }
+        var out = [(size: Int64, mtime: Double)?](repeating: nil, count: paths.count)
+        let lock = NSLock()
+        DispatchQueue.concurrentPerform(iterations: paths.count) { i in
+            let fp = ScanCache.fingerprint(path: paths[i])
+            lock.lock(); out[i] = fp; lock.unlock()
+        }
+        return out
+    }
 }

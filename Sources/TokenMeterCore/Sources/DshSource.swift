@@ -25,19 +25,47 @@ public struct DshSource: UsageSource {
         }
         let builder = BucketBuilder(tool: "DSH")
         for path in files {
+            // 压缩日志：按 zstd 帧边界增量解析，避免每次解压整个文件（活跃会话可达数 MB）
+            // 活跃文件一直在增长：不能要求指纹完全一致，只要求「比上次更大」（append-only）
+            if path.hasSuffix(".zstd"),
+               let entry = cache.cachedEntry(path: path),
+               entry.offset > 0,
+               let cur = ScanCache.fingerprint(path: path),
+               cur.size >= entry.size,
+               let boundary = Zstd.lastFrameStart(path: path),
+               boundary > entry.offset {
+                let dbg = ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil
+                if dbg { FileHandle.standardError.write(Data("    [dsh] incremental offset=\(entry.offset) boundary=\(boundary) gap=\(boundary-entry.offset)\n".utf8)) }
+                if let tail = Zstd.decompressRange(path: path, from: entry.offset, to: boundary) {
+                    let parsed = parseWithModel(data: tail, path: path, initialModel: entry.lastModel)
+                    let merged = mergeBuckets(entry.buckets, parsed.buckets)
+                    cache.update(path: path, buckets: merged, offset: boundary, lastModel: parsed.model)
+                    builder.merge(merged)
+                    ScanProgressReporter.current?.bump()
+                    continue
+                }
+            }
             if let cached = cache.cachedBuckets(path: path) {
                 ScanProgressReporter.current?.bump()
                 builder.merge(cached)
                 continue
             }
+            if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
+                FileHandle.standardError.write(Data("    [dsh] FULL \(path.split(separator: "/").last ?? "")\n".utf8))
+            }
             let local: [UsageBucket]
+            var model: String?
             if path.hasSuffix(".zstd") {
                 guard let data = Zstd.decompress(path: path) else { continue }
-                local = parse(data: data, path: path)
+                let parsed = parseWithModel(data: data, path: path, initialModel: nil)
+                local = parsed.buckets
+                model = parsed.model
             } else {
                 local = parseFile(path: path)
             }
-            cache.store(path: path, buckets: local)
+            // 记录帧边界，供下次增量解析
+            let offset = path.hasSuffix(".zstd") ? (Zstd.lastFrameStart(path: path) ?? 0) : 0
+            cache.store(path: path, buckets: local, offset: offset, lastModel: model)
             builder.merge(local)
             ScanProgressReporter.current?.bump()
         }
@@ -56,6 +84,16 @@ public struct DshSource: UsageSource {
             cache.store(path: path, buckets: local)
             builder.merge(local)
         }
+        return builder.buckets
+    }
+
+    /// 合并两组桶（增量解析：旧桶 + 新增桶）
+    private func mergeBuckets(_ old: [UsageBucket], _ new: [UsageBucket]) -> [UsageBucket] {
+        guard !old.isEmpty else { return new }
+        guard !new.isEmpty else { return old }
+        let builder = BucketBuilder(tool: "DSH")
+        builder.merge(old)
+        builder.merge(new)
         return builder.buckets
     }
 
@@ -79,18 +117,24 @@ public struct DshSource: UsageSource {
     }
 
     private func parse(data: Data, path: String) -> [UsageBucket] {
+        parseWithModel(data: data, path: path, initialModel: nil).buckets
+    }
+
+    /// 解析并返回结束时生效的模型（增量解析时作为下文初始模型沿用）
+    private func parseWithModel(data: Data, path: String, initialModel: String?) -> (buckets: [UsageBucket], model: String?) {
         let builder = makeBuilder(path: path)
         let state = ParseState(builder: builder)
+        if let initialModel { state.currentModel = initialModel }
         let lines = LineReader.split(data)
-        for line in lines {
-            if line.contains("\"model/selection\"") {
-                state.currentModel = Self.modelFromSelection(line) ?? state.currentModel
+        if initialModel == nil {
+            for line in lines where line.contains("\"model/selection\"") {
+                if let m = Self.modelFromSelection(line) { state.currentModel = m }
                 break
             }
         }
         for line in lines { state.consume(line) }
         state.flush()
-        return builder.buckets
+        return (builder.buckets, state.currentModel)
     }
 
     private func firstModel(path: String) -> String? {
