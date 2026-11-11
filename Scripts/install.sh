@@ -1,12 +1,17 @@
 #!/bin/bash
-# 构建并安装 TokenMeter 到 /Applications（无权限时退到 ~/Applications）
+# 构建 → 安装到 /Applications（无权限时退到 ~/Applications）→ 重启，一步到位
+# 用法: ./Scripts/install.sh [版本号]   （默认 0.1.0）
 set -euo pipefail
 cd "$(dirname "$0")/.."
+VERSION="${1:-0.1.0}"
 
-./Scripts/build_app.sh
+./Scripts/build_app.sh "$VERSION"
 
-# 若旧实例在运行先退出
+# 退出旧实例（含 /Applications 里可能残留的老版本）
+pkill -x TokenMeter >/dev/null 2>&1 || true
 osascript -e 'tell application "TokenMeter" to quit' >/dev/null 2>&1 || true
+sleep 1
+pkill -9 -x TokenMeter >/dev/null 2>&1 || true
 sleep 1
 
 if [ -w /Applications ]; then
@@ -16,8 +21,20 @@ else
     mkdir -p "$DEST"
 fi
 
+# 用 ditto 保留签名/资源包/权限位
 rm -rf "$DEST/TokenMeter.app"
-cp -R build/TokenMeter.app "$DEST/"
-echo "==> 已安装到 $DEST/TokenMeter.app"
+ditto build/TokenMeter.app "$DEST/TokenMeter.app"
+INSTALLED_VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$DEST/TokenMeter.app/Contents/Info.plist" 2>/dev/null || echo "?")
+echo "==> 已安装 $DEST/TokenMeter.app v${INSTALLED_VERSION}"
+
+# 清除隔离标记，避免更新替换后被 Gatekeeper 拦
+xattr -dr com.apple.quarantine "$DEST/TokenMeter.app" >/dev/null 2>&1 || true
+
 open "$DEST/TokenMeter.app"
-echo "==> 已启动。菜单栏出现 ⬢ 图标即成功；开机自启请在 系统设置 → 通用 → 登录项 中添加 TokenMeter。"
+sleep 3
+if pgrep -x TokenMeter >/dev/null; then
+    echo "==> 已启动 PID $(pgrep -x TokenMeter | head -1)，菜单栏应出现图标"
+else
+    echo "!! 启动失败，请手动运行: open \"$DEST/TokenMeter.app\"" >&2
+    exit 1
+fi
