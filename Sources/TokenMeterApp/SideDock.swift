@@ -73,6 +73,20 @@ struct BarFlareShape: Shape {
     }
 }
 
+/// 悬浮坞面板：SwiftUI hosting 会吞掉右键，需在窗口层捕获
+final class DockPanel: NSPanel {
+    var contextMenu: NSMenu?
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let menu = contextMenu, let view = contentView else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        let point = view.convert(event.locationInWindow, from: nil)
+        menu.popUp(positioning: nil, at: point, in: view)
+    }
+}
+
 /// 侧边悬浮坞：单窗口。拖动=独立圆角浮块；松手=滑向较近屏边并 cross-fade 成贴边融合形态；
 /// 位置/侧别记忆；双击回位；单击弹面板。四角完全透明（无投影 haze）
 @MainActor
@@ -104,7 +118,7 @@ final class SideDockController: ObservableObject {
         rowCount = model.visibleDockSources.count
         fuse = 1
 
-        let panel = NSPanel(
+        let panel = DockPanel(
             contentRect: NSRect(origin: originFor(side: side, vf: vf, saved: useSaved), size: NSSize(width: Self.barWidth, height: dockHeight)),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false)
@@ -118,9 +132,8 @@ final class SideDockController: ObservableObject {
         panel.isMovableByWindowBackground = true
         panel.contentView = NSHostingView(rootView:
             SideDockView(controller: self).environmentObject(model))
+        panel.contextMenu = AppActions.shared.buildMenu(model: model)
         panel.orderFrontRegardless()
-        // 右键菜单：与菜单栏右键一致
-        panel.contentView?.menu = AppActions.shared.buildMenu(model: model)
         self.panel = panel
 
         moveObserver = NotificationCenter.default.addObserver(

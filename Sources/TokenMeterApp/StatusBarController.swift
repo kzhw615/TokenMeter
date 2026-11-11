@@ -6,7 +6,25 @@ import TokenMeterCore
 
 /// 可成为 key window 的无边框面板：非激活面板默认收不到键盘事件，重写后才能响应 ⌘R / Esc
 final class KeyablePanel: NSPanel {
+    var onEscape: (() -> Void)?
+    var onRefresh: (() -> Void)?
+
     override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    /// Esc
+    override func cancelOperation(_ sender: Any?) {
+        onEscape?()
+    }
+
+    /// ⌘R 刷新 / ⌘Q 退出
+    override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.command), let chars = event.charactersIgnoringModifiers?.lowercased() {
+            if chars == "r" { onRefresh?(); return }
+        }
+        if event.keyCode == 53 { onEscape?(); return }
+        super.keyDown(with: event)
+    }
 }
 
 /// 菜单栏控制器：NSStatusItem 提供「左键打开面板 / 右键功能菜单」
@@ -20,6 +38,7 @@ final class StatusBarController: NSObject {
     private var cancellables = Set<AnyCancellable>()
     private var flameTimer: Timer?
     private var outsideMonitor: Any?
+    private var keyMonitor: Any?
     private var settingsObservers: [NSObjectProtocol] = []
 
     private static let panelSize = NSSize(width: 430, height: 560)
@@ -70,10 +89,11 @@ final class StatusBarController: NSObject {
     }
 
     private func showContextMenu() {
-        guard let button = item.button else { return }
         let menu = actions.buildMenu(model: model)
-        let origin = NSPoint(x: 0, y: button.bounds.height + 4)
-        menu.popUp(positioning: nil, at: origin, in: button)
+        // 临时挂到 statusItem 上再模拟点击：由系统负责锚定到图标下方（popUp(at:in:) 会飘到屏幕中间）
+        item.menu = menu
+        item.button?.performClick(nil)
+        item.menu = nil
     }
 
     /// 同步按钮图标与文字
@@ -143,6 +163,8 @@ final class StatusBarController: NSObject {
         p.hidesOnDeactivate = false
         p.contentView = hosting
         p.isReleasedWhenClosed = false
+        p.onEscape = { [weak self] in self?.hidePanel() }
+        p.onRefresh = { [weak self] in self?.model.refresh() }
         panel = p
     }
 
@@ -156,15 +178,19 @@ final class StatusBarController: NSObject {
             x = min(max(x, vf.minX + 8), vf.maxX - Self.panelSize.width - 8)
         }
         panel.setFrameOrigin(NSPoint(x: x, y: max(y, 8)))
+        // 激活本应用后键盘事件才会送到面板（Esc / ⌘R）
+        NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         model.panelOpen = true
         installOutsideMonitor()
+        installKeyMonitor()
     }
 
     func hidePanel() {
         panel?.orderOut(nil)
         model.panelOpen = false
         removeOutsideMonitor()
+        removeKeyMonitor()
     }
 
     func togglePanel() {
@@ -190,6 +216,32 @@ final class StatusBarController: NSObject {
 
     private func removeOutsideMonitor() {
         if let m = outsideMonitor { NSEvent.removeMonitor(m); outsideMonitor = nil }
+    }
+
+    /// 面板内的键盘：Esc 关闭、⌘R 刷新、⌘, 设置
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, self.panel?.isVisible == true else { return event }
+            if event.keyCode == 53 {              // Esc
+                self.hidePanel()
+                return nil
+            }
+            if event.modifierFlags.contains(.command),
+               let ch = event.charactersIgnoringModifiers?.lowercased() {
+                switch ch {
+                case "r": self.model.refresh(); return nil
+                case ",": self.openSettings(); return nil
+                case "q": self.quitApp(); return nil
+                default: break
+                }
+            }
+            return event
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
     }
 
     // MARK: - 设置窗口
