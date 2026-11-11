@@ -171,22 +171,23 @@ struct PanelView: View {
                 .monospacedDigit()
             Button(action: { model.checkForUpdates(force: true) }) {
                 if model.updateChecking {
-                    ProgressView().controlSize(.mini).frame(width: 14, height: 14)
+                    HStack(spacing: 3) {
+                        ProgressView().controlSize(.mini).frame(width: 10, height: 10)
+                        Text("检查中…").font(.caption2)
+                    }
                 } else {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    Text("检查更新").font(.caption2)
                 }
             }
             .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
             .disabled(model.updateChecking)
-            .help("手动检查更新")
+            .help("立即检查是否有新版本")
             Button(action: { confirmQuit() }) {
-                Image(systemName: "power")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Text("退出").font(.caption2)
             }
             .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
             .help("退出 TokenMeter")
         }
     }
@@ -534,7 +535,7 @@ struct PanelView: View {
     private var footer: some View {
         HStack(spacing: 10) {
             if let t = model.lastScan {
-                Text("更新 \(timeFormatter.string(from: t))").font(.caption2).foregroundStyle(.secondary)
+                Text("上次统计 \(timeFormatter.string(from: t))").font(.caption2).foregroundStyle(.secondary)
             }
             if let m = model.settingsMessage {
                 Text(m).font(.caption2).foregroundStyle(.secondary)
