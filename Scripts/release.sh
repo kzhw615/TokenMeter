@@ -12,6 +12,9 @@ if [ -n "$(git status --porcelain)" ]; then
     exit 1
 fi
 
+echo "==> 推送分支（避免 tag 推上去了但 README/代码还停在旧提交）"
+git push origin HEAD
+
 echo "==> 构建 v$VERSION"
 ./Scripts/build_app.sh "$VERSION"
 
