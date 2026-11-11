@@ -12,6 +12,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        if StatusBarController.terminateIfDuplicate() {
+            NSApp.terminate(nil)
+            return
+        }
         PricingTable.writeTemplateIfMissing()
         let model = AppModel()
         self.model = model

@@ -48,6 +48,9 @@ final class StatusBarController: NSObject {
         self.actions = actions
         self.item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
+        // 持久化位置/可见性，避免系统在菜单栏拥挤时把图标隐藏后不再恢复
+        item.autosaveName = "TokenMeterStatusItem"
+        item.isVisible = true
 
         configureButton()
         rebuildPanel()
@@ -74,6 +77,18 @@ final class StatusBarController: NSObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] in self?.refreshButton() }
             .store(in: &cancellables)
+        if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                guard let self, let btn = self.item.button else { return }
+                let rect = btn.window.map { $0.convertToScreen(btn.convert(btn.bounds, to: nil)) } ?? .zero
+                let scr = btn.window?.screen ?? NSScreen.main
+                let notchL = scr?.auxiliaryTopLeftArea ?? .zero
+                let notchR = scr?.auxiliaryTopRightArea ?? .zero
+                let dump = "DBG bar visible=\(self.item.isVisible) frame=\(rect) img=\(btn.image.map { "\($0.size)" } ?? "nil") title=\"\(btn.attributedTitle.string)\"\n"
+                let notch = "DBG notch screen=\(scr?.frame ?? .zero) left=\(notchL) right=\(notchR) safeTop=\(scr?.safeAreaInsets.top ?? 0)\n"
+                FileHandle.standardError.write(Data((dump + notch).utf8))
+            }
+        }
         // 火苗帧由独立 ticker 驱动：只在帧变化时重绘状态栏按钮（不再轮询）
         model.flame.objectWillChange
             .receive(on: RunLoop.main)
@@ -131,7 +146,8 @@ final class StatusBarController: NSObject {
             let frames = model.currentFlameFrames
             if !frames.isEmpty {
                 let size = model.flamePointSize
-                let img = frames[model.flame.frame % frames.count]
+                let base = frames[model.flame.frame % frames.count]
+                let img = (base.copy() as? NSImage) ?? base
                 img.size = NSSize(width: size, height: size)
                 button.image = img
             } else {
@@ -277,6 +293,18 @@ final class StatusBarController: NSObject {
     }
 
     // MARK: - 退出
+
+    /// 单实例保护：若已有别的 TokenMeter 在跑，本实例退出，避免出现两个菜单栏图标
+    static func terminateIfDuplicate() -> Bool {
+        let me = ProcessInfo.processInfo.processIdentifier
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "local.tokenmeter.menubar")
+            .filter { $0.processIdentifier != me }
+        if let other = others.first {
+            other.activate(options: [])
+            return true
+        }
+        return false
+    }
 
     private func quitApp() {
         hidePanel()
