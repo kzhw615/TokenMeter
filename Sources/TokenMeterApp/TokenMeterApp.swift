@@ -270,6 +270,7 @@ final class AppModel: ObservableObject {
     func pollActivity() {
         Task.detached(priority: .utility) { [weak self] in
             let active = ActivityDetector.activeSources()
+            let topActivity = Dictionary(uniqueKeysWithValues: ActivityDetector.topLevelActivity().compactMap { n, d in d.map { (n, $0) } })
             let now = Date()
             let hot: Int64? = active.isEmpty ? nil : Aggregator.hotTodayTotal(since: now.addingTimeInterval(-180), now: now)
             await MainActor.run { [weak self] in
@@ -278,7 +279,9 @@ final class AppModel: ObservableObject {
                 // 三态：运行中(<60s) / 待阅读(60s~10min) / 空闲(>10min)
                 let states: [(String, Int)] = ActivityDetector.lastActivity(now: now).compactMap { name, date in
                     guard let date else { return nil }   // 无日志 = 未安装，不展示
-                    let age = now.timeIntervalSince(date)
+                    // 顶层活动（排除子智能体）：绿灯只认「主任务跑完」
+                    let top = topActivity[name] ?? date
+                    let age = now.timeIntervalSince(top)
                     var st = active.contains(name) ? 0 : (age < 600 ? 1 : 2)
                     // WorkBuddy 用 sessions 表真实状态裁决（背景同步写日志不再误判）
                     if name == "WorkBuddy", let wb = ActivityDetector.workBuddyState(now: now) { st = wb }

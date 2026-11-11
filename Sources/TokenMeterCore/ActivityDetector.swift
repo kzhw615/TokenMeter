@@ -8,6 +8,20 @@ import SQLite3
 public enum ActivityDetector {
     public static let defaultWindow: TimeInterval = 60
 
+    /// 每个源「顶层会话」的最后活动（排除子智能体；nil = 未安装）
+    public static func topLevelActivity(now: Date = Date()) -> [(String, Date?)] {
+        let farPast = now.addingTimeInterval(-1e9)
+        return [
+            ("Claude Code", latestMtime(under: "~/.claude/projects", suffixes: [".jsonl"], topLevelOnly: true)),
+            ("Codex", latestCodexMtime(now: now, cutoff: farPast)),
+            ("DSH", latestMtime(under: "~/.dsh/sessions", suffixes: [".zstd", ".jsonl"], topLevelOnly: true)),
+            ("WorkBuddy", latestMtime(under: "~/.workbuddy/traces", suffixes: [".jsonl"], topLevelOnly: true)),
+            ("OpenCode", fileMtime("~/.local/share/opencode/opencode.db")),
+            ("Hermes", newer(fileMtime("~/.hermes/state.db"), latestMtime(under: "~/.hermes/profiles", suffixes: ["state.db"]))),
+            ("ZCode", fileMtime("~/.zcode/cli/db/db.sqlite")),
+        ]
+    }
+
     /// 每个可识别 harness 的最后活动时间（nil = 本机无日志/未安装）；顺序即展示顺序
     public static func activeSources(now: Date = Date(), window: TimeInterval = defaultWindow) -> [String] {
         let cutoff = now.addingTimeInterval(-window)
@@ -24,9 +38,9 @@ public enum ActivityDetector {
     public static func lastActivity(now: Date = Date()) -> [(String, Date?)] {
         let farPast = now.addingTimeInterval(-1e9)
         return [
-            ("Claude Code", latestMtime(under: "~/.claude/projects", suffixes: [".jsonl"])),
+            ("Claude Code", latestMtime(under: "~/.claude/projects", suffixes: [".jsonl"], topLevelOnly: true)),
             ("Codex", latestCodexMtime(now: now, cutoff: farPast)),
-            ("DSH", latestMtime(under: "~/.dsh/sessions", suffixes: [".zstd", ".jsonl"])),
+            ("DSH", latestMtime(under: "~/.dsh/sessions", suffixes: [".zstd", ".jsonl"], topLevelOnly: true)),
             ("WorkBuddy", latestMtime(under: "~/.workbuddy/traces", suffixes: [".jsonl"])),
             ("OpenCode", fileMtime("~/.local/share/opencode/opencode.db")),
             ("Hermes", newer(fileMtime("~/.hermes/state.db"), latestMtime(under: "~/.hermes/profiles", suffixes: ["state.db"]))),
@@ -95,13 +109,13 @@ public enum ActivityDetector {
             guard let day = cal.date(byAdding: .day, value: -offset, to: now) else { continue }
             let comps = cal.dateComponents([.year, .month, .day], from: day)
             let dir = String(format: "~/.codex/sessions/%04d/%02d/%02d", comps.year!, comps.month!, comps.day!)
-            let d = latestMtime(under: dir, suffixes: [".jsonl", ".zst"])
+            let d = latestMtime(under: dir, suffixes: [".jsonl", ".zst"], topLevelOnly: true)
             if let d, latest == nil || d > latest! { latest = d }
         }
         return latest
     }
 
-    private static func latestMtime(under dir: String, suffixes: [String]) -> Date? {
+    private static func latestMtime(under dir: String, suffixes: [String], topLevelOnly: Bool = false) -> Date? {
         let fm = FileManager.default
         let path = SourcePaths.expand(dir)
         guard fm.fileExists(atPath: path),
@@ -111,11 +125,28 @@ public enum ActivityDetector {
         for case let url as URL in enumerator {
             let p = url.path
             guard suffixes.contains(where: p.hasSuffix) else { continue }
+            if topLevelOnly, isSubagentFile(p) { continue }
             if let v = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate {
                 if latest == nil || v > latest! { latest = v }
             }
         }
         return latest
+    }
+
+    /// 是否为子智能体（subagent）产生的会话文件 —— 这些不计入"任务是否结束"
+    private static func isSubagentFile(_ path: String) -> Bool {
+        // 路径级标记（Claude Code 的 subagents/ 子目录、DSH 的 subagent 分区）
+        let lower = path.lowercased()
+        if lower.contains("/subagent") || lower.contains("subagents/") || lower.contains("-sub-") { return true }
+        // 内容级标记（Codex session_meta.thread_source == "subagent" 或含 parent_thread_id）
+        // 只读文件头部 8KB，判断代价极低
+        guard let fh = FileHandle(forReadingAtPath: path) else { return false }
+        defer { try? fh.close() }
+        guard let head = try? fh.read(upToCount: 65536), !head.isEmpty else { return false }
+        let text = String(decoding: head, as: UTF8.self)
+        return text.contains(#""thread_source":"subagent""#)
+            || text.contains(#""source":{"subagent""#)
+            || text.contains(#""type":"subagent""#)
     }
 
     private static func fileMtime(_ path: String) -> Date? {
