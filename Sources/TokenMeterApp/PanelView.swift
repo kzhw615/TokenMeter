@@ -552,43 +552,81 @@ struct PanelView: View {
     }
 
     private var settingsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("设置")
-            budgetRow(label: "日预算",
-                      value: Binding(get: { model.dailyBudget }, set: { model.dailyBudget = $0 }),
-                      cost: model.summariesByRange[.today]?.cost)
-            budgetRow(label: "月预算",
-                      value: Binding(get: { model.monthlyBudget }, set: { model.monthlyBudget = $0 }),
-                      cost: model.summariesByRange[.thisMonth]?.cost)
+        VStack(alignment: .leading, spacing: 14) {
+            settingsCard("预算提醒") {
+                budgetRow(label: "每日", value: Binding(get: { model.dailyBudget }, set: { model.dailyBudget = $0 }),
+                          cost: model.summariesByRange[.today]?.cost)
+                budgetRow(label: "每月", value: Binding(get: { model.monthlyBudget }, set: { model.monthlyBudget = $0 }),
+                          cost: model.summariesByRange[.thisMonth]?.cost)
+                Text("达到 80% 和 100% 时发送系统通知；设为 0 表示不提醒。")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+
             if !model.sourceStates.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Toggle("侧边坞展示 harness 状态", isOn: Binding(get: { model.dockShowHarness }, set: { model.dockShowHarness = $0 }))
+                settingsCard("悬浮坞显示的工具") {
+                    Toggle("显示工具状态", isOn: Binding(get: { model.dockShowHarness }, set: { model.dockShowHarness = $0 }))
                         .toggleStyle(.switch)
                         .controlSize(.small)
-                        .font(.caption2)
-                    Text("侧边坞展示源").font(.caption).foregroundStyle(.secondary)
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 4), spacing: 4) {
-                        ForEach(model.sourceStates, id: \.0) { name, _ in
-                            let hidden = model.hiddenDockSources.contains(name)
-                            Button {
-                                if hidden { model.hiddenDockSources.remove(name) }
-                                else { model.hiddenDockSources.insert(name) }
-                            } label: {
-                                Text(name)
-                                    .font(.caption2)
-                                    .strikethrough(hidden)
-                                    .foregroundStyle(hidden ? Color.secondary.opacity(0.5) : model.theme.primary)
+                        .font(.caption)
+                    if model.dockShowHarness {
+                        Text("点名称可隐藏，灰色为当前不显示。")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3), spacing: 6) {
+                            ForEach(model.sourceStates, id: \.0) { name, _ in
+                                sourceChip(name)
                             }
-                            .buttonStyle(.borderless)
                         }
                     }
                 }
             }
-            Divider()
-            PriceEditorView()
+
+            settingsCard("模型价格") {
+                PriceEditorView()
+            }
         }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
+    }
+
+    /// 设置卡片：小标题 + 内容
+    @ViewBuilder
+    private func settingsCard<C: View>(_ title: String, @ViewBuilder content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 源开关胶囊
+    private func sourceChip(_ name: String) -> some View {
+        let hidden = model.hiddenDockSources.contains(name)
+        return Button {
+            if hidden { model.hiddenDockSources.remove(name) }
+            else { model.hiddenDockSources.insert(name) }
+        } label: {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(hidden ? Color.secondary.opacity(0.35) : model.theme.primary)
+                    .frame(width: 5, height: 5)
+                Text(name)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .foregroundStyle(hidden ? Color.secondary.opacity(0.6) : Color.primary.opacity(0.85))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(hidden ? Color.primary.opacity(0.04) : model.theme.primary.opacity(0.12))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .help(hidden ? "点击显示" : "点击隐藏")
     }
 
     private func budgetRow(label: String, value: Binding<Double>, cost: Double?) -> some View {
@@ -644,7 +682,7 @@ struct PanelView: View {
 
     private let timeFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss"
+        f.dateFormat = "HH:mm"
         return f
     }()
 }

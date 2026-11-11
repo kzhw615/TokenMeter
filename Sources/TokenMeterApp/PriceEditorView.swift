@@ -17,39 +17,61 @@ struct PriceEditorView: View {
 
     @State private var rows: [Row] = []
     @State private var message = ""
+    @State private var expanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("价格表（USD / 1M tokens，子串匹配、先命中先生效）")
-                .font(.caption).foregroundStyle(.secondary)
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                    Text("编辑单价")
+                        .font(.caption)
+                    Text("(\(rows.count) 个模型)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                }
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if expanded {
+            Text("单位：美元 / 百万 tokens；名称按子串匹配，从上到下先命中先生效。")
+                .font(.caption2).foregroundStyle(.tertiary)
+            columnHeader
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach($rows) { $r in
                         HStack(spacing: 4) {
-                            TextField("pattern", text: $r.pattern)
-                                .textFieldStyle(.roundedBorder).frame(width: 120)
-                            TextField("输入", text: $r.input)
-                                .textFieldStyle(.roundedBorder).frame(width: 46)
-                            TextField("输出", text: $r.output)
-                                .textFieldStyle(.roundedBorder).frame(width: 46)
-                            TextField("缓存读", text: $r.cr)
-                                .textFieldStyle(.roundedBorder).frame(width: 46)
-                            TextField("缓存写", text: $r.cw)
-                                .textFieldStyle(.roundedBorder).frame(width: 46)
+                            TextField("模型名称", text: $r.pattern)
+                                .textFieldStyle(.plain)
+                                .padding(.horizontal, 5).padding(.vertical, 3)
+                                .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.06)))
+                                .frame(width: 132)
+                            priceField($r.input)
+                            priceField($r.output)
+                            priceField($r.cr)
+                            priceField($r.cw)
                             Button {
                                 rows.removeAll { $0.id == r.id }
                             } label: {
-                                Image(systemName: "minus.circle").font(.caption)
+                                Image(systemName: "minus.circle")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.tertiary)
                             }
                             .buttonStyle(.borderless)
+                            .help("删除这一行")
                         }
                         .font(.caption2)
                     }
                 }
             }
-            .frame(height: 180)
+            .frame(height: 168)
             .scrollIndicators(.hidden)
-            .padding(.trailing, 6)
+            .padding(.trailing, 4)
             HStack(spacing: 8) {
                 Button("保存") { save() }
                 Button("加一行") { rows.append(Row(pattern: "", input: "", output: "", cr: "", cw: "")) }
@@ -58,8 +80,33 @@ struct PriceEditorView: View {
                 Text(message).font(.caption2).foregroundStyle(.secondary)
             }
             .font(.caption)
+            }
         }
         .onAppear(perform: reload)
+    }
+
+    /// 列头：与下方输入框同宽对齐
+    private func priceField(_ text: Binding<String>) -> some View {
+        TextField("0", text: text)
+            .textFieldStyle(.plain)
+            .monospacedDigit()
+            .padding(.horizontal, 5).padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.06)))
+            .frame(width: 46)
+    }
+
+    private var columnHeader: some View {
+        HStack(spacing: 4) {
+            Text("模型名称").frame(width: 132, alignment: .leading)
+            Text("输入").frame(width: 46)
+            Text("输出").frame(width: 46)
+            Text("缓存读").frame(width: 46)
+            Text("缓存写").frame(width: 46)
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 9))
+        .foregroundStyle(.tertiary)
+        .padding(.horizontal, 2)
     }
 
     private func reload() {
