@@ -170,6 +170,8 @@ struct PanelView: View {
                     ProgressView().controlSize(.mini).frame(width: 14, height: 14)
                 } else {
                     Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }
             }
             .buttonStyle(.borderless)
