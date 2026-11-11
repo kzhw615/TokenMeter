@@ -16,7 +16,7 @@ public struct ScanCache: Codable {
             self.offset = offset
         }
     }
-    public var version: Int = 4
+    public var version: Int = 5   // v5: 空桶缓存失效修复，强制重建
     public var entries: [String: Entry] = [:]
     /// 本次会话是否有新解析（决定是否值得写回磁盘），不持久化
     public var dirty: Bool = false
@@ -34,7 +34,7 @@ public struct ScanCache: Codable {
     public static func load() -> ScanCache {
         guard let data = try? Data(contentsOf: url),
               let c = try? JSONDecoder().decode(ScanCache.self, from: data),
-              c.version == 4 else { return ScanCache() }
+              c.version == 5 else { return ScanCache() }
         return c
     }
 
@@ -54,10 +54,12 @@ public struct ScanCache: Codable {
         return (size, mtime.timeIntervalSince1970)
     }
 
-    /// 若文件未变化返回缓存桶；否则返回 nil 表示需要重新解析
+    /// 若文件未变化返回缓存桶；否则返回 nil 表示需要重新解析。
+    /// 注意：空桶（[]）视为无效缓存 —— 曾因扫描中途写盘导致大量空桶被复用而丢数据。
     public func cachedBuckets(path: String) -> [UsageBucket]? {
         guard let fp = Self.fingerprint(path: path),
               let e = entries[path],
+              !e.buckets.isEmpty,
               e.size == fp.size, abs(e.mtime - fp.mtime) < 0.001 else { return nil }
         return e.buckets
     }
@@ -67,6 +69,8 @@ public struct ScanCache: Codable {
     }
 
     public mutating func store(path: String, buckets: [UsageBucket], offset: Int64) {
+        // 空桶不落盘：避免"未扫描完/解析失败"的文件被永久缓存为空
+        guard !buckets.isEmpty else { return }
         guard let fp = Self.fingerprint(path: path) else { return }
         entries[path] = Entry(size: fp.size, mtime: fp.mtime, buckets: buckets, offset: offset)
         dirty = true

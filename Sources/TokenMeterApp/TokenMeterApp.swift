@@ -25,6 +25,11 @@ struct TokenMeterApp: App {
 }
 
 /// 扫描缓存常驻内存（独立于 MainActor，供后台扫描任务读写）
+/// 缓存落盘串行队列：避免 App/CLI 并发写造成半成品覆盖
+enum Config {
+    static let saveQueue = DispatchQueue(label: "local.tokenmeter.cache-save", qos: .utility)
+}
+
 enum CacheStore {
     static let lock = NSLock()
     static var cache: ScanCache?
@@ -324,12 +329,13 @@ final class AppModel: ObservableObject {
             for r in RangeKind.allCases {
                 all[r] = Aggregator.summarize(buckets: scanned.buckets, range: r, pricing: pricing, statuses: scanned.statuses)
             }
+            // 先更新内存缓存，再整体落盘（scan 已完整返回，不会再出现半成品快照）
+            CacheStore.lock.withLock { CacheStore.cache = cache }
             if cache.dirty {
                 var snapshot = cache
                 snapshot.dirty = false
-                Task.detached(priority: .background) { snapshot.save() }
+                Config.saveQueue.async { snapshot.save() }
             }
-            CacheStore.lock.withLock { CacheStore.cache = cache }
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.summariesByRange = all
