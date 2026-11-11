@@ -32,12 +32,13 @@ final class KeyablePanel: NSPanel {
 final class StatusBarController: NSObject {
     private let model: AppModel
     private let actions: AppActions
-    private let item: NSStatusItem
+    private var item: NSStatusItem
     private var panel: NSPanel?
     private var settingsWindow: SettingsWindowController?
     private var cancellables = Set<AnyCancellable>()
     private var outsideMonitor: Any?
     private var keyMonitor: Any?
+    private var visibilityTimer: Timer?
     private var resignObserver: NSObjectProtocol?
     private var settingsObservers: [NSObjectProtocol] = []
 
@@ -48,9 +49,8 @@ final class StatusBarController: NSObject {
         self.actions = actions
         self.item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
-        // 持久化位置/可见性，避免系统在菜单栏拥挤时把图标隐藏后不再恢复
-        item.autosaveName = "TokenMeterStatusItem"
-        item.isVisible = true
+        configureItem()
+        startVisibilityWatchdog()
 
         configureButton()
         rebuildPanel()
@@ -66,12 +66,66 @@ final class StatusBarController: NSObject {
 
     // MARK: - 状态栏按钮
 
-    private func configureButton() {
+    /// 状态项基础配置（重建时复用）
+    private func configureItem() {
+        // 持久化位置/可见性，避免系统在菜单栏拥挤时把图标隐藏后不再恢复
+        item.autosaveName = "TokenMeterStatusItem"
+        item.isVisible = true
         guard let button = item.button else { return }
         button.target = self
         button.action = #selector(handleClick(_:))
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         button.imagePosition = .imageLeft
+    }
+
+    /// 看门狗：菜单栏拥挤时系统可能把状态项挪出可见区域甚至隐藏，
+    /// 此时 App 仍在运行（悬浮坞还在），但用户看不到图标 —— 定期检查并重建。
+    private func startVisibilityWatchdog() {
+        visibilityTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.checkItemVisibility() }
+        }
+        visibilityTimer.map { RunLoop.main.add($0, forMode: .common) }
+    }
+
+    func checkItemVisibility() {
+        guard item.isVisible else {
+            // 被系统标记为隐藏：重新声明可见
+            item.isVisible = true
+            refreshButton()
+            return
+        }
+        guard let button = item.button else { rebuildItem(); return }
+        guard let window = button.window, window.isVisible, window.frame.width > 1 else {
+            rebuildItem()
+            return
+        }
+        // 落在屏幕外或刘海区域 ⇒ 实际不可见
+        if let screen = window.screen ?? NSScreen.main {
+            let frame = window.frame
+            let notch = screen.auxiliaryTopLeftArea ?? .zero
+            let right = screen.auxiliaryTopRightArea ?? .zero
+            let inNotch = !notch.isEmpty && !right.isEmpty
+                && frame.minX < right.minX && frame.maxX > notch.maxX
+            let offscreen = frame.minX < screen.frame.minX || frame.maxX > screen.frame.maxX
+            if inNotch || offscreen {
+                if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
+                    FileHandle.standardError.write(Data("DBG watchdog rebuild: inNotch=\(inNotch) offscreen=\(offscreen) frame=\(frame)\n".utf8))
+                }
+                rebuildItem()
+            }
+        }
+    }
+
+    /// 重建状态栏项（先移除旧的，避免留下不可见的僵尸项）
+    private func rebuildItem() {
+        NSStatusBar.system.removeStatusItem(item)
+        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        configureItem()
+        lastRendered = nil
+        refreshButton()
+    }
+
+    private func configureButton() {
         // 面板尺寸/主题变化时重绘
         model.objectWillChange
             .receive(on: RunLoop.main)
