@@ -94,6 +94,29 @@ public enum Zstd {
         return last
     }
 
+    /// 解压文件尾部若干「完整帧」（跳过可能正在写入的最后一帧）
+    public static func decompressTailFrames(path: String, window: Int64 = 512 * 1024) -> Data? {
+        guard let fh = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? fh.close() }
+        guard let size = try? fh.seekToEnd(), size > 0 else { return nil }
+        let start: UInt64 = size > UInt64(window) ? size - UInt64(window) : 0
+        do { try fh.seek(toOffset: start) } catch { return nil }
+        guard let chunk = try? fh.readToEnd(), !chunk.isEmpty else { return nil }
+        let bytes = [UInt8](chunk)
+        var positions: [Int] = []
+        var i = 0
+        let n = bytes.count
+        while i + 4 <= n {
+            if bytes[i] == 0x28, bytes[i+1] == 0xB5, bytes[i+2] == 0x2F, bytes[i+3] == 0xFD {
+                positions.append(i); i += 4
+            } else { i += 1 }
+        }
+        guard positions.count >= 2 else { return nil }
+        let begin = Int64(start) + Int64(positions[0])
+        let boundary = Int64(start) + Int64(positions[positions.count - 1])
+        return decompressRange(path: path, from: begin, to: boundary)
+    }
+
     /// 解压 [offset, boundary) 区间（即新追加且已完整的帧）
     public static func decompressRange(path: String, from offset: Int64, to boundary: Int64) -> Data? {
         guard boundary > offset, let zstd = zstdPath() else { return nil }

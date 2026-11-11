@@ -451,9 +451,18 @@ final class AppModel: ObservableObject {
                     let top = item.topLevel ?? last
                     let age = now.timeIntervalSince(top)
                     var st = active.contains(item.name) ? 0 : (age < 600 ? 1 : 2)
+                    // DSH 长工具执行时日志可能几分钟不 flush：看日志尾部事件是否仍在推进
+                    if item.name == "DSH", st != 0, DshSource.isTaskRunning() == true {
+                        st = 0
+                    }
                     // WorkBuddy 用 sessions 表真实状态裁决
                     if item.name == "WorkBuddy", let wb = ActivityDetector.workBuddyState(now: now) { st = wb }
                     return (item.name, st)
+                }
+                if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
+                    let desc = snapshot.map { "\($0.name):last=\($0.lastActive.map { String(format: "%.0fs", now.timeIntervalSince($0)) } ?? "-")" }.joined(separator: " ")
+                    FileHandle.standardError.write(Data("DBG snapshot \(desc)\n".utf8))
+                    FileHandle.standardError.write(Data("DBG active=\(active) states=\(states.map { "\($0.0)=\($0.1)" })\n".utf8))
                 }
                 let installedChanged = states.map { $0.0 } != self.sourceStates.map { $0.0 }
                 self.sourceStates = states

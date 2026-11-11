@@ -13,6 +13,11 @@ func parseArgs(_ args: [String]) -> (command: String, range: RangeKind, json: Bo
         let a = args[i]
         switch a {
         case "debug-activity":
+            if let running = DshSource.isTaskRunning() {
+                print("  dsh-task      \(running ? "运行中" : "已结束")（日志尾部事件判定）")
+            } else {
+                print("  dsh-task      无法判断（回退 mtime）")
+            }
             for (name, ms) in ActivityDetector.timingBreakdown() {
                 print(String(format: "  %-12s %6.1f ms", (name as NSString).utf8String!, ms))
             }
