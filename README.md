@@ -1,15 +1,17 @@
 # TokenMeter
 
-macOS 菜单栏（状态栏）token 用量统计器，灵感来自 [CodeBurn](https://codeburn.app/zh-CN/docs/menubar)：
-常驻菜单栏显示**当日含缓存 token 总量 + 预估费用**，点开展示按工具 / 按模型 / 每日趋势的明细。
-**纯本地运行**：只读取本机各 agent harness 的会话日志，不上传任何数据。
+macOS 菜单栏 token 用量统计器，灵感来自 [CodeBurn](https://codeburn.app/zh-CN/docs/menubar)：
+常驻菜单栏显示**当日含缓存 token 总量 + 预估费用**，左键点开完整面板，右键出功能菜单。
+支持 **13 个 AI 编程工具**的用量统计与实时任务状态，**纯本地运行**：只读本机会话日志，不上传任何数据。
 
 ## 功能
 
-- 菜单栏常驻：`⬢ 4239.4万 · $2.04`（当日含缓存总量 + 预估费用），每 5 分钟自动刷新；
-  **燃烧状态**：检测到任一 harness 日志近 2 分钟有写入（会话进行中）时，图标变为跳动的彩色火苗 🔥 并显示实时速率（tokens/s）；火势随速率变化——≥15K tokens/s 切换旺盛版（更大轮廓+侧舌+白热芯+火星、10fps），低速为平稳版（5fps）；面板头部显示燃烧中的工具；空闲 2 分钟后恢复默认图标
-- 面板（点击菜单栏图标）：
-  - 范围切换：今天 / 昨天 / 近 7 天 / 近 30 天 / 本月 / 上月 / 全部（两行分段选择器，按系统本地时区）
+- **菜单栏**：`⬢ 4239.4万 · $2.04`（当日含缓存总量 + 预估费用）
+  - **左键**打开面板 / **右键**（或 Ctrl+点击）弹出菜单：打开面板、设置…、立即刷新统计（⌘R）、检查更新…、退出（⌘Q）
+  - **燃烧动画**：有会话在跑时图标变为彩色火苗 🔥，16 帧动画；火苗**尺寸随实时速率连续变大**（13pt→20pt），≥15K tokens/s 切换旺盛版（侧舌+白热芯+火星）
+  - 空闲时完全停止动画定时器，不占 CPU
+- **面板**（左键点击菜单栏图标）：
+  - 范围切换：今天 / 昨天 / 近 7 天 / 近 30 天 / 本月 / 上月 / 全部（一行分段选择器，带弹性滑块，按系统本地时区）
   - 口径切换：含缓存 / 不含缓存（影响用量与占比；费用按分量计价不受影响），选择会记住
   - 总览卡片：用量、预估费用、缓存命中率（= 缓存读 / (输入 + 缓存读)）
   - 按工具（agent harness）条形榜：token 量、占比、费用
@@ -17,16 +19,20 @@ macOS 菜单栏（状态栏）token 用量统计器，灵感来自 [CodeBurn](ht
   - 按项目榜：从日志 cwd / 项目目录解析仓库名（含 dsh 的 unicode 转义目录名解码），回答"哪个 repo 最烧钱"
   - 每日用量柱状图：固定近 30 天（缺失日补零），与所选范围无关
   - 逐小时用量图：今天/昨天范围为当日 24 小时明细；其他范围为按钟点分布汇总
-  - 燃烧状态：任一 harness 日志近 2 分钟有写入时，菜单栏图标变跳动的彩色火苗并显示实时速率（tokens/s）；**火势随速率变化**：≥15K tokens/s 切换旺盛版火苗（侧舌+白热芯+火星，10fps），低速为平稳版（5fps）；面板头部显示燃烧中的工具
-  - 设置行：6 种主题色、菜单栏显示样式（量+费 / 仅量 / 仅费 / 仅图标）、**侧边悬浮坞（关/左/右）**、开机自启开关（SMAppService 一键注册登录项）
+  - 统计进行时显示**真实进度条**（`3200 / 6837` 文件）+ 灰色骨架屏占位，不再空白干等
+  - 键盘：`⌘R` 刷新、`Esc` 关闭、`⌘,` 打开设置；切换别的应用时自动收起
   - 悬浮坞底部工具状态列：13 个 harness 全部配官方品牌图标，三态指示灯（运行/待阅读/空闲）
   - 侧边悬浮坞：贴边吸附在屏幕左/右边缘的**纯黑舱体**（凹弧喇叭口融进屏边、始终置顶、全空间可见、四角全透明），显示今日用量/费用/燃烧速率或命中率；按住拖拽脱离为圆角浮块，松手滑向较近一侧并形变融合；设置可切换左/右、位置记忆、双击回位；**点击弹出完整大面板窗口**，解决菜单栏空间被其他 App 挤压的问题
   - 数据源诊断不在面板展示；用 CLI `tokenmeter sources` 查看（文件数 / 禁用 / 说明）
-- CLI：`tokenmeter report [--range today|7d|30d|all] [--json] [--exclude-cache]`、`tokenmeter sources`
-- 文件级扫描缓存：6.9GB 的 Codex 日志首次扫描约 2 分钟（并行），之后增量秒级
-- FSEvents 监听各 harness 日志目录：写入静止 8 秒后自动刷新（比固定轮询更及时、更省电），30 分钟兜底轮询
+- **CLI**：`tokenmeter report [--range today|yesterday|7d|30d|month|lastmonth|all] [--json] [--exclude-cache] [--timing]`、`sources`、`activity [--json]`、`debug-activity`
+  - `--timing` 输出各阶段耗时、`debug-activity` 输出各数据源活动探测耗时（排查性能用）
+- **文件级扫描缓存 + 增量解析**：6.9GB / 6837 个日志文件首次需 6–7 分钟（并行解压解析）；之后**增量扫描 155ms**
+  - 压缩日志（DSH 的 zstd）按**帧边界增量解析**：只解压新追加的帧，6MB 活跃会话从 846ms → 24ms
+  - 活跃文件的缓存判定允许「比上次更大」（append-only），不会因为文件一直在写就每次全量重解析
+  - 缓存格式向后兼容，升级新版本**不会**触发全量重建
+- FSEvents 监听各 harness 日志目录触发刷新，**按需节流**：面板展开 20s / 燃烧中 45s / 完全空闲 120s（旧版固定轮询，空闲也在烧 CPU）
 - 预算告警：设置日/月预算（USD），达到 80% / 100% 发系统通知（每档每周期一次）；超支时菜单栏文字变红；面板显示预算进度条
-- 设置区（面板页脚「设置」）：预算配置 + 面板内价格表编辑器（直接写 pricing.json，可一键恢复内置表）
+- **独立设置窗口**（页脚「设置」/右键菜单/`⌘,` 打开）：外观（6 种主题色、菜单栏显示样式、开机自启）、侧边悬浮坞、预算提醒、悬浮坞显示的工具、模型价格表编辑器（直接写 pricing.json，可一键恢复内置表）、关于
 
 ## 支持的数据源
 
@@ -65,7 +71,7 @@ Cursor、Gemini CLI、Trae、Grok Bot 的本地日志不含可解析的 token �
 open build/TokenMeter.app
 ```
 
-要求 macOS 14+（MenuBarExtra / Swift Charts），Xcode Command Line Tools。
+要求 macOS 14+（Swift Charts），Xcode Command Line Tools。菜单栏用原生 `NSStatusItem` 实现（因此支持右键菜单）。
 开机自启：系统设置 → 通用 → 登录项 → 添加 TokenMeter。
 
 CLI（可不装 App 直接用）：
@@ -96,11 +102,13 @@ build/tokenmeter sources
 ```
 Package.swift                  SwiftPM：TokenMeterCore 库 + tokenmeter CLI + TokenMeterApp
 Sources/TokenMeterCore/        模型/聚合/价格/扫描缓存/行读取器
-Sources/TokenMeterCore/Sources/  各 harness 解析器（UsageSource 协议）
+Sources/TokenMeterCore/Sources/  13 个 harness 解析器（UsageSource 协议）
 Sources/tokenmeter/            CLI
-Sources/TokenMeterApp/         SwiftUI MenuBarExtra 面板
+Sources/TokenMeterApp/         AppKit 菜单栏（NSStatusItem）+ SwiftUI 面板/悬浮坞/设置窗口
 Scripts/build_app.sh           release 构建 + 组装 .app + ad-hoc 签名
-Scripts/install.sh             安装到 /Applications
+Scripts/install.sh             一步到位：构建 + 安装到 /Applications + 重启
+Scripts/release.sh             发版：打 tag + 打包 + 创建 GitHub Release
+docs/RELEASE_NOTES_GUIDE.md    发版说明写作规范
 .research/                     官方定价页抓取存档（定价依据）
 ```
 
@@ -113,7 +121,8 @@ Scripts/install.sh             安装到 /Applications
 - **Trae / Trae SOLO CN 无法支持**：`ModularData/ai-agent/database.db` 为加密库（文件头非 SQLite），其余仅 Electron 会话日志
 - 费用为**估算**：按官方公开单价 × 本地日志口径折算，不等于实际账单（折扣、Batch、区域加价、高峰时段等未计入）
 - Codex `token_count` 为会话内增量事件，极早期版本日志若无该事件则统计不到
-- 首次扫描大日志（数 GB + 数千个 zstd 压缩会话）约 2–5 分钟，期间菜单栏显示 `…`；之后走文件级缓存，增量秒级
+- 首次扫描大日志（数 GB + 数千个 zstd 压缩会话）约 6–7 分钟，面板显示真实进度与骨架屏；之后增量扫描约 155ms
+- **任务状态是估算**：13 个工具里只有 WorkBuddy 提供真实已读回执（`sessions.unread`）；DSH 用日志尾部事件（`turn/end` 表示结束）判定；其余数据源只能靠「日志新鲜度 + 最近 10 分钟」启发式，长工具执行期间可能提前判定为结束
 - `codex-auto-review`（Codex 内部自动审查模型）官方无公开单价，默认记 0，可在 pricing.json 补
 
 ## 更新与发布
@@ -135,7 +144,7 @@ Scripts/install.sh             安装到 /Applications
 2. 安装 [Rust](https://rustup.rs) 与 tauri-cli：`cargo install tauri-cli --version ^2`；
 3. `cd desktop/src-tauri && cargo tauri build` → 安装包在 `target/release/bundle/`。
 
-macOS 主线体验请用原生 SwiftUI 版（`build/TokenMeter.app`）；Tauri 版为实验性玩具，Linux 桌面玩家可自建。
+macOS 主线体验请用原生 App（`/Applications/TokenMeter.app`）；Tauri 版为实验性玩具（不支持右键菜单、无悬浮坞），Linux 桌面玩家可自建。
 
 ## 跨平台状态
 
