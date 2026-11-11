@@ -11,6 +11,7 @@ final class AppActions: ObservableObject {
     var openSettings: () -> Void = {}
     var refresh: () -> Void = {}
     var checkUpdate: () -> Void = {}
+    var markAllRead: () -> Void = {}
     var quit: () -> Void = {}
 
     static let shared = AppActions()
@@ -35,6 +36,9 @@ extension AppActions {
         let update = NSMenuItem(title: "检查更新…", action: #selector(MenuActionRouter.checkUpdate), keyEquivalent: "")
         menu.addItem(update)
 
+        let readAll = NSMenuItem(title: "标记全部已读", action: #selector(MenuActionRouter.markAllRead), keyEquivalent: "")
+        menu.addItem(readAll)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(title: "退出 TokenMeter", action: #selector(MenuActionRouter.quit), keyEquivalent: "q")
@@ -56,6 +60,7 @@ final class MenuActionRouter: NSObject {
     @objc func openSettings() { AppActions.shared.openSettings() }
     @objc func refresh() { AppActions.shared.refresh() }
     @objc func checkUpdate() { AppActions.shared.checkUpdate() }
+    @objc func markAllRead() { AppActions.shared.markAllRead() }
     @objc func quit() { AppActions.shared.quit() }
 }
 #endif

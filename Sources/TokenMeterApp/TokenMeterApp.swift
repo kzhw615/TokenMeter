@@ -12,7 +12,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        if StatusBarController.terminateIfDuplicate() {
+        // 一键更新后的重启：此时旧实例可能还没退干净，不能按「重复实例」处理
+        let isPostUpdate = CommandLine.arguments.contains("--post-update")
+        if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
+            let me = ProcessInfo.processInfo.processIdentifier
+            let bid = Bundle.main.bundleIdentifier ?? "nil"
+            let others = NSRunningApplication.runningApplications(withBundleIdentifier: bid)
+                .filter { $0.processIdentifier != me }
+                .map { "\($0.processIdentifier)/\($0.localizedName ?? "?")" }
+            FileHandle.standardError.write(Data("DBG dup-check bid=\(bid) others=\(others) postUpdate=\(isPostUpdate)\n".utf8))
+        }
+        if !isPostUpdate, StatusBarController.terminateIfDuplicate() {
             NSApp.terminate(nil)
             return
         }
@@ -419,7 +429,22 @@ final class AppModel: ObservableObject {
 
     /// 已读闩锁：记录每个源「已查看到的完成时间」，避免切走后绿灯又亮
     func markRead(name: String, completedAt: Date) {
-        UserDefaults.standard.set(completedAt.timeIntervalSince1970, forKey: "readUpTo-\(name)")
+        let key = "readUpTo-\(name)"
+        let value = completedAt.timeIntervalSince1970
+        if abs(UserDefaults.standard.double(forKey: key) - value) > 1 {
+            UserDefaults.standard.set(value, forKey: key)
+        }
+    }
+
+    /// 手动把所有源当前的结果标记为已读（CLI 类工具没有宿主 App，只能手动消灯）
+    func markAllRead() {
+        // 用当前时间作为已读水位：此刻之前的完成结果全部视为已读
+        let now = Date()
+        for (name, _) in sourceStates {
+            markRead(name: name, completedAt: now)
+        }
+        // 立即刷新三态，让灯马上变灰
+        pollActivity()
     }
 
     func isRead(name: String, completedAt: Date) -> Bool {
@@ -505,13 +530,20 @@ final class AppModel: ObservableObject {
                 }
                 // 已读闩锁：只要「正在看着某个工具」时它有待阅读任务，就把该完成时间记为已读，
                 // 之后即使切走也不再亮绿（此前只在当前台时抑制，一离开就绿回来）
-                let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                let frontApp = NSWorkspace.shared.frontmostApplication
+                let frontBundle = frontApp?.bundleIdentifier
+                let frontSource = ActivityDetector.sourceName(matching: frontApp?.localizedName, bundleID: frontBundle)
                 let adjusted = states.map { item -> (String, Int) in
-                    guard item.st == 1, let bid = ActivityDetector.sourceBundleIDs[item.name] else {
-                        return (item.name, item.st)
+                    guard item.st == 1 else { return (item.name, item.st) }
+                    // WorkBuddy 有自己的真实已读回执，不用我们猜
+                    if item.name == "WorkBuddy" {
+                        return (item.name, ActivityDetector.sourceBundleIDs[item.name] == frontBundle ? 2 : item.st)
                     }
-                    if bid == front {
-                        if let done = item.done { self.markRead(name: item.name, completedAt: done) }
+                    let isFrontHost = frontSource == item.name
+                        || (ActivityDetector.sourceBundleIDs[item.name].map { $0 == frontBundle } ?? false)
+                    guard isFrontHost || item.done != nil else { return (item.name, item.st) }
+                    if isFrontHost, let done = item.done {
+                        self.markRead(name: item.name, completedAt: done)
                         return (item.name, 2)
                     }
                     if let done = item.done, self.isRead(name: item.name, completedAt: done) {

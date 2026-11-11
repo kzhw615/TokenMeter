@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
 #if os(macOS)
 import SQLite3
 #endif
@@ -8,13 +11,37 @@ import SQLite3
 public enum ActivityDetector {
     public static let defaultWindow: TimeInterval = 60
 
-    /// 各 harness 的桌面/CLI 宿主 App（bundle id）。
-    /// 用途：用户正盯着某个 App 时，它的「待阅读」应视为已读——避免读完还绿着。
+    /// 各 harness 的桌面宿主 App（bundle id，已知的精确匹配）。
     public static let sourceBundleIDs: [String: String] = [
         "Codex": "com.openai.codex",
         "DSH": "com.deepseek.dsh",
         "WorkBuddy": "com.tencent.workbuddy.mac",
     ]
+
+    /// 名字关键词 → 数据源：当前台 App 的名字包含关键词时，认为是该工具的宿主 App。
+    /// 覆盖面比硬编码 bundle id 广（Kiro / Qoder / ZCode / OpenCode 等装了桌面版就能识别）。
+    public static func sourceName(matching appName: String?, bundleID: String?) -> String? {
+        let hay = [appName, bundleID].compactMap { $0?.lowercased() }.joined(separator: " ")
+        guard !hay.isEmpty else { return nil }
+        let keywords: [(String, [String])] = [
+            ("Codex", ["codex"]),
+            ("DSH", ["deepseek", "dsh"]),
+            ("WorkBuddy", ["workbuddy"]),
+            ("Kiro", ["kiro"]),
+            ("Qoder", ["qoder"]),
+            ("ZCode", ["zcode"]),
+            ("Hermes", ["hermes"]),
+            ("OpenCode", ["opencode"]),
+            ("Droid", ["droid", "factory"]),
+            ("MiniMax Code", ["minimax"]),
+            ("Reasonix", ["reasonix"]),
+            ("Copilot CLI", ["copilot"]),
+        ]
+        for (source, words) in keywords where words.contains(where: hay.contains) {
+            return source
+        }
+        return nil
+    }
 
     public struct SourceActivity {
         public let name: String

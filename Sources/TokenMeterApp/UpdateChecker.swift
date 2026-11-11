@@ -143,8 +143,13 @@ extension AppModel {
                 try? fm.removeItem(at: zipURL)
                 try? fm.removeItem(at: unzipDir)
                 await MainActor.run { self.updatePhase = .restarting }
-                NSWorkspace.shared.open(current)
-                try? await Task.sleep(nanoseconds: 800_000_000)
+                // 必须以「新实例」方式启动并带上标记参数，否则：
+                // ① LaunchServices 可能只是激活旧实例；② 新实例的单实例保护会因旧实例仍在运行而自杀
+                let cfg = NSWorkspace.OpenConfiguration()
+                cfg.createsNewApplicationInstance = true
+                cfg.arguments = ["--post-update"]
+                NSWorkspace.shared.openApplication(at: current, configuration: cfg) { _, _ in }
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
                 await MainActor.run { NSApplication.shared.terminate(nil) }
             } catch {
                 let msg = (error as? UpdateError)?.message ?? error.localizedDescription

@@ -61,6 +61,7 @@ final class StatusBarController: NSObject {
         actions.openSettings = { [weak self] in self?.openSettings() }
         actions.refresh = { [weak model] in model?.refresh() }
         actions.checkUpdate = { [weak model] in model?.checkForUpdates(force: true) }
+        actions.markAllRead = { [weak model] in model?.markAllRead() }
         actions.quit = { [weak self] in self?.quitApp() }
     }
 
