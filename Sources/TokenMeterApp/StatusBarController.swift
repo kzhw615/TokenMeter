@@ -38,6 +38,7 @@ final class StatusBarController: NSObject {
     private var cancellables = Set<AnyCancellable>()
     private var outsideMonitor: Any?
     private var keyMonitor: Any?
+    private var resignObserver: NSObjectProtocol?
     private var settingsObservers: [NSObjectProtocol] = []
 
     private static let panelSize = NSSize(width: 430, height: 560)
@@ -200,6 +201,13 @@ final class StatusBarController: NSObject {
         model.panelOpen = true
         installOutsideMonitor()
         installKeyMonitor()
+        // 切到别的应用时自动收起面板
+        if resignObserver == nil {
+            resignObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                    Task { @MainActor [weak self] in self?.hidePanel() }
+                }
+        }
     }
 
     func hidePanel() {

@@ -24,7 +24,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 FileHandle.standardError.write(Data("DBG windows \(NSApp.windows.count): \(titles)\n".utf8))
             }
         }
-        AppActions.shared.closePanel()
     }
 }
 
@@ -339,7 +338,13 @@ final class AppModel: ObservableObject {
                 self.pollActivity()
             }
         }
-        // 单一 UI 心跳：扫描进度 4Hz、火苗帧 5/10fps，全部空闲时不做任何工作
+        // 单一 UI 心跳：仅在「燃烧中」或「扫描中」运行，空闲时彻底停止
+        startHeartbeat()
+    }
+
+    /// 按需启动心跳（有燃烧或扫描时才需要逐帧刷新）
+    func startHeartbeat() {
+        guard flameTimer == nil else { return }
         flameTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -351,6 +356,10 @@ final class AppModel: ObservableObject {
                     self.scanTotal = p.total
                 }
 
+                if !self.isBurning && !self.scanning {
+                    self.stopHeartbeat()      // 空闲：停掉定时器，让系统可以休眠
+                    return
+                }
                 guard self.isBurning, !self.currentFlameFrames.isEmpty else { return }
                 // 旺盛档 10fps，平稳档 5fps
                 let step = self.flameIntense ? 1 : 2
@@ -358,6 +367,13 @@ final class AppModel: ObservableObject {
                 self.flame.advance(count: self.currentFlameFrames.count)
             }
         }
+        flameTimer?.tolerance = 0.02
+        if let t = flameTimer { RunLoop.main.add(t, forMode: .common) }
+    }
+
+    func stopHeartbeat() {
+        flameTimer?.invalidate()
+        flameTimer = nil
     }
 
     /// 监听各 harness 日志目录：有写入 → 防抖 8 秒后刷新（日志静止即扫，比固定轮询更及时且省电）
@@ -426,6 +442,7 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 if active != self.burningSources {
                     self.burningSources = active
+                    if !active.isEmpty { self.startHeartbeat() }
                     if active.isEmpty { self.clearRate() }
                 }
                 // 三态：运行中(<60s) / 待阅读(60s~10min) / 空闲(>10min)
@@ -450,6 +467,7 @@ final class AppModel: ObservableObject {
     func refresh() {
         guard !scanning else { return }
         scanning = true
+        startHeartbeat()
         scanStartedAt = Date()
         scanFraction = 0
         scanDone = 0

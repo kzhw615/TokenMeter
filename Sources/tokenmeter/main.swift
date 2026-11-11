@@ -12,6 +12,11 @@ func parseArgs(_ args: [String]) -> (command: String, range: RangeKind, json: Bo
     while i < args.count {
         let a = args[i]
         switch a {
+        case "debug-activity":
+            for (name, ms) in ActivityDetector.timingBreakdown() {
+                print(String(format: "  %-12s %6.1f ms", (name as NSString).utf8String!, ms))
+            }
+            exit(0)
         case "--range", "-r":
             i += 1
             if i < args.count {
@@ -138,5 +143,5 @@ case "report":
         print("  [\(flag)] \(pad(s.id, 14)) 文件 \(s.files)\(note)")
     }
 default:
-    print("用法: tokenmeter [report|sources|activity] [--range today|yesterday|7d|30d|month|lastmonth|all] [--json] [--no-cache] [--exclude-cache]")
+    print("用法: tokenmeter [report|sources|activity|debug-activity] [--range today|yesterday|7d|30d|month|lastmonth|all] [--json] [--no-cache] [--exclude-cache]")
 }

@@ -124,7 +124,7 @@ final class SideDockController: ObservableObject {
             backing: .buffered, defer: false)
         panel.isFloatingPanel = true
         panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
@@ -197,8 +197,13 @@ final class SideDockController: ObservableObject {
     }
 
     /// 松手：按中心距离吸附到较近屏边；水平滑动 + fuse 形变融合
+    /// 面板所在屏幕（多显示器时 NSScreen.main 可能是主屏，不能用来判断吸附目标）
+    private func screen(for panel: NSPanel) -> NSScreen? {
+        panel.screen ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+    }
+
     func snap() {
-        guard let panel, let screen = NSScreen.main else { return }
+        guard let panel, let screen = screen(for: panel) else { return }
         snapping = true
         let vf = screen.visibleFrame
         let newSide = panel.frame.midX < vf.midX ? "left" : "right"
@@ -219,7 +224,7 @@ final class SideDockController: ObservableObject {
     }
 
     func resetPosition(mode: String) {
-        guard let panel, let screen = NSScreen.main else { return }
+        guard let panel, let screen = screen(for: panel) else { return }
         let vf = screen.visibleFrame
         panel.setFrameOrigin(originFor(side: mode, vf: vf, saved: false))
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {

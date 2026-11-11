@@ -10,8 +10,26 @@ public struct HermesSource: UsageSource {
 
     public init() {}
 
+    /// Hermes 的用量库：只认根库 + profiles/*/state.db。
+    /// 不做全目录递归：~/.hermes 下有 installs/cache/tools 共十万级文件，
+    /// 而且 state-snapshots/*/state.db 是备份，递归进去会重复计数。
+    public static func stateDBPaths() -> [String] {
+        let fm = FileManager.default
+        var out: [String] = []
+        let root = SourcePaths.expand("~/.hermes/state.db")
+        if fm.fileExists(atPath: root) { out.append(root) }
+        let profilesDir = SourcePaths.expand("~/.hermes/profiles")
+        if let names = try? fm.contentsOfDirectory(atPath: profilesDir) {
+            for name in names {
+                let p = profilesDir + "/" + name + "/state.db"
+                if fm.fileExists(atPath: p) { out.append(p) }
+            }
+        }
+        return out
+    }
+
     public func scan(cache: inout ScanCache) -> ScanResult {
-        let dbs = SourcePaths.files(under: "~/.hermes", suffix: "state.db")
+        let dbs = Self.stateDBPaths()
         let builder = BucketBuilder(tool: "Hermes")
         var files = 0
         for dbPath in dbs {

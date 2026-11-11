@@ -18,6 +18,24 @@ public enum ActivityDetector {
 
     /// 一次遍历拿到全部源的活动信息（避免重复扫目录造成高 CPU）。
     /// 只有最近 window 内被写入的文件才会读头部判断子智能体，开销极小。
+    /// 各源耗时诊断（毫秒），用于排查活动探测的性能问题
+    public static func timingBreakdown() -> [(String, Double)] {
+        func ms(_ block: () -> Void) -> Double {
+            let t0 = Date()
+            block()
+            return Date().timeIntervalSince(t0) * 1000
+        }
+        var out: [(String, Double)] = []
+        out.append(("claude", ms { _ = latestMtime(under: "~/.claude/projects", suffixes: [".jsonl"]) }))
+        out.append(("codex", ms { _ = codexMtime(now: Date(), topLevelOnly: false, recentCutoff: Date().addingTimeInterval(-600)) }))
+        out.append(("codex-top", ms { _ = codexMtime(now: Date(), topLevelOnly: true, recentCutoff: Date().addingTimeInterval(-600)) }))
+        out.append(("dsh", ms { _ = latestMtime(under: "~/.dsh/sessions", suffixes: [".zstd", ".jsonl"]) }))
+        out.append(("workbuddy", ms { _ = latestMtime(under: "~/.workbuddy/traces", suffixes: [".jsonl"]) }))
+        out.append(("hermes", ms { _ = hermesMtime() }))
+        out.append(("wb-state", ms { _ = workBuddyState(now: Date()) }))
+        return out
+    }
+
     public static func activitySnapshot(now: Date = Date()) -> [SourceActivity] {
         let recentCutoff = now.addingTimeInterval(-600)
         return [
@@ -37,8 +55,8 @@ public enum ActivityDetector {
                            lastActive: fileMtime("~/.local/share/opencode/opencode.db"),
                            topLevel: fileMtime("~/.local/share/opencode/opencode.db")),
             SourceActivity(name: "Hermes",
-                           lastActive: newer(fileMtime("~/.hermes/state.db"), latestMtime(under: "~/.hermes/profiles", suffixes: ["state.db"])),
-                           topLevel: newer(fileMtime("~/.hermes/state.db"), latestMtime(under: "~/.hermes/profiles", suffixes: ["state.db"]))),
+                           lastActive: hermesMtime(),
+                           topLevel: hermesMtime()),
             SourceActivity(name: "ZCode",
                            lastActive: fileMtime("~/.zcode/cli/db/db.sqlite"),
                            topLevel: fileMtime("~/.zcode/cli/db/db.sqlite")),
@@ -129,6 +147,15 @@ public enum ActivityDetector {
         #else
         return 0
         #endif
+    }
+
+    /// Hermes 只看根库与 profiles/*/state.db（不递归 ~/.hermes，那里有十万级无关文件）
+    private static func hermesMtime() -> Date? {
+        var latest: Date?
+        for path in HermesSource.stateDBPaths() {
+            latest = newer(latest, fileMtime(path))
+        }
+        return latest
     }
 
     /// Codex 只扫今天/昨天的日期目录，避免遍历全部 6000+ 文件
