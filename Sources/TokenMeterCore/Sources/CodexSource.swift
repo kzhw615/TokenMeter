@@ -92,7 +92,8 @@ public struct CodexSource: UsageSource {
             let inputAll = JSONUtil.int(u, "input_tokens")
             let cached = JSONUtil.int(u, "cached_input_tokens")
             let cacheWrite = JSONUtil.int(u, "cache_write_input_tokens")
-            let output = JSONUtil.int(u, "output_tokens") + JSONUtil.int(u, "reasoning_output_tokens")
+            // output_tokens 已含 reasoning_output_tokens（total=input+output 恒等式验证）
+            let output = JSONUtil.int(u, "output_tokens")
             let counts = TokenCounts(
                 input: max(0, inputAll - cached - cacheWrite),
                 output: output,

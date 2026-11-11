@@ -33,13 +33,13 @@ final class TokenMeterCoreTests: XCTestCase {
 
     func testCodexParsingAndProject() {
         let meta = #"{"timestamp":"2026-11-09T10:00:00Z","type":"session_meta","payload":{"model":"gpt-6.1-sol","cwd":"/x/y/proj"}}"#
-        let tc = #"{"timestamp":"2026-11-09T10:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":600,"cache_write_input_tokens":0,"output_tokens":50,"reasoning_output_tokens":10}}}}"#
+        let tc = #"{"timestamp":"2026-11-09T10:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":600,"cache_write_input_tokens":0,"output_tokens":60,"reasoning_output_tokens":10}}}}"#
         let p = write("r.jsonl", meta + "\n" + tc + "\n")
         let b = CodexSource().parseFile(path: p)
         XCTAssertEqual(b.count, 1)
         XCTAssertEqual(b[0].counts.input, 400, "input 应扣除 cached")
         XCTAssertEqual(b[0].counts.cacheRead, 600)
-        XCTAssertEqual(b[0].counts.output, 60, "output 含 reasoning")
+        XCTAssertEqual(b[0].counts.output, 60, "output_tokens 已含 reasoning（子集，不重复加）")
         XCTAssertEqual(b[0].project, "proj")
         XCTAssertEqual(b[0].model, "gpt-6.1-sol")
     }
