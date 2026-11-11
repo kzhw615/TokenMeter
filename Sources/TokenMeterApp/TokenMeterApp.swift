@@ -4,19 +4,6 @@ import AppKit
 import ServiceManagement
 @preconcurrency import TokenMeterCore
 
-@main
-struct TokenMeterApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-
-    init() {
-        PricingTable.writeTemplateIfMissing()
-    }
-
-    var body: some Scene {
-        Settings { EmptyView() }
-    }
-}
-
 /// 应用入口：NSStatusItem 承载菜单栏图标（左键面板 / 右键菜单）
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -25,12 +12,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        PricingTable.writeTemplateIfMissing()
         let model = AppModel()
         self.model = model
         statusBar = StatusBarController(model: model, actions: AppActions.shared)
         if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
             let keys = model.harnessIcons.keys.sorted().joined(separator: ",")
             FileHandle.standardError.write(Data("DBG icons=\(keys)\n".utf8))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                let titles = NSApp.windows.map { "[\($0.className) t=\($0.title) f=\($0.frame) vis=\($0.isVisible)]" }.joined(separator: " | ")
+                FileHandle.standardError.write(Data("DBG windows \(NSApp.windows.count): \(titles)\n".utf8))
+            }
         }
         AppActions.shared.closePanel()
     }
@@ -514,13 +506,4 @@ enum MenuBarAssets {
 }
 
 
-#else
-import Foundation
-
-@main
-struct TokenMeterAppFallback {
-    static func main() {
-        print("TokenMeter 菜单栏应用仅支持 macOS；本平台请使用 tokenmeter CLI。")
-    }
-}
 #endif
