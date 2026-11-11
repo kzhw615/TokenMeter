@@ -434,30 +434,51 @@ final class AppModel: ObservableObject {
 
     func pollActivity() {
         Task.detached(priority: .utility) { [weak self] in
-            // 单次合并遍历：同时得到「是否在跑」和「顶层任务最后活动」
+            // 单次合并遍历：各源最后活动 + 顶层活动
             let snapshot = ActivityDetector.activitySnapshot()
             let now = Date()
-            let active = snapshot.compactMap { $0.lastActive != nil && now.timeIntervalSince($0.lastActive!) <= ActivityDetector.defaultWindow ? $0.name : nil }
+            // 精确状态信号（放在后台线程，避免阻塞 UI）
+            let dshRunning = DshSource.isTaskRunning()
+            let codexTurn = ActivityDetector.codexTurnState(now: now)
+            let wbState = ActivityDetector.workBuddyState(now: now)
+
+            let states: [(String, Int)] = snapshot.compactMap { item in
+                guard let last = item.lastActive else { return nil }   // 无日志 = 未安装
+                let top = item.topLevel ?? last
+                let age = now.timeIntervalSince(top)
+                let fresh = now.timeIntervalSince(last) <= ActivityDetector.defaultWindow
+                var st = fresh ? 0 : (age < 600 ? 1 : 2)
+
+                switch item.name {
+                case "DSH":
+                    // 长工具执行时日志可能几分钟不 flush：看日志尾部事件是否仍在推进
+                    if st != 0, dshRunning == true { st = 0 }
+                case "Codex":
+                    // 以 thread_history sqlite 的 turn 状态为准（被继续的会话写在旧日期目录里）
+                    if let cs = codexTurn {
+                        if cs.running {
+                            st = 0
+                        } else if let done = cs.lastCompleted, now.timeIntervalSince(done) < 600 {
+                            st = max(st, 1)
+                        }
+                    }
+                case "WorkBuddy":
+                    if let wb = wbState { st = wb }
+                default:
+                    break
+                }
+                return (item.name, st)
+            }
+
+            // 「燃烧中」直接由三态推导：状态准确，菜单栏火苗就不会在大任务中途熄灭
+            let active = states.filter { $0.1 == 0 }.map { $0.0 }
+
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 if active != self.burningSources {
                     self.burningSources = active
                     if !active.isEmpty { self.startHeartbeat() }
                     if active.isEmpty { self.clearRate() }
-                }
-                // 三态：运行中(<60s) / 待阅读(60s~10min) / 空闲(>10min)
-                let states: [(String, Int)] = snapshot.compactMap { item in
-                    guard let last = item.lastActive else { return nil }   // 无日志 = 未安装
-                    let top = item.topLevel ?? last
-                    let age = now.timeIntervalSince(top)
-                    var st = active.contains(item.name) ? 0 : (age < 600 ? 1 : 2)
-                    // DSH 长工具执行时日志可能几分钟不 flush：看日志尾部事件是否仍在推进
-                    if item.name == "DSH", st != 0, DshSource.isTaskRunning() == true {
-                        st = 0
-                    }
-                    // WorkBuddy 用 sessions 表真实状态裁决
-                    if item.name == "WorkBuddy", let wb = ActivityDetector.workBuddyState(now: now) { st = wb }
-                    return (item.name, st)
                 }
                 if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
                     let desc = snapshot.map { "\($0.name):last=\($0.lastActive.map { String(format: "%.0fs", now.timeIntervalSince($0)) } ?? "-")" }.joined(separator: " ")

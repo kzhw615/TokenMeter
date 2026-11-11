@@ -13,6 +13,10 @@ func parseArgs(_ args: [String]) -> (command: String, range: RangeKind, json: Bo
         let a = args[i]
         switch a {
         case "debug-activity":
+            if let cs = ActivityDetector.codexTurnState() {
+                let age = cs.lastActive.map { Int(Date().timeIntervalSince($0)) }.map { "\($0)s 前" } ?? "-"
+                print("  codex-turn    \(cs.running ? "运行中" : "已结束")（sqlite turn 状态，最近活动 \(age)）")
+            }
             if let running = DshSource.isTaskRunning() {
                 print("  dsh-task      \(running ? "运行中" : "已结束")（日志尾部事件判定）")
             } else {

@@ -43,8 +43,10 @@ public enum ActivityDetector {
                            lastActive: latestMtime(under: "~/.claude/projects", suffixes: [".jsonl"]),
                            topLevel: latestTopLevelMtime(under: "~/.claude/projects", suffixes: [".jsonl"], recentCutoff: recentCutoff)),
             SourceActivity(name: "Codex",
-                           lastActive: codexMtime(now: now, topLevelOnly: false, recentCutoff: recentCutoff),
-                           topLevel: codexMtime(now: now, topLevelOnly: true, recentCutoff: recentCutoff)),
+                           lastActive: newer(codexMtime(now: now, topLevelOnly: false, recentCutoff: recentCutoff),
+                                             codexTurnState(now: now)?.lastActive),
+                           topLevel: newer(codexMtime(now: now, topLevelOnly: true, recentCutoff: recentCutoff),
+                                           codexTurnState(now: now)?.lastCompleted)),
             SourceActivity(name: "DSH",
                            lastActive: latestMtime(under: "~/.dsh/sessions", suffixes: [".zstd", ".jsonl"]),
                            topLevel: latestTopLevelMtime(under: "~/.dsh/sessions", suffixes: [".zstd", ".jsonl"], recentCutoff: recentCutoff)),
@@ -94,6 +96,33 @@ public enum ActivityDetector {
             if let d = item.lastActive, now.timeIntervalSince(d) <= window { return item.name }
             return nil
         }
+    }
+
+    /// Codex 精确 turn 状态：新版 Codex（CLI/Desktop）把每轮对话记在 thread_history sqlite 里，
+    /// status = inProgress / completed。比「日志 mtime」可靠得多——
+    /// 被继续的会话会写回旧日期目录（如 sessions/2026/11/05/），只扫今天/昨天会完全看不到。
+    public static func codexTurnState(now: Date = Date()) -> (running: Bool, lastActive: Date?, lastCompleted: Date?)? {
+        #if os(macOS)
+        let path = NSString(string: "~/.codex/thread_history_1.sqlite").expandingTildeInPath
+        guard FileManager.default.fileExists(atPath: path) else { return nil }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { return nil }
+        defer { sqlite3_close(db) }
+        func scalar(_ sql: String) -> Int64? {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return nil }
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+            return sqlite3_column_type(stmt, 0) == SQLITE_NULL ? nil : sqlite3_column_int64(stmt, 0)
+        }
+        let nowSec = Int64(now.timeIntervalSince1970)
+        let running = (scalar("SELECT COUNT(*) FROM thread_turns WHERE status='inProgress' AND started_at > \(nowSec - 7200)") ?? 0) > 0
+        let lastActive = scalar("SELECT MAX(COALESCE(completed_at, started_at)) FROM thread_turns").map { Date(timeIntervalSince1970: Double($0)) }
+        let lastCompleted = scalar("SELECT MAX(completed_at) FROM thread_turns WHERE status='completed'").map { Date(timeIntervalSince1970: Double($0)) }
+        return (running, lastActive, lastCompleted)
+        #else
+        return nil
+        #endif
     }
 
     /// WorkBuddy 三态（macOS，基于 sessions 表真实状态；其他平台 nil 回退 mtime 启发式）：
