@@ -212,9 +212,18 @@ public enum ActivityDetector {
     }
 
     /// Hermes 只看根库与 profiles/*/state.db（不递归 ~/.hermes，那里有十万级无关文件）
+    /// Hermes 只看根库与 profiles/*/state.db。
+    /// 路径逻辑在此内联（不依赖 HermesSource）：后者依赖 SQLite3，仅 macOS 编译，
+    /// 早期直接调用会让 Linux/Windows 编译失败。
     private static func hermesMtime() -> Date? {
+        let fm = FileManager.default
+        var paths = [SourcePaths.expand("~/.hermes/state.db")]
+        let profiles = SourcePaths.expand("~/.hermes/profiles")
+        if let names = try? fm.contentsOfDirectory(atPath: profiles) {
+            paths += names.map { profiles + "/" + $0 + "/state.db" }
+        }
         var latest: Date?
-        for path in HermesSource.stateDBPaths() {
+        for path in paths where fm.fileExists(atPath: path) {
             latest = newer(latest, fileMtime(path))
         }
         return latest

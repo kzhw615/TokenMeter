@@ -119,9 +119,13 @@ public struct DshSource: UsageSource {
     /// 会话是否仍在推进：解析最新会话日志尾部最后一条生命周期事件。
     /// 长工具执行期间日志可能几分钟不 flush，mtime 会误判为「已结束」，所以要看事件本身。
     /// 返回 true=运行中, false=已结束, nil=无法判断
-    public static func isTaskRunning() -> Bool? {
+    /// 会话日志多久没写入就认为任务已停（防止中断的会话永久显示"运行中"）
+    public static let runningStaleness: TimeInterval = 600
+
+    /// - Parameter baseDir: 会话根目录（默认 ~/.dsh/sessions，测试时可注入临时目录）
+    public static func isTaskRunning(now: Date = Date(), baseDir: String? = nil) -> Bool? {
         let fm = FileManager.default
-        let base = SourcePaths.expand("~/.dsh/sessions")
+        let base = baseDir ?? SourcePaths.expand("~/.dsh/sessions")
         guard let projects = try? fm.contentsOfDirectory(atPath: base) else { return nil }
         var newest: (path: String, mtime: Date)?
         for project in projects {
@@ -134,6 +138,8 @@ public struct DshSource: UsageSource {
             }
         }
         guard let target = newest else { return nil }
+        // 超过 staleness 没有任何写入 ⇒ 任务早已停止（覆盖被中断、停在 tool/call 的会话）
+        if now.timeIntervalSince(target.mtime) > runningStaleness { return false }
         guard let data = Zstd.decompressTailFrames(path: target.path) else { return nil }
         // 只看尾部事件：从后往前找第一条生命周期标记
         let lines = LineReader.split(data)

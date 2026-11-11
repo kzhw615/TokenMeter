@@ -67,6 +67,21 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertEqual(b[0].model, "deepseek-flash", "应剥离 custom-local: 前缀")
     }
 
+    /// 中断的会话（停在 tool/call）长时间未写入时，不应永久判定为「运行中」
+    func testDshStaleSessionNotRunning() throws {
+        let base = tmp + "/sessions-stale"
+        let dir = base + "/--proj--/session-abc"
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let file = dir + "/session.v4.jsonl.zstd"
+        try Data([0x28, 0xB5, 0x2F, 0xFD, 0x00]).write(to: URL(fileURLWithPath: file))
+        // 把文件时间设成 1 小时前
+        let old = Date().addingTimeInterval(-3600)
+        try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: file)
+
+        XCTAssertEqual(DshSource.isTaskRunning(now: Date(), baseDir: base), false,
+                       "超过 staleness 未写入应判定为已停止")
+    }
+
     func testDshParsing() {
         let sel = #"{"type":"model/selection","time":1794156000000,"data":{"model":"cjj-jksb/qwenwork/qwen3.8-max"}}"#
         let msg = #"{"type":"assistant/message","time":1794156046001,"data":{"turn":1,"step":1,"usage":{"inputTokens":6,"outputTokens":100,"cacheReadTokens":800,"cacheWriteTokens":200},"stream":[{"type":"chunk","chunk":{"type":"finish","replayState":{"response":{"model":"cjj-jksb/qwenwork/qwen3.8-max"}}}}]}}"#

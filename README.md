@@ -124,7 +124,7 @@ tokenmeter sources                # 查看数据源状态
 | --- | --- |
 | macOS | ✅ 完整体验：菜单栏 App + CLI |
 | Windows | ✅ CLI（`tokenmeter.exe`）已真机验证（Win10 19045 / Swift 6.4.2，2026-11-09）：jsonl 系数据源（Claude Code / Codex / DSH / WorkBuddy 等）可用；**不提供托盘应用**（Windows 打包链维护成本过高）；SQLite 系来源暂为 macOS 专属；DSH 压缩日志需 `zstd.exe` 在 PATH；中文输出先 `chcp 65001` |
-| Linux | 🟡 CLI 同 Windows 口径；CI 每 push 在 macOS + Ubuntu 双平台编译+单测（Ubuntu 验证非 Apple 编译路径），Windows 由真机验证 |
+| Linux | ❌ 不支持（不提供 CLI 也不做编译验证）。请在 macOS 或 Windows 上使用 |
 
 Windows 构建：安装 [Swift 工具链](https://www.swift.org/install/windows/) 后 `swift build --target tokenmeter -c release`，产物 `.build\release\tokenmeter.exe`；中文输出请先 `chcp 65001` 切换控制台 UTF-8。WSL 内的 harness 日志扫描在规划中（Phase 3）。
 

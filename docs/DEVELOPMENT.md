@@ -51,7 +51,10 @@ swift build -c release --target tokenmeter
 swift test
 ```
 
-CI（`.github/workflows/ci.yml`）在每次 push 时于 macOS + Ubuntu 双平台编译并跑单测。
+CI（`.github/workflows/ci.yml`）在每次 push 时于 macOS 编译并跑单测。
+
+> Linux 不是支持目标，CI 也不再编译验证 Linux。如果新增了依赖 SQLite3 等 Apple 专属能力的数据源，
+> 注意不要在不带平台门控的共享代码（如 `ActivityDetector`）里直接引用它们。
 
 ## 发版流程
 
@@ -85,9 +88,9 @@ gh release edit vX.Y.Z --notes-file /tmp/notes.md
 defaults write local.tokenmeter.menubar disableUpdateCheck -bool YES
 ```
 
-## 跨平台 CLI（Windows / Linux）
+## 跨平台 CLI（Windows）
 
-Linux / Windows 只提供 CLI（菜单栏 App 为 macOS 专属）：
+Windows 只提供 CLI（菜单栏 App 为 macOS 专属）。**Linux 不受支持**：
 
 ```bash
 swift build -c release --target tokenmeter
@@ -95,6 +98,7 @@ swift build -c release --target tokenmeter
 
 - Windows：需安装 [Swift 工具链](https://www.swift.org/install/windows/)；DSH 压缩日志需 `zstd.exe` 在 PATH；中文输出先 `chcp 65001`
 - SQLite 系数据源（OpenCode / Hermes / ZCode / Kiro / Copilot CLI / MiniMax / Qoder）为 macOS 专属
+- Linux：不保证可编译（部分模块依赖 macOS 专属框架），不提供支持
 
 ## 实验性：Tauri 托盘应用
 
