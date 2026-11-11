@@ -25,6 +25,8 @@ ditto -c -k --sequesterRsrc --keepParent build/TokenMeter.app build/TokenMeter.a
 zip -j -q build/tokenmeter.zip build/tokenmeter
 
 echo "==> 创建 GitHub Release"
+# 写作规范见 docs/RELEASE_NOTES_GUIDE.md：
+#   面向用户，说明「影响 + 需要做什么」；不写本机数据、第三方对比、内部术语
 gh release create "v$VERSION" build/TokenMeter.app.zip build/tokenmeter.zip \
     --title "v$VERSION" --notes "$NOTES"
 
