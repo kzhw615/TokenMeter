@@ -118,11 +118,9 @@ public enum ActivityDetector {
         if let n = scalar("SELECT COUNT(*) FROM sessions WHERE (status='working' AND last_activity_at > \(nowMs - 120_000)) OR (status='active' AND last_activity_at > \(nowMs - 60_000))"), n > 0 {
             return 0
         }
+        // WorkBuddy 有真实已读回执（sessions.unread），不再用「最近 10 分钟完成过」的时间启发式：
+        // 用户读掉之后必须立刻变灰，否则会一直绿着。
         if let n = scalar("SELECT COUNT(*) FROM sessions WHERE unread = 1 AND last_activity_at > \(nowMs - 86_400_000)"), n > 0 {
-            return 1
-        }
-        if let last = scalar("SELECT MAX(last_activity_at) FROM sessions WHERE status='completed'"),
-           nowMs - last < 600_000 {
             return 1
         }
         return 2
