@@ -28,6 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let model = AppModel()
         self.model = model
         statusBar = StatusBarController(model: model, actions: AppActions.shared)
+        if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
+            let keys = model.harnessIcons.keys.sorted().joined(separator: ",")
+            FileHandle.standardError.write(Data("DBG icons=\(keys)\n".utf8))
+        }
         AppActions.shared.closePanel()
     }
 }
@@ -309,6 +313,7 @@ final class AppModel: ObservableObject {
     private var lastFileTotal: Int = 0
 
     init() {
+        loadHarnessIcons()   // 图标随包内置/系统图标，启动即可用，避免坞上出现字母占位
         refresh()
         checkForUpdates()
         maybeDailyUpdateCheck()

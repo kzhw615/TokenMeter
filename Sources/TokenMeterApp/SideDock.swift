@@ -287,15 +287,20 @@ struct SideDockView: View {
 
     private var todaySummary: Summary? { model.summariesByRange[.today] }
     private var tokensText: String {
-        let t = todaySummary.map { model.includeCache ? $0.counts.total : $0.counts.input + $0.counts.output } ?? 0
+        guard let s = todaySummary else { return "—" }   // 数据未就绪时不留 0
+        let t = model.includeCache ? s.counts.total : s.counts.input + s.counts.output
         return Fmt.compactTokens(t)
     }
-    private var costText: String { Fmt.cost(todaySummary?.cost ?? 0) }
+    private var costText: String {
+        guard let s = todaySummary else { return " " }
+        return Fmt.cost(s.cost)
+    }
     /// 底行：燃烧中=速率（含 0/s），空闲=命中率
     private var bottomIsRate: Bool { model.isBurning }
     private var bottomText: String {
+        guard let s = todaySummary else { return " " }
         if model.isBurning { return Fmt.compactTokens(model.burnRate ?? 0) + "/s" }
-        return Fmt.percent(todaySummary?.cacheHitRate ?? 0)
+        return Fmt.percent(s.cacheHitRate)
     }
 
     @ViewBuilder
