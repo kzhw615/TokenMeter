@@ -8,15 +8,19 @@ import SQLite3
 public enum ActivityDetector {
     public static let defaultWindow: TimeInterval = 60
 
+    /// 每个可识别 harness 的最后活动时间（nil = 本机无日志/未安装）；顺序即展示顺序
     public static func activeSources(now: Date = Date(), window: TimeInterval = defaultWindow) -> [String] {
         let cutoff = now.addingTimeInterval(-window)
         return lastActivity(now: now).compactMap { name, date in
+            // WorkBuddy 以 sessions 表裁决：背景同步写日志不算燃烧
+            if name == "WorkBuddy", let st = workBuddyState(now: now) {
+                return st == 0 ? name : nil
+            }
             if let date, date >= cutoff { return name }
             return nil
         }
     }
 
-    /// 每个可识别 harness 的最后活动时间（nil = 本机无日志/未安装）；顺序即展示顺序
     public static func lastActivity(now: Date = Date()) -> [(String, Date?)] {
         let farPast = now.addingTimeInterval(-1e9)
         return [
@@ -49,7 +53,7 @@ public enum ActivityDetector {
             return sqlite3_column_int64(stmt, 0)
         }
         let nowMs = Int64(now.timeIntervalSince1970 * 1000)
-        if let n = scalar("SELECT COUNT(*) FROM sessions WHERE status='working' OR (status='active' AND last_activity_at > \(nowMs - 60_000))"), n > 0 {
+        if let n = scalar("SELECT COUNT(*) FROM sessions WHERE (status='working' AND last_activity_at > \(nowMs - 120_000)) OR (status='active' AND last_activity_at > \(nowMs - 60_000))"), n > 0 {
             return 0
         }
         if let n = scalar("SELECT COUNT(*) FROM sessions WHERE unread = 1 AND last_activity_at > \(nowMs - 86_400_000)"), n > 0 {
