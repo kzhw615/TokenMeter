@@ -23,10 +23,12 @@ public struct CodexSource: UsageSource {
         var toParse: [String] = []
         // 并行取指纹（数千个 stat 串行是主要耗时）
         let prints = SourcePaths.parallelFingerprints(files)
+        var sess = SessionAgg()
         for (i, path) in files.enumerated() {
             if let fp = prints[i], let cached = cache.cachedBuckets(path: path, size: fp.size, mtime: fp.mtime) {
                 ScanProgressReporter.current?.bump()
                 builder.merge(cached)
+                sess.add(tool: "Codex", path: path, project: cached.first?.project ?? "-", buckets: cached)
             } else {
                 toParse.append(path)
             }
@@ -39,8 +41,9 @@ public struct CodexSource: UsageSource {
         }, handle: { path, buckets in
             cache.store(path: path, buckets: buckets)
             builder.merge(buckets)
+            sess.add(tool: "Codex", path: path, project: buckets.first?.project ?? "-", buckets: buckets)
         })
-        return ScanResult(buckets: builder.buckets, files: files.count)
+        return ScanResult(buckets: builder.buckets, files: files.count, sessions: sess.totals)
     }
 
     /// 从 session_meta / thread_settings_applied / turn_context 事件里提取模型名。
@@ -59,8 +62,11 @@ public struct CodexSource: UsageSource {
     public func parseFile(path: String) -> [UsageBucket] {
         let state = ParseState()
         if path.hasSuffix(".zst") {
-            guard let data = Zstd.decompress(path: path) else { return [] }
-            for line in LineReader.split(data) { state.consume(line) }
+            // 经临时文件流式读：避免 GB 级解压结果整体驻留内存
+            if !Zstd.forEachDecompressedLine(path: path, handler: { state.consume($0) }) {
+                guard let data = Zstd.decompress(path: path) else { return [] }
+                for line in LineReader.split(data) { state.consume(line) }
+            }
         } else {
             guard let reader = LineReader(path: path) else { return [] }
             reader.forEachLine { state.consume($0) }
@@ -71,6 +77,7 @@ public struct CodexSource: UsageSource {
     private final class ParseState {
         let builder = BucketBuilder(tool: "Codex")
         var model = "unknown"
+
 
         func consume(_ line: String) {
             if line.contains("\"session_meta\"") || line.contains("thread_settings_applied") || line.contains("\"turn_context\"") {

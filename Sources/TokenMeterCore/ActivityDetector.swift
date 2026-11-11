@@ -18,6 +18,26 @@ public enum ActivityDetector {
         "WorkBuddy": "com.tencent.workbuddy.mac",
     ]
 
+    /// 该数据源的「状态判定依据」——用于悬浮时告诉用户这个灯是「确定」还是「推断」
+    public static func stateBasis(for source: String) -> String {
+        switch source {
+        case "WorkBuddy": return "依据：WorkBuddy 真实已读状态"
+        case "Codex": return "依据：Codex 任务状态库"
+        case "DSH": return "依据：DSH 会话锁 + 日志事件"
+        default: return "依据：日志写入时间（推断）"
+        }
+    }
+
+    /// 坞内空间小，给出极简依据标签
+    public static func shortBasis(for source: String) -> String {
+        switch source {
+        case "WorkBuddy": return "真实已读"
+        case "Codex": return "任务状态库"
+        case "DSH": return "会话锁"
+        default: return "日志时间"
+        }
+    }
+
     /// 名字关键词 → 数据源：当前台 App 的名字包含关键词时，认为是该工具的宿主 App。
     /// 覆盖面比硬编码 bundle id 广（Kiro / Qoder / ZCode / OpenCode 等装了桌面版就能识别）。
     public static func sourceName(matching appName: String?, bundleID: String?) -> String? {

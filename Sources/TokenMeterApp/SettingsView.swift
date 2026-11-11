@@ -16,6 +16,7 @@ struct SettingsView: View {
                 budgetCard
                 dockSourcesCard
                 pricingCard
+                healthCard
                 aboutCard
             }
             .padding(18)
@@ -174,6 +175,41 @@ struct SettingsView: View {
     private var pricingCard: some View {
         card("模型价格") {
             PriceEditorView()
+        }
+    }
+
+    // MARK: - 数据体检 + 状态判定说明
+
+    private var healthCard: some View {
+        card("数据体检") {
+            let issues = model.dataIssues
+            HStack(spacing: 6) {
+                Image(systemName: issues.isEmpty ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(issues.isEmpty ? Color.green : Color.orange)
+                Text(issues.isEmpty ? "未发现异常" : "\(issues.count) 项需要留意")
+                    .font(.caption.weight(.medium))
+                Spacer()
+            }
+            if !issues.isEmpty {
+                ForEach(Array(issues.enumerated()), id: \.offset) { _, i in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("[\(i.level.rawValue)] \(i.title)").font(.caption2.weight(.medium))
+                        Text(i.detail).font(.caption2).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            Divider()
+            Text("各工具状态是怎么判断的").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+            ForEach(["Codex", "DSH", "WorkBuddy"], id: \.self) { name in
+                HStack(spacing: 6) {
+                    Text(name).font(.caption2).frame(width: 76, alignment: .leading)
+                    Text(ActivityDetector.stateBasis(for: name)).font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            Text("其余工具：依据日志写入时间推断（这些工具没有提供真实状态）")
+                .font(.caption2).foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

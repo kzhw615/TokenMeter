@@ -6,6 +6,9 @@ public final class LineReader {
     private let delim: UInt8 = 0x0A
     private var buffer = Data()
     private let chunkSize = 1 << 20
+    /// 单行上限。日志里可能夹带 base64 图片/超大工具输出（实测有数百 MB 的单行），
+    /// 逐行解析这类记录既无用又会让内存冲到 GB 级，直接跳过。
+    public var maxLineBytes = 4 << 20
 
     public init?(path: String) {
         guard let h = FileHandle(forReadingAtPath: path) else { return nil }
@@ -21,12 +24,22 @@ public final class LineReader {
 
     public func forEachLine(_ body: (String) -> Void) {
         while true {
-            let chunk = (try? handle.read(upToCount: chunkSize)) ?? nil
-            guard let chunk, !chunk.isEmpty else { break }
-            buffer.append(chunk)
-            flush(complete: false, body)
+            // 关键：read(upToCount:) 返回的 Data 是自动释放对象，必须和解析一起放进
+            // autoreleasepool，否则整份日志的块会在池里累积（实测 1.4GB 文件 → 1.5GB 内存，
+            // 修正后仅 8MB）。
+            let finished: Bool = autoreleasepool {
+                guard let chunk = (try? handle.read(upToCount: chunkSize)) ?? nil, !chunk.isEmpty else {
+                    return true
+                }
+                buffer.append(chunk)
+                flush(complete: false, body)
+                return false
+            }
+            if finished { break }
         }
-        flush(complete: true, body)
+        autoreleasepool {
+            flush(complete: true, body)
+        }
         try? handle.close()
     }
 
@@ -34,8 +47,15 @@ public final class LineReader {
         var start = buffer.startIndex
         while let idx = buffer[start...].firstIndex(of: delim) {
             let line = buffer[start..<idx]
-            if !line.isEmpty { body(String(decoding: line, as: UTF8.self)) }
+            if !line.isEmpty, line.count <= maxLineBytes {
+                body(String(decoding: line, as: UTF8.self))
+            }
             start = buffer.index(after: idx)
+        }
+        if !complete, start == buffer.startIndex, buffer.count > maxLineBytes {
+            // 尚未遇到换行且已超上限：丢弃，等待下一个换行
+            buffer.removeAll(keepingCapacity: false)
+            return
         }
         if complete {
             if start < buffer.endIndex {
@@ -119,7 +139,7 @@ public enum Zstd {
 
     /// 解压 [offset, boundary) 区间（即新追加且已完整的帧）
     public static func decompressRange(path: String, from offset: Int64, to boundary: Int64) -> Data? {
-        guard boundary > offset, let zstd = zstdPath() else { return nil }
+        guard boundary > offset, zstdPath() != nil else { return nil }
         guard let fh = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? fh.close() }
         let len = Int(boundary - offset)
@@ -136,6 +156,33 @@ public enum Zstd {
         } catch { return nil }
         defer { try? FileManager.default.removeItem(at: tmp) }
         return decompress(path: tmp.path)
+    }
+
+    /// 解压到临时文件后按行流式读取：内存只与单行长度相关。
+    /// 用于大 .zst（实测有 360MB 压缩、解压后 GB 级的会话日志）。
+    @discardableResult
+    public static func forEachDecompressedLine(path: String, handler: (String) -> Void) -> Bool {
+        guard let zstd = zstdPath() else { return false }
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tokenmeter-\(UUID().uuidString).jsonl")
+        FileManager.default.createFile(atPath: tmp.path, contents: nil)
+        guard let sink = FileHandle(forWritingAtPath: tmp.path) else { return false }
+        defer {
+            try? sink.close()
+            try? FileManager.default.removeItem(at: tmp)
+        }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: zstd)
+        p.arguments = ["-dc", path]
+        p.standardOutput = sink
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return false }
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { return false }
+        try? sink.close()
+        guard let reader = LineReader(path: tmp.path) else { return false }
+        reader.forEachLine(handler)
+        return true
     }
 
     public static func decompress(path: String) -> Data? {

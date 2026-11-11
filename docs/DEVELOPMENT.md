@@ -43,6 +43,7 @@ swift build -c release --target tokenmeter
 .build/release/tokenmeter sources                       # 数据源状态（文件数 / 禁用）
 .build/release/tokenmeter activity --json               # 当前是否有会话在跑
 .build/release/tokenmeter debug-activity                # 各源活动探测耗时 + 状态判定依据
+.build/release/tokenmeter verify                        # 数据体检（检查数字层面的隐患）
 ```
 
 ## 测试

@@ -77,7 +77,7 @@ var cache = timed("cache-load") { opts.noCache ? ScanCache() : ScanCache.load() 
 let scanned = timed("scan") { Aggregator.scan(cache: &cache) }
 if !opts.noCache { timed("cache-save") { cache.save() } }
 let pricing = PricingTable.load()
-let summary = timed("summarize") { Aggregator.summarize(buckets: scanned.buckets, range: opts.range, pricing: pricing, statuses: scanned.statuses) }
+let summary = timed("summarize") { Aggregator.summarize(buckets: scanned.buckets, range: opts.range, pricing: pricing, statuses: scanned.statuses, sessions: scanned.sessions) }
 
 switch opts.command {
 case "activity":
@@ -90,6 +90,38 @@ case "activity":
         print("当前无活跃会话（近 2 分钟无日志写入）")
     } else {
         print("正在燃烧 token 的会话：\(active.joined(separator: ", "))")
+    }
+case "sessions":
+    let list = summary.sessions
+    if opts.json {
+        let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted]
+        if let d = try? enc.encode(list) { print(String(decoding: d, as: UTF8.self)) }
+    } else {
+        print("按会话（\(opts.range.rawValue)）：")
+        for (i, s0) in list.enumerated() {
+            print(String(format: "  %2d. %-10s %-12s %10.2f亿  $%-8.2f %@",
+                         i + 1, (s0.tool as NSString).utf8String!, (s0.session as NSString).utf8String!,
+                         Double(s0.counts.total) / 100_000_000, s0.cost, s0.project))
+        }
+    }
+case "verify":
+    var issues = DataCheck.run(buckets: scanned.buckets, statuses: scanned.statuses)
+    issues += DataCheck.pricingIssues(buckets: scanned.buckets, pricing: pricing)
+    if opts.json {
+        let payload: [String: Any] = ["issues": issues.map {
+            ["level": $0.level.rawValue, "title": $0.title, "detail": $0.detail]
+        }]
+        if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
+            print(String(decoding: data, as: UTF8.self))
+        }
+    } else if issues.isEmpty {
+        print("数据体检通过：未发现异常（共检查 \(scanned.buckets.count) 条分桶）")
+    } else {
+        print("数据体检发现 \(issues.count) 项问题：")
+        for i in issues {
+            print("  [\(i.level.rawValue)] \(i.title)")
+            print("        \(i.detail)")
+        }
     }
 case "debug-dsh":
     let path = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : ""

@@ -6,7 +6,7 @@ public enum BoundedParallel {
     /// 峰值内存只与块大小相关（避免上千个解压日志同时驻留）
     public static func chunkedMap<T, R>(
         _ items: [T],
-        chunkSize: Int = 32,
+        chunkSize: Int = 8,
         transform: @escaping (T) -> R,
         handle: (T, R) -> Void
     ) {
@@ -53,19 +53,76 @@ public extension UsageSource {
     func parseFile(path: String) -> [UsageBucket] { [] }
 }
 
+/// 会话级统计（不走分桶，避免数千个历史文件各占一份分桶把内存撑爆）。
+/// 结构：tool|project|session → day → model → counts
+/// 保留模型维度是为了按官方单价算准费用，仅有近 7 天，内存可忽略。
+public typealias SessionTotals = [String: [String: [String: TokenCounts]]]
+
+public struct SessionAgg {
+    private var map: SessionTotals = [:]
+    /// 会话维度只看最近 N 天：更早的历史不再保留明细
+    public static let windowDays = 7
+
+    public init() {}
+
+    public mutating func add(tool: String, path: String, project: String, buckets: [UsageBucket],
+                             calendar: Calendar = .current) {
+        guard let sync = Self.cutoffDay(calendar: calendar) else { return }
+        let session = SessionName.from(path)
+        let key = tool + "|" + project + "|" + session
+        var existing = map[key] ?? [:]
+        var touched = false
+        for b in buckets where b.day >= sync {
+            var days = existing[b.day] ?? [:]
+            days[b.model, default: TokenCounts()] += b.counts
+            existing[b.day] = days
+            touched = true
+        }
+        guard touched else { return }
+        map[key] = existing
+    }
+
+    public mutating func absorb(_ other: SessionTotals) {
+        for (key, days) in other {
+            var existing = map[key] ?? [:]
+            for (day, models) in days {
+                var ms = existing[day] ?? [:]
+                for (model, c) in models { ms[model, default: TokenCounts()] += c }
+                existing[day] = ms
+            }
+            map[key] = existing
+        }
+    }
+
+    public var totals: SessionTotals { map }
+
+    private static func cutoffDay(calendar: Calendar) -> String? {
+        guard let d = calendar.date(byAdding: .day, value: -windowDays, to: Date()) else { return nil }
+        return DayKey.key(for: d, calendar: calendar)
+    }
+}
+
 public struct ScanResult {
     public var buckets: [UsageBucket]
     public var files: Int
     public var note: String?
-    public init(buckets: [UsageBucket] = [], files: Int = 0, note: String? = nil) {
+    public var sessions: SessionTotals
+    public init(buckets: [UsageBucket] = [], files: Int = 0, note: String? = nil,
+                sessions: SessionTotals = [:]) {
         self.buckets = buckets
         self.files = files
         self.note = note
+        self.sessions = sessions
     }
 }
 
 public enum ProjectName {
     /// dsh 会话目录名形如 --Users-kzhw-Documents-foo--，非 ASCII 字符编码为 ~HEXHEXHEXHEX 连续段
+    /// 通用目录名解码：DSH 的 --Users-xx-Projects-foo-- 或普通目录名都尽量还原
+    public static func decodeGeneric(_ raw: String) -> String {
+        raw.hasPrefix("--") ? decodeDsh(raw) : raw
+    }
+
     public static func decodeDsh(_ raw: String) -> String {
         var s = raw
         while s.hasPrefix("-") { s.removeFirst() }
@@ -107,12 +164,47 @@ public enum ProjectName {
     }
 }
 
-/// 把 (day, hour, model, project) 粒度的累加器转成 UsageBucket 列表
+public enum SessionName {
+    /// 从日志路径推断会话标识（「按会话」排行用）。取短标识，避免缓存膨胀。
+    public static func from(_ path: String) -> String {
+        let comps = path.split(separator: "/").map(String.init)
+        // DSH: .../session-<uuid>/session.v4.jsonl.zstd（也兼容 session.<x> 形式）
+        if let dir = comps.dropLast().last, dir.hasPrefix("session") {
+            let stripped = dir.drop { $0 == "s" || $0 == "e" || $0 == "s" || $0 == "i"
+                || $0 == "o" || $0 == "n" || $0 == "-" || $0 == "." || $0 == "_" }
+            let candidate = stripped.isEmpty ? dir : String(stripped)
+            return short(candidate)
+        }
+        var name = comps.last ?? "-"
+        for suf in [".jsonl.zst", ".jsonl.zstd", ".jsonl", ".zst", ".json", ".db", ".sqlite"] where name.hasSuffix(suf) {
+            name = String(name.dropLast(suf.count)); break
+        }
+        // 文件名本身没有信息量（如 session.v4）时，退回上一级目录名
+        if name.lowercased().hasPrefix("session"), comps.count >= 3 {
+            let dir = comps[comps.count - 2]
+            if !dir.lowercased().hasPrefix("session") { return short(ProjectName.decodeGeneric(dir)) }
+        }
+        // Codex: rollout-2026-11-11T11-09-52-<uuid> ⇒ 取 uuid
+        if let last = name.split(separator: "-").last, last.count >= 8 {
+            let tail = String(last)
+            let isHex = tail.allSatisfy { ($0.isHexDigit) }
+            if isHex { return short(tail) }
+        }
+        if let dash = name.split(separator: "-").last, dash.count >= 6 { return short(String(dash)) }
+        return short(name)
+    }
+
+    private static func short(_ s: String) -> String {
+        let t = s.prefix(8)
+        return t.isEmpty ? "-" : String(t)
+    }
+}
+
+/// 把 (day, hour, model, project, session) 粒度的累加器转成 UsageBucket 列表
 public final class BucketBuilder {
     private var map: [String: UsageBucket] = [:]
     private let tool: String
     public var project: String = "-"
-
     public init(tool: String) { self.tool = tool }
 
     public func add(date: Date, model: String, counts: TokenCounts, calendar: Calendar = .current) {
@@ -133,7 +225,8 @@ public final class BucketBuilder {
             b.requests += 1
             map[key] = b
         } else {
-            map[key] = UsageBucket(day: day, hour: hour, tool: tool, model: model, project: project, counts: counts, requests: 1)
+            map[key] = UsageBucket(day: day, hour: hour, tool: tool, model: model, project: project,
+                                   counts: counts, requests: 1)
         }
     }
 
@@ -167,12 +260,22 @@ public enum SourcePaths {
     public static func expand(_ p: String) -> String {
         p.hasPrefix("~") ? home + String(p.dropFirst(1)) : p
     }
+    /// 首屏两阶段扫描：非 nil 时 files(under:) 只返回该时刻之后修改过的文件。
+    /// 阶段一用它把「今天/昨天」的数据在几秒内算出来，阶段二再后台补齐历史。
+    nonisolated(unsafe) public static var recentOnlyCutoff: Date?
+
     static func files(under dir: String, suffix: String) -> [String] {
         let fm = FileManager.default
-        guard let root = fm.enumerator(atPath: expand(dir)) else { return [] }
+        let base = expand(dir)
+        guard let root = fm.enumerator(atPath: base) else { return [] }
         var out: [String] = []
+        let cutoff = recentOnlyCutoff
         for case let rel as String in root {
-            if rel.hasSuffix(suffix) { out.append(expand(dir) + "/" + rel) }
+            if rel.hasSuffix(suffix) {
+                let full = base + "/" + rel
+                if let cutoff, let m = mtime(full), m < cutoff { continue }
+                out.append(full)
+            }
         }
         return out
     }

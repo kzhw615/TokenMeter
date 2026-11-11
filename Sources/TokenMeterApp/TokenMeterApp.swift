@@ -179,6 +179,7 @@ final class AppModel: ObservableObject {
 
     /// 坞底 harness 三态：0 运行中 / 1 待阅读 / 2 空闲；仅含本机有日志的源
     @Published var sourceStates: [(String, Int)] = []
+    @Published var dataIssues: [DataIssue] = []
     /// 侧边坞隐藏名单（默认全展示已安装源）
     @Published var hiddenDockSources: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "dockHiddenSources") ?? []) {
         didSet {
@@ -576,10 +577,42 @@ final class AppModel: ObservableObject {
         Task.detached(priority: .utility) {
             let pricing = PricingTable.load()
             var cache = CacheStore.lock.withLock { CacheStore.cache } ?? ScanCache.load()
+            let t0 = Date()
+
+            /// 把一份 buckets 汇总成七个范围并推到 UI
+            func publish(_ buckets: [UsageBucket], statuses: [SourceStatus], sessions: SessionTotals, partial: Bool) {
+                let all: [RangeKind: Summary] = Dictionary(uniqueKeysWithValues: RangeKind.allCases.map { r in
+                    (r, Aggregator.summarize(buckets: buckets, range: r, pricing: pricing, statuses: statuses, sessions: sessions))
+                })
+                let todayTotal = all[.today]?.counts.total ?? 0
+                let fileTotal = statuses.reduce(0) { $0 + $1.files }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.summariesByRange = all
+                    self.loadHarnessIcons()
+                    self.lastScan = Date()
+                    if !partial {
+                        self.lastFileTotal = fileTotal
+                        self.updateRate(todayTotal: todayTotal, at: Date())
+                    }
+                }
+            }
+
+            // ── 阶段一：先扫最近 2 天改动过的文件，几秒内出「今天/昨天」────────────────
+            let recentCutoff = Calendar.current.date(byAdding: .day, value: -2, to: Date())
+            let quick = Aggregator.scan(cache: &cache, progress: nil, recentOnlySince: recentCutoff)
+            if !quick.buckets.isEmpty {
+                publish(quick.buckets, statuses: quick.statuses, sessions: quick.sessions, partial: true)
+            }
+
+            // ── 阶段二：全量补齐历史（阶段一已解析的文件命中缓存，几乎零开销）──────────
+            if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
+                FileHandle.standardError.write(Data(String(format: "DBG phase1 %.1fs buckets=%d\n",
+                    Date().timeIntervalSince(t0), quick.buckets.count).utf8))
+            }
             let scanned = Aggregator.scan(cache: &cache, progress: progress)
-            // 一次扫描，七个范围的 Summary 全部预计算
             let all: [RangeKind: Summary] = Dictionary(uniqueKeysWithValues: RangeKind.allCases.map { r in
-                (r, Aggregator.summarize(buckets: scanned.buckets, range: r, pricing: pricing, statuses: scanned.statuses))
+                (r, Aggregator.summarize(buckets: scanned.buckets, range: r, pricing: pricing, statuses: scanned.statuses, sessions: scanned.sessions))
             })
             // 落盘后释放内存中的全量分桶缓存（约 150-200MB），下次从磁盘按需加载
             if cache.dirty {
@@ -602,6 +635,8 @@ final class AppModel: ObservableObject {
                 self.lastFileTotal = fileTotal
                 self.updateRate(todayTotal: todayTotal, at: Date())
                 self.evaluateBudget()
+                self.dataIssues = DataCheck.run(buckets: scanned.buckets, statuses: scanned.statuses)
+                    + DataCheck.pricingIssues(buckets: scanned.buckets, pricing: pricing)
             }
         }
     }

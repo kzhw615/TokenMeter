@@ -19,10 +19,12 @@ public struct ClaudeCodeSource: UsageSource {
         var toParse: [String] = []
         // 并行取指纹（数千个 stat 串行是主要耗时）
         let prints = SourcePaths.parallelFingerprints(files)
+        var sess = SessionAgg()
         for (i, path) in files.enumerated() {
             if let fp = prints[i], let cached = cache.cachedBuckets(path: path, size: fp.size, mtime: fp.mtime) {
                 ScanProgressReporter.current?.bump()
                 builder.merge(cached)
+                sess.add(tool: "Claude Code", path: path, project: Self.project(path: path), buckets: cached)
             } else {
                 toParse.append(path)
             }
@@ -35,8 +37,18 @@ public struct ClaudeCodeSource: UsageSource {
         }, handle: { path, buckets in
             cache.store(path: path, buckets: buckets)
             builder.merge(buckets)
+            sess.add(tool: "Claude Code", path: path, project: Self.project(path: path), buckets: buckets)
         })
-        return ScanResult(buckets: builder.buckets, files: files.count)
+        return ScanResult(buckets: builder.buckets, files: files.count, sessions: sess.totals)
+    }
+
+    /// 从路径解析项目名（供会话统计复用）
+    static func project(path: String) -> String {
+        let comps = path.split(separator: "/")
+        if let idx = comps.firstIndex(of: "projects"), idx + 1 < comps.count {
+            return ProjectName.decodeClaude(String(comps[idx + 1]))
+        }
+        return "-"
     }
 
     public func parseFile(path: String) -> [UsageBucket] {

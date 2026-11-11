@@ -115,6 +115,77 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertNil(DshSource.isSessionLockHeld(lockPath: tmp + "/nope.lock"))
     }
 
+    // MARK: - 新维度：会话 / 环比 / 预测 / 体检
+
+    /// 会话维度：同一 tool+project 下不同 session 应分别统计
+    func testSessionDimension() {
+        let today = DayKey.key(for: Date())
+        let sessions: SessionTotals = [
+            "DSH|p|aaaa1111": [today: ["m": TokenCounts(input: 100, output: 10)]],
+            "DSH|p|bbbb2222": [today: ["m": TokenCounts(input: 300, output: 30)]],
+        ]
+        let s = Aggregator.summarize(buckets: [], range: .today, pricing: PricingTable(prices: []),
+                                     statuses: [], sessions: sessions)
+        XCTAssertEqual(s.sessions.count, 2)
+        XCTAssertEqual(s.sessions.first?.session, "bbbb2222", "按用量降序，大的在前")
+        XCTAssertEqual(s.sessions.first?.counts.total, 330)
+    }
+
+    /// 会话 Top 12 之后折叠为「其他」
+    func testSessionTopN() {
+        let today = DayKey.key(for: Date())
+        var sessions: SessionTotals = [:]
+        for i in 0..<20 {
+            sessions["DSH|p|s\(i)"] = [today: ["m": TokenCounts(input: Int64(100 - i))]]
+        }
+        let s = Aggregator.summarize(buckets: [], range: .today, pricing: PricingTable(prices: []),
+                                     statuses: [], sessions: sessions)
+        XCTAssertEqual(s.sessions.count, 13, "Top 12 + 其他")
+        XCTAssertTrue(s.sessions.last?.session.hasPrefix("其他") == true)
+    }
+
+    /// 环比：d7 应能算出上一个 7 天
+    func testPreviousPeriodRange() {
+        let cal = Calendar.current
+        let now = DayKey.date(from: "2026-11-11")!
+        let r = RangeKind.d7.previousDayRange(now: now, calendar: cal)
+        XCTAssertNotNil(r)
+        XCTAssertEqual(r?.end, "2026-11-04", "上一个周期应紧邻本周期起点前一天")
+        XCTAssertEqual(r?.start, "2026-10-29")
+        XCTAssertNil(RangeKind.all.previousDayRange(now: now, calendar: cal), "全部范围无环比")
+    }
+
+    /// 预测：本月范围内给出整月外推
+    func testForecast() {
+        let b = UsageBucket(day: "2026-11-11", hour: 10, tool: "DSH", model: "deepseek-v4.1-flash",
+                            project: "p", counts: TokenCounts(input: 1_000_000), requests: 1)
+        let now = DayKey.date(from: "2026-11-11")!
+        let s = Aggregator.summarize(buckets: [b], range: .thisMonth, pricing: PricingTable(prices: []),
+                                     statuses: [], now: now)
+        XCTAssertNotNil(s.forecastCounts)
+        XCTAssertGreaterThan(s.forecastCounts?.total ?? 0, s.counts.total, "整月预测应大于当前已用")
+    }
+
+    /// 体检：非法日期与未来日期应被报出
+    func testDataCheckFlagsBadDays() {
+        let now = DayKey.date(from: "2026-11-11")!
+        let bad = UsageBucket(day: "not-a-date", tool: "X", model: "m",
+                              counts: TokenCounts(input: 1), requests: 1)
+        let future = UsageBucket(day: "2030-01-01", tool: "X", model: "m",
+                                 counts: TokenCounts(input: 1), requests: 1)
+        let issues = DataCheck.run(buckets: [bad, future], statuses: [], now: now)
+        XCTAssertTrue(issues.contains { $0.title.contains("非法日期") })
+        XCTAssertTrue(issues.contains { $0.title.contains("未来日期") })
+    }
+
+    /// 体检：有日志但没用量应被报出（历史上出现过的"扫了但没数"）
+    func testDataCheckFlagsEmptySource() {
+        let now = DayKey.date(from: "2026-11-11")!
+        let st = SourceStatus(id: "x", name: "Codex", enabled: true, files: 100, note: nil)
+        let issues = DataCheck.run(buckets: [], statuses: [st], now: now)
+        XCTAssertTrue(issues.contains { $0.title.contains("没有用量") })
+    }
+
     func testDshParsing() {
         let sel = #"{"type":"model/selection","time":1794156000000,"data":{"model":"cjj-jksb/qwenwork/qwen3.8-max"}}"#
         let msg = #"{"type":"assistant/message","time":1794156046001,"data":{"turn":1,"step":1,"usage":{"inputTokens":6,"outputTokens":100,"cacheReadTokens":800,"cacheWriteTokens":200},"stream":[{"type":"chunk","chunk":{"type":"finish","replayState":{"response":{"model":"cjj-jksb/qwenwork/qwen3.8-max"}}}}]}}"#

@@ -300,7 +300,26 @@ struct SideDockView: View {
         guard let s = todaySummary else { return " " }
         return Fmt.cost(s.cost)
     }
-    /// 底行：燃烧中=速率（含 0/s），空闲=命中率
+    /// 悬浮某个工具时，底行改为显示「状态 + 判定依据」
+    @State private var hoveredSource: String?
+
+    private func stateColor(_ state: Int) -> Color {
+        switch state {
+        case 0: return .orange
+        case 1: return .green
+        default: return .white.opacity(0.55)
+        }
+    }
+
+    private func stateText(_ state: Int) -> String {
+        switch state {
+        case 0: return "运行中"
+        case 1: return "待阅读"
+        default: return "空闲"
+        }
+    }
+
+    /// 底行：燃烧中=速率（含 0/s），空闲=命中率；悬浮时改为判定说明
     private var bottomIsRate: Bool { model.isBurning }
     private var bottomText: String {
         guard let s = todaySummary else { return " " }
@@ -373,6 +392,11 @@ struct SideDockView: View {
                 .opacity(state == 2 ? 0.45 : 1)
                 .frame(width: 44)
                 .frame(width: 56)
+                .onHover { inside in
+                    if inside { hoveredSource = name }
+                    else if hoveredSource == name { hoveredSource = nil }
+                }
+                .help("\(name)｜\(stateText(state))\n\(ActivityDetector.stateBasis(for: name))")
             }
         }
         .padding(.top, 8)
@@ -395,9 +419,22 @@ struct SideDockView: View {
                 .monospacedDigit()
                 .foregroundStyle(.white.opacity(0.7))
             Rectangle().fill(.white.opacity(0.15)).frame(width: 20, height: 1)
-            Text(bottomText)
-                .font(.system(size: 7, weight: model.isBurning ? .semibold : .regular))
-                .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
+            if let hovered = hoveredSource {
+                VStack(spacing: 0) {
+                    Text(stateText(model.sourceStates.first { $0.0 == hovered }?.1 ?? 2))
+                        .font(.system(size: 7, weight: .semibold))
+                        .foregroundStyle(stateColor(model.sourceStates.first { $0.0 == hovered }?.1 ?? 2))
+                    Text(ActivityDetector.shortBasis(for: hovered))
+                        .font(.system(size: 6))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .lineLimit(1)
+                .frame(width: 56)
+            } else {
+                Text(bottomText)
+                    .font(.system(size: 7, weight: model.isBurning ? .semibold : .regular))
+                    .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
+            }
           }
           .frame(width: 44, height: 112)
           .frame(width: 56)

@@ -37,8 +37,8 @@ public struct ScanCache: Codable, Sendable {
     public static func load() -> ScanCache {
         guard let data = try? Data(contentsOf: url),
               let c = try? JSONDecoder().decode(ScanCache.self, from: data),
-              // v5+ 的缓存结构向后兼容：新字段（offset/lastModel）缺失时按默认值处理，
-              // 因此不强制全量重建，用户升级后无需再等数分钟
+              // v5+ 兼容：会话维度是从缓存分桶现场派生的，不进缓存结构，
+              // 因此升级不会触发全量重建
               c.version >= 5 else { return ScanCache() }
         return c
     }

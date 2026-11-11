@@ -118,9 +118,11 @@ struct PanelView: View {
                 if let s = model.summary {
                     Group {
                     summaryCards(s)
+                    deltaNotes(s)
                     toolsSection(s)
                     modelsSection(s)
                     projectsSection(s)
+                    sessionsSection(s)
                     trendSection(s)
                     hoursSection(s)
                     footnotes(s)
@@ -390,6 +392,36 @@ struct PanelView: View {
         }
     }
 
+    /// 按会话排行：回答「哪一次对话最烧钱」
+    private func sessionsSection(_ s: Summary) -> some View {
+        let totalDisp = s.sessions.reduce(Int64(0)) { $0 + disp($1.counts) }
+        let list = Array(s.sessions.prefix(8))
+        return VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("按会话 · 近 7 天")
+            if list.isEmpty { emptyNote }
+            ForEach(Array(list.enumerated()), id: \.element.session) { idx, item in
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(item.session).font(.callout).lineLimit(1).truncationMode(.middle)
+                        Text([item.project == "-" ? nil : item.project, item.tool == "-" ? nil : item.tool]
+                                .compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    .frame(width: 110, alignment: .leading)
+                    bar(share: dispShare(item.counts, total: totalDisp), color: palette[idx % palette.count])
+                    Text(Fmt.tokens(disp(item.counts))).font(.callout).monospacedDigit()
+                        .frame(width: 62, alignment: .trailing)
+                    Text(Fmt.percent(dispShare(item.counts, total: totalDisp))).font(.caption)
+                        .foregroundStyle(.secondary).monospacedDigit().frame(width: 46, alignment: .trailing)
+                    Text(Fmt.cost(item.cost)).font(.callout).monospacedDigit().frame(width: 58, alignment: .trailing)
+                }
+                .background(rowBackground("sess-\(item.session)"))
+                .onHover { hoveredRow = $0 ? "sess-\(item.session)" : nil }
+                .help(item.lastActive.map { "最后活动：\($0)" } ?? "")
+            }
+        }
+    }
+
     private func hoursSection(_ s: Summary) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle("逐小时用量 · \(s.hoursMode)")
@@ -538,6 +570,31 @@ struct PanelView: View {
                 }
                 .frame(height: 110)
             }
+        }
+    }
+
+    /// 环比（上一个等长周期）与本月预测
+    @ViewBuilder
+    private func deltaNotes(_ s: Summary) -> some View {
+        if let prev = s.previousCounts, prev.total > 0 {
+            let diff = Double(disp(s.counts) - disp(prev)) / Double(disp(prev))
+            HStack(spacing: 4) {
+                Image(systemName: diff >= 0 ? "arrow.up.right" : "arrow.down.right")
+                    .font(.caption2)
+                Text(diff >= 0 ? "比上一周期多 \(Fmt.percent(abs(diff)))" : "比上一周期少 \(Fmt.percent(abs(diff)))")
+                    .font(.caption)
+                if let pc = s.previousCost {
+                    Text("· 上期 \(Fmt.cost(pc))").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .foregroundStyle(diff >= 0 ? Color.orange : Color.green)
+        }
+        if let fc = s.forecastCost, fc > 0 {
+            HStack(spacing: 4) {
+                Image(systemName: "chart.line.uptrend.xyaxis").font(.caption2)
+                Text("按当前速度预计本月 \(Fmt.cost(fc))").font(.caption)
+            }
+            .foregroundStyle(.secondary)
         }
     }
 
