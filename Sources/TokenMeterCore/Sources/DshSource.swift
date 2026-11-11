@@ -119,8 +119,43 @@ public struct DshSource: UsageSource {
     /// 会话是否仍在推进：解析最新会话日志尾部最后一条生命周期事件。
     /// 长工具执行期间日志可能几分钟不 flush，mtime 会误判为「已结束」，所以要看事件本身。
     /// 返回 true=运行中, false=已结束, nil=无法判断
-    /// 会话日志多久没写入就认为任务已停（防止中断的会话永久显示"运行中"）
-    public static let runningStaleness: TimeInterval = 600
+    /// 会话日志多久没写入就认为任务已停。
+    /// 实测同一轮任务内部的静默：p95=52s、p99=126s，最长可到 990s（长工具执行）。
+    /// 因此纯靠时间无法兼顾，主判据用「会话锁」；此值仅在没有锁文件可查时生效。
+    public static let runningStaleness: TimeInterval = 180
+
+    /// 纯判定：结合「多久没写入」与「会话锁是否被持有」得出任务是否还在跑。
+    /// 返回 nil 表示需要继续看日志尾部事件。
+    public static func resolveTaskRunning(silent: TimeInterval, lockHeld: Bool?) -> Bool? {
+        switch lockHeld {
+        case .some(false):
+            // 锁已释放 ⇒ DSH 进程退出，任务必然停止（留 30s 容忍落盘延迟）
+            return silent > 30 ? false : nil
+        case .some(true):
+            // 锁仍被持有 ⇒ 进程活着，长工具执行（实测可达 990s）不应误判为停止；
+            // 仅极端情况下兜底，避免灯永远亮
+            return silent > 1800 ? false : nil
+        case .none:
+            // 没有锁文件可查，退回保守的时间上限
+            return silent > runningStaleness ? false : nil
+        }
+    }
+
+    /// 会话是否仍被 DSH 进程持有（flock）。
+    /// DSH 用 BSD flock 独占 session.lock，进程退出即自动释放 ⇒ 可以精确判断"会话是否还活着"。
+    /// 返回 nil 表示无法判断（没有 lock 文件等）。
+    public static func isSessionLockHeld(lockPath: String) -> Bool? {
+        guard FileManager.default.fileExists(atPath: lockPath) else { return nil }
+        let fd = open(lockPath, O_RDONLY)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        // 共享锁试探：被独占持有则失败（EWOULDBLOCK），否则瞬时获取后立即释放
+        if flock(fd, LOCK_SH | LOCK_NB) == 0 {
+            flock(fd, LOCK_UN)
+            return false
+        }
+        return true
+    }
 
     /// - Parameter baseDir: 会话根目录（默认 ~/.dsh/sessions，测试时可注入临时目录）
     public static func isTaskRunning(now: Date = Date(), baseDir: String? = nil) -> Bool? {
@@ -138,8 +173,10 @@ public struct DshSource: UsageSource {
             }
         }
         guard let target = newest else { return nil }
-        // 超过 staleness 没有任何写入 ⇒ 任务早已停止（覆盖被中断、停在 tool/call 的会话）
-        if now.timeIntervalSince(target.mtime) > runningStaleness { return false }
+        let silent = now.timeIntervalSince(target.mtime)
+        let lockPath = (target.path as NSString).deletingLastPathComponent + "/session.lock"
+        let lockHeld = isSessionLockHeld(lockPath: lockPath)
+        if let decided = resolveTaskRunning(silent: silent, lockHeld: lockHeld) { return decided }
         guard let data = Zstd.decompressTailFrames(path: target.path) else { return nil }
         // 只看尾部事件：从后往前找第一条生命周期标记
         let lines = LineReader.split(data)

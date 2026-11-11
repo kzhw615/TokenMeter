@@ -82,6 +82,39 @@ final class TokenMeterCoreTests: XCTestCase {
                        "超过 staleness 未写入应判定为已停止")
     }
 
+    /// 判定矩阵：锁释放应尽快判停；锁持有时长工具不误判；无锁信息时用时间上限
+    func testDshResolveTaskRunning() {
+        // 锁已释放（进程退出）
+        XCTAssertEqual(DshSource.resolveTaskRunning(silent: 10, lockHeld: false), nil, "刚写入先按尾部事件判断")
+        XCTAssertEqual(DshSource.resolveTaskRunning(silent: 60, lockHeld: false), false, "锁释放且已静默应判停")
+
+        // 锁仍被持有：长工具执行（实测最长 990s）不能误判
+        XCTAssertEqual(DshSource.resolveTaskRunning(silent: 990, lockHeld: true), nil, "锁持有 + 990s 静默仍需看事件")
+        XCTAssertEqual(DshSource.resolveTaskRunning(silent: 1801, lockHeld: true), false, "锁持有但超 30 分钟兜底判停")
+
+        // 无锁信息：退回 180s 上限
+        XCTAssertEqual(DshSource.resolveTaskRunning(silent: 100, lockHeld: nil), nil)
+        XCTAssertEqual(DshSource.resolveTaskRunning(silent: 200, lockHeld: nil), false)
+    }
+
+    /// 锁检测：对方持有 flock 时应识别为「被持有」，释放后应识别为「未持有」
+    func testDshSessionLockHeld() {
+        let path = tmp + "/session.lock"
+        FileManager.default.createFile(atPath: path, contents: Data())
+        XCTAssertEqual(DshSource.isSessionLockHeld(lockPath: path), false, "无人持有")
+
+        let fd = open(path, O_RDWR)
+        XCTAssertGreaterThanOrEqual(fd, 0)
+        XCTAssertEqual(flock(fd, LOCK_EX | LOCK_NB), 0, "测试进程先独占")
+        XCTAssertEqual(DshSource.isSessionLockHeld(lockPath: path), true, "已被独占持有")
+        flock(fd, LOCK_UN)
+        close(fd)
+        XCTAssertEqual(DshSource.isSessionLockHeld(lockPath: path), false, "释放后应识别为未持有")
+
+        // 没有 lock 文件时无法判断
+        XCTAssertNil(DshSource.isSessionLockHeld(lockPath: tmp + "/nope.lock"))
+    }
+
     func testDshParsing() {
         let sel = #"{"type":"model/selection","time":1794156000000,"data":{"model":"cjj-jksb/qwenwork/qwen3.8-max"}}"#
         let msg = #"{"type":"assistant/message","time":1794156046001,"data":{"turn":1,"step":1,"usage":{"inputTokens":6,"outputTokens":100,"cacheReadTokens":800,"cacheWriteTokens":200},"stream":[{"type":"chunk","chunk":{"type":"finish","replayState":{"response":{"model":"cjj-jksb/qwenwork/qwen3.8-max"}}}}]}}"#
