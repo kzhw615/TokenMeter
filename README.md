@@ -64,24 +64,36 @@ Cursor、Gemini CLI、Trae、Grok Bot 的本地日志不含可解析的 token �
 
 ## 安装与运行
 
+**要求**：macOS 14 或更高版本。
+
+1. 到 [Releases](https://github.com/kzhw615/TokenMeter/releases/latest) 下载 `TokenMeter.app.zip`
+2. 解压后把 `TokenMeter.app` 拖进「应用程序」文件夹
+3. 首次打开：右键点 App →「打开」（未签名应用需要这一次确认）
+4. 菜单栏出现图标即成功；点图标看面板，右键出菜单
+
+开机自启：设置窗口 → 外观 → 勾选「登录时自动启动」。
+
+> 首次运行会扫描历史日志（几 GB，约 6–7 分钟），面板会显示进度条；之后是秒级增量刷新。
+> 想从源码构建或使用 CLI，见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+
+CLI 用户可以只用命令行，不需要安装 App：
+
 ```bash
-./Scripts/install.sh        # 构建 + 安装到 /Applications 并启动
-# 或手动：
-./Scripts/build_app.sh      # 产出 build/TokenMeter.app 与 build/tokenmeter
-open build/TokenMeter.app
+tokenmeter report                 # 今天
+tokenmeter report --range 30d     # 近 30 天
+tokenmeter report --range all --json
+tokenmeter sources                # 查看数据源状态
 ```
 
-要求 macOS 14+（Swift Charts），Xcode Command Line Tools。菜单栏用原生 `NSStatusItem` 实现（因此支持右键菜单）。
-开机自启：系统设置 → 通用 → 登录项 → 添加 TokenMeter。
+## 自动更新
 
-CLI（可不装 App 直接用）：
+- 启动时检查一次（距上次检查不足 20 小时会跳过），运行期间**每天 10:00** 再检查一次
+- 有新版本时，面板顶部出现提示条、右上角出现橙色更新图标
+- 点「一键更新」：自动下载 → 校验完整性 → 替换应用 → 重启；失败会回滚到旧版本
+- 不想更新就点 × 忽略；也可以点「下载页」自己去下载
+- 只比对版本号，不上传任何数据
 
-```bash
-build/tokenmeter report                 # 今天
-build/tokenmeter report --range 30d     # 近 30 天
-build/tokenmeter report --range all --json
-build/tokenmeter sources
-```
+关闭自动检查（高级）：`defaults write local.tokenmeter.menubar disableUpdateCheck -bool YES`
 
 ## 预估价格
 
@@ -97,24 +109,6 @@ build/tokenmeter sources
 格式为 `{"prices":[{"pattern":"子串(小写无关)","input":2,"output":10,"cacheRead":0.1,"cacheWrite":2.5}]}`，
 按顺序第一个命中的 pattern 生效；未命中的模型费用记 0 并在面板/CLI 中列出。
 
-## 实现与目录
-
-```
-Package.swift                  SwiftPM：TokenMeterCore 库 + tokenmeter CLI + TokenMeterApp
-Sources/TokenMeterCore/        模型/聚合/价格/扫描缓存/行读取器
-Sources/TokenMeterCore/Sources/  13 个 harness 解析器（UsageSource 协议）
-Sources/tokenmeter/            CLI
-Sources/TokenMeterApp/         AppKit 菜单栏（NSStatusItem）+ SwiftUI 面板/悬浮坞/设置窗口
-Scripts/build_app.sh           release 构建 + 组装 .app + ad-hoc 签名
-Scripts/install.sh             一步到位：构建 + 安装到 /Applications + 重启
-Scripts/release.sh             发版：打 tag + 打包 + 创建 GitHub Release
-docs/RELEASE_NOTES_GUIDE.md    发版说明写作规范
-.research/                     官方定价页抓取存档（定价依据）
-```
-
-扫描缓存：`~/Library/Caches/TokenMeter/scan-v1.json`（按 文件大小+mtime 指纹增量复用）。
-配置：`~/Library/Application Support/TokenMeter/pricing.json`。
-
 ## 已知限制
 
 - Cursor、Gemini CLI、CodeBuddy、Pi、Grok、OpenClaw、Kimi、Antigravity 无可解析的 token 级本地日志，未接入
@@ -125,27 +119,6 @@ docs/RELEASE_NOTES_GUIDE.md    发版说明写作规范
 - **任务状态是估算**：13 个工具里只有 WorkBuddy 提供真实已读回执（`sessions.unread`）；DSH 用日志尾部事件（`turn/end` 表示结束）判定；其余数据源只能靠「日志新鲜度 + 最近 10 分钟」启发式，长工具执行期间可能提前判定为结束
 - `codex-auto-review`（Codex 内部自动审查模型）官方无公开单价，默认记 0，可在 pricing.json 补
 
-## 更新与发布
-
-> 发版说明的写作规范见 [docs/RELEASE_NOTES_GUIDE.md](docs/RELEASE_NOTES_GUIDE.md)——面向用户描述「影响 + 需要做什么」，不写开发机数据与内部术语。
-
-- **发版流程**：`./Scripts/release.sh 0.2.0 "变更说明"` 一条命令完成——按新版本号构建、打并推送 `v0.2.0` tag、打包 `TokenMeter.app.zip` 与 `tokenmeter.zip` 附件、创建 GitHub Release；**Watch 了仓库的用户会收到 GitHub 通知**。
-- **应用内更新检查与一键更新**：**启动时**（距上次不足 20 小时跳过）+ **每天 10:00 定检**（App 运行中则在 10 点后的第一个整点触发，每天仅一次）匿名 GET GitHub Releases API（仅比对版本号，不上传任何数据）；发现新版本时面板顶部显示提示条、右上角出现橙色更新图标；点击「一键更新」后自动下载 Release 附件、**sha256 校验（GitHub 官方 digest）**、解压替换应用并重启，失败自动回滚旧版本；也可点「下载页」手动下载。不强制自动替换：提示可 × 忽略。关闭检查：`defaults write local.tokenmeter.menubar disableUpdateCheck -bool YES`。
-- **手动更新**：从 Releases 下载 `TokenMeter.app.zip` 替换旧 App；或拉源码后 `./Scripts/install.sh`。
-
-## 跨平台桌面端（实验性：Tauri 托盘应用）
-
-> ⚠️ **实验性**：仅在 macOS 上 smoke 验证过；Windows 打包链（WiX/NSIS/sidecar 权限）维护成本过高，**不作为官方支持目标**。Windows 用户请使用 CLI。
-
-`desktop/` 目录是 Tauri v2 托盘应用（设计目标 Windows / Linux / macOS）：Rust 壳负责系统托盘（燃烧时换火苗图标）与窗口，前端 WebView 面板复用 CLI 的全部统计能力（通过打包的 `tokenmeter` sidecar 调 `report --json` / `activity --json`）。
-
-构建步骤：
-1. 先构建 CLI 并放置 sidecar：`./Scripts/prepare-sidecar.sh`（Windows 手动：`swift build --target tokenmeter -c release` 后把 `tokenmeter.exe` 复制为 `desktop/src-tauri/binaries/tokenmeter-x86_64-pc-windows-msvc.exe`）；
-2. 安装 [Rust](https://rustup.rs) 与 tauri-cli：`cargo install tauri-cli --version ^2`；
-3. `cd desktop/src-tauri && cargo tauri build` → 安装包在 `target/release/bundle/`。
-
-macOS 主线体验请用原生 App（`/Applications/TokenMeter.app`）；Tauri 版为实验性玩具（不支持右键菜单、无悬浮坞），Linux 桌面玩家可自建。
-
 ## 跨平台状态
 
 | 平台 | 状态 |
@@ -155,6 +128,15 @@ macOS 主线体验请用原生 App（`/Applications/TokenMeter.app`）；Tauri �
 | Linux | 🟡 CLI 同 Windows 口径；CI 每 push 在 macOS + Ubuntu 双平台编译+单测（Ubuntu 验证非 Apple 编译路径），Windows 由真机验证 |
 
 Windows 构建：安装 [Swift 工具链](https://www.swift.org/install/windows/) 后 `swift build --target tokenmeter -c release`，产物 `.build\release\tokenmeter.exe`；中文输出请先 `chcp 65001` 切换控制台 UTF-8。WSL 内的 harness 日志扫描在规划中（Phase 3）。
+
+## 开发与构建
+
+想改代码、从源码构建、或自己发版？见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+
+本机数据位置（排查问题时有用）：
+
+- 扫描缓存：`~/Library/Caches/TokenMeter/scan-v1.json`（按文件大小 + mtime 指纹增量复用，删掉即重建）
+- 自定义定价：`~/Library/Application Support/TokenMeter/pricing.json`（删除即恢复内置价格表）
 
 ## 许可
 
