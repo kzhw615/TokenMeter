@@ -101,6 +101,10 @@ public enum Aggregator {
         var unpriced = Set<String>()
 
         let cal0 = Calendar.current
+        // 「今天」与昨天比时只算已过完的整点：半天 vs 整天必然显示大幅下降，不公平。
+        let nowHour = cal0.component(.hour, from: now)
+        let sameTimeCutoff: Int? = (range == .today && nowHour > 0) ? nowHour : nil
+        let todayKey = DayKey.key(for: cal0.startOfDay(for: now), calendar: cal0)
         for b in buckets {
             let bucketDate = Self.bucketDate(day: b.day, hour: b.hour, calendar: cal0)
             let c = pricing.cost(for: b.counts, model: b.model, at: bucketDate)
@@ -135,22 +139,39 @@ public enum Aggregator {
         // 上一等长周期（环比）：同时给出对象名称与具体日期，避免「上一周期」含糊
         var previousLabel: String?
         if let pr = prevRange {
-            let name = range.previousPeriodName(now: now, calendar: cal0) ?? "上一周期"
             func md(_ key: String) -> String {
                 let parts = key.split(separator: "-")
                 guard parts.count == 3 else { return key }
                 return "\(Int(parts[1]) ?? 0)/\(Int(parts[2]) ?? 0)"
             }
-            let span = pr.start == pr.end ? md(pr.start) : "\(md(pr.start))–\(md(pr.end))"
-            // 「昨天」这类单日对象直接带日期，长区间带区间
-            previousLabel = "\(name)（\(span)）"
+            if let cut = sameTimeCutoff {
+                previousLabel = "昨天同期（0:00–\(String(format: "%02d", cut)):00）"
+            } else {
+                let name = range.previousPeriodName(now: now, calendar: cal0) ?? "上一周期"
+                let span = pr.start == pr.end ? md(pr.start) : "\(md(pr.start))–\(md(pr.end))"
+                previousLabel = "\(name)（\(span)）"
+            }
         }
         if let pr = prevRange {
             for b in buckets where b.day >= pr.start && b.day <= pr.end {
+                if let cut = sameTimeCutoff, b.hour >= cut { continue }
                 let dt = Self.bucketDate(day: b.day, hour: b.hour, calendar: cal0)
                 prevCounts += b.counts
                 prevCost += pricing.cost(for: b.counts, model: b.model, at: dt)
             }
+        }
+        // 同口径的「本期」值（今天只算已过完的整点），保证百分比可比较
+        var comparableCounts: TokenCounts?
+        var comparableCost: Double?
+        if let cut = sameTimeCutoff {
+            var cc = TokenCounts(); var ccost = 0.0
+            for b in buckets where b.day == todayKey && b.hour < cut {
+                cc += b.counts
+                ccost += pricing.cost(for: b.counts, model: b.model,
+                                      at: Self.bucketDate(day: b.day, hour: b.hour, calendar: cal0))
+            }
+            comparableCounts = cc
+            comparableCost = ccost
         }
 
         let totalAll = max(1, counts.total)
@@ -209,6 +230,8 @@ public enum Aggregator {
                        previousCounts: prevRange == nil ? nil : prevCounts,
                        previousCost: prevRange == nil ? nil : prevCost,
                        previousLabel: previousLabel,
+                       comparableCounts: comparableCounts,
+                       comparableCost: comparableCost,
                        forecastCost: forecastCost, forecastCounts: forecastCounts)
     }
 

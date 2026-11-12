@@ -546,7 +546,10 @@ struct PanelView: View {
     @ViewBuilder
     private func deltaNotes(_ s: Summary) -> some View {
         if let prev = s.previousCounts, prev.total > 0 {
-            let diff = Double(disp(s.counts) - disp(prev)) / Double(disp(prev))
+            // 「今天」场景下两者都已限定为「已过完的整点」，口径一致
+            let currentRaw = s.comparableCounts.map { disp($0) } ?? disp(s.counts)
+            let prevRaw = disp(prev)
+            let diff = prevRaw > 0 ? Double(currentRaw - prevRaw) / Double(prevRaw) : 0
             HStack(spacing: 4) {
                 Image(systemName: diff >= 0 ? "arrow.up.right" : "arrow.down.right")
                     .font(.caption2)
@@ -554,7 +557,8 @@ struct PanelView: View {
                 Text(diff >= 0 ? "比\(target)多 \(Fmt.percent(abs(diff)))" : "比\(target)少 \(Fmt.percent(abs(diff)))")
                     .font(.caption)
                 if let pc = s.previousCost {
-                    Text("· \(pc > 0 ? Fmt.cost(pc) : "$0") → \(Fmt.cost(s.cost))")
+                    let cur = s.comparableCost ?? s.cost
+                    Text("· \(pc > 0 ? Fmt.cost(pc) : "$0") → \(Fmt.cost(cur))")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

@@ -265,8 +265,11 @@ public struct Summary: Codable, Sendable {
     /// 环比：上一个等长周期的总量（用于「本周 vs 上周」）
     public var previousCounts: TokenCounts?
     public var previousCost: Double?
-    /// 环比对象说明，如「昨天」「前 7 天（11/04–11/10）」「上月同期（10/01–10/12）」
+    /// 环比对象说明，如「昨天同期（0:00–10:00）」「前 7 天（11/04–11/10）」
     public var previousLabel: String?
+    /// 与 previousCounts 同口径的「本期」值（今天只算已过完整点），保证百分比公平
+    public var comparableCounts: TokenCounts?
+    public var comparableCost: Double?
     /// 本月预测（仅在 range == .month 时有效）
     public var forecastCost: Double?
     public var forecastCounts: TokenCounts?
