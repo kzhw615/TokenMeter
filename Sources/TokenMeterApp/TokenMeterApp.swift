@@ -481,6 +481,7 @@ final class AppModel: ObservableObject {
             let dshRunning = DshSource.isTaskRunning()
             let codexTurn = ActivityDetector.codexTurnState(now: now)
             let wbState = ActivityDetector.workBuddyState(now: now)
+            let claudeRunning = ActivityDetector.claudeTaskRunning(now: now)
 
             let states: [(name: String, st: Int, done: Date?)] = snapshot.compactMap { item in
                 guard let last = item.lastActive else { return nil }   // 无日志 = 未安装
@@ -505,6 +506,13 @@ final class AppModel: ObservableObject {
                             done = cdone
                             if now.timeIntervalSince(cdone) < 180 { st = max(st, 1) }
                         }
+                    }
+                case "Claude Code":
+                    // 双向判定：
+                    // ① 日志出现 end_turn ⇒ 立刻熄灭，不等 60 秒超时
+                    // ② 日志尾部是 tool_use ⇒ 长工具执行期间日志不写也要保持亮灯
+                    if let running = claudeRunning {
+                        if running { st = 0 } else if st == 0 { st = 1 }
                     }
                 case "WorkBuddy":
                     if let wb = wbState { st = wb }

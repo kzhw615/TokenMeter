@@ -184,6 +184,62 @@ public enum ActivityDetector {
     /// 0 运行中 = status working / active 且 60s 内活动；
     /// 1 待阅读 = 24h 内未读回执 / 最近 10min 内有 completed 会话；
     /// 2 空闲 = 其余（背景同步写日志不再误判）
+    /// Claude Code 是否仍在推进：读最新会话日志尾部，看最后一条事件的语义。
+    /// - assistant.stop_reason == tool_use ⇒ 在跑工具（运行中）
+    /// - assistant.stop_reason == end_turn / max_tokens ⇒ 本轮已结束
+    /// - user 里带 tool_result ⇒ 工具刚返回，agent 会继续
+    /// 返回 nil 表示无法判断（回退到日志时间）。
+    public static func claudeTaskRunning(now: Date = Date()) -> Bool? {
+        #if os(macOS)
+        let base = SourcePaths.expand("~/.claude/projects")
+        guard let projects = try? FileManager.default.contentsOfDirectory(atPath: base) else { return nil }
+        var newest: (path: String, mtime: Date)?
+        for project in projects {
+            let dir = base + "/" + project
+            guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir) else { continue }
+            for f in files where f.hasSuffix(".jsonl") {
+                let p = dir + "/" + f
+                guard let m = SourcePaths.mtime(p) else { continue }
+                if newest == nil || m > newest!.mtime { newest = (p, m) }
+            }
+        }
+        guard let target = newest else { return nil }
+        // 超过 15 分钟没有任何写入，必然已结束
+        if now.timeIntervalSince(target.mtime) > 900 { return false }
+
+        guard let fh = FileHandle(forReadingAtPath: target.path) else { return nil }
+        defer { try? fh.close() }
+        guard let size = try? fh.seekToEnd(), size > 0 else { return nil }
+        let window: UInt64 = 256 * 1024
+        let start: UInt64 = size > window ? size - window : 0
+        try? fh.seek(toOffset: start)
+        guard let data = try? fh.readToEnd() else { return nil }
+
+        var lines = LineReader.split(data)
+        if start > 0, !lines.isEmpty { lines.removeFirst() }   // 首行可能被截断
+        for line in lines.reversed() {
+            guard let o = JSONUtil.object(line), let type = JSONUtil.string(o, "type") else { continue }
+            switch type {
+            case "assistant":
+                guard let msg = JSONUtil.dict(o, "message") else { continue }
+                let stop = JSONUtil.string(msg, "stop_reason") ?? ""
+                if stop.contains("tool") { return true }       // 正在等工具结果
+                return false                                   // end_turn / max_tokens 等
+            case "user":
+                // 工具返回后 agent 会继续；真实用户提问同理
+                return true
+            case "result", "last-prompt":
+                return false
+            default:
+                continue
+            }
+        }
+        return nil
+        #else
+        return nil
+        #endif
+    }
+
     /// WorkBuddy 三态。
     /// 注意：DB 的 last_activity_at 只在若干事件点更新（实测可落后 3 分钟以上），
     /// 单靠它会把正在跑的长任务判成空闲；真正的活跃信号是 traces 目录里持续追加的日志。

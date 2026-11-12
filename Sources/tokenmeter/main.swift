@@ -13,6 +13,9 @@ func parseArgs(_ args: [String]) -> (command: String, range: RangeKind, json: Bo
         let a = args[i]
         switch a {
         case "debug-activity":
+            if let running = ActivityDetector.claudeTaskRunning() {
+                print("  claude-task   \(running ? "运行中" : "已结束")（日志尾部 stop_reason 判定）")
+            }
             if let wb = ActivityDetector.workBuddyState() {
                 let label = ["运行中", "待阅读", "空闲"][max(0, min(2, wb))]
                 let traces = ActivityDetector.workBuddyTracesActive() ? "trace 正在写" : "trace 无近期写入"

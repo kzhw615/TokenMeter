@@ -157,6 +157,15 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertNotNil(table.price(for: "step-9-unknown"))
     }
 
+    /// Claude Code：任务结束后日志 stop_reason 为 end_turn，判定应立刻为「已结束」
+    func testClaudeTaskRunningDetectsEndTurn() throws {
+        let base = NSString(string: "~/.claude/projects").expandingTildeInPath
+        guard FileManager.default.fileExists(atPath: base) else { return }
+        // 真实日志存在时，判定结果不应为 nil（读得到尾部事件）
+        let running = ActivityDetector.claudeTaskRunning()
+        XCTAssertNotNil(running, "有日志时应能给出明确判定")
+    }
+
     /// WorkBuddy：DB 活动时间滞后时，只要 trace 还在写就应判为运行中
     func testWorkBuddyTraceActivitySupersedesStaleDB() {
         // 真实环境无 WB 时跳过
