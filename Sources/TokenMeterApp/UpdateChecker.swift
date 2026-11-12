@@ -17,21 +17,14 @@ enum UpdateError: Error {
 
 /// 版本比对与仓库信息（无状态，独立于 MainActor）
 enum UpdateKit {
-    static let repo = "kzhw615/TokenMeter"
+    static let repo = UpdateInfo.repo
 
     static func currentVersion() -> String {
         (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.0.0"
     }
 
     static func isNewer(_ a: String, than b: String) -> Bool {
-        let pa = a.split(separator: ".").compactMap { Int($0) }
-        let pb = b.split(separator: ".").compactMap { Int($0) }
-        for i in 0..<max(pa.count, pb.count) {
-            let x = i < pa.count ? pa[i] : 0
-            let y = i < pb.count ? pb[i] : 0
-            if x != y { return x > y }
-        }
-        return false
+        UpdateInfo.isNewer(a, than: b)
     }
 }
 
@@ -40,38 +33,113 @@ enum UpdateKit {
 /// 发现新版本只在面板提示并跳转 Release 页，不自动替换二进制。
 extension AppModel {
     func checkForUpdates(force: Bool = false) {
-        guard !UserDefaults.standard.bool(forKey: "disableUpdateCheck") else { return }
+        guard !UserDefaults.standard.bool(forKey: "disableUpdateCheck") else {
+            updateNotice = "已在设置中关闭检查更新"
+            scheduleNoticeClear()
+            return
+        }
         let last = UserDefaults.standard.double(forKey: "lastUpdateCheck")
         let now = Date().timeIntervalSince1970
         if !force, now - last < 20 * 3600 { return }
         UserDefaults.standard.set(now, forKey: "lastUpdateCheck")
         updateChecking = true
+        updateNotice = nil
         Task.detached(priority: .utility) { [weak self] in
             guard let self else { return }
             defer { Task { @MainActor [weak self] in self?.updateChecking = false } }
-            var req = URLRequest(url: URL(string: "https://api.github.com/repos/\(UpdateKit.repo)/releases/latest")!)
-            req.setValue("TokenMeterApp", forHTTPHeaderField: "User-Agent")
-            req.timeoutInterval = 10
-            guard let (data, resp) = try? await URLSession.shared.data(for: req),
-                  (resp as? HTTPURLResponse)?.statusCode == 200,
-                  let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                  let tag = json["tag_name"] as? String,
-                  let html = json["html_url"] as? String,
-                  let url = URL(string: html) else { return }
-            let latest = tag.hasPrefix("v") ? String(tag.dropFirst(1)) : tag
+            defer { Task { @MainActor [weak self] in self?.scheduleNoticeClear() } }
+
             let current = UpdateKit.currentVersion()
-            guard UpdateKit.isNewer(latest, than: current) else { return }
-            // 取 TokenMeter.app.zip 附件的下载地址与 sha256 digest
-            let asset: [String: Any]? = (json["assets"] as? [[String: Any]])?
-                .first { ($0["name"] as? String) == "TokenMeter.app.zip" }
-            let assetURL: URL? = (asset?["browser_download_url"] as? String).flatMap(URL.init(string:))
-            let digest: String? = asset?["digest"] as? String
+
+            /// 主通道：GitHub Releases API
+            func viaAPI() async -> (tag: String, html: URL?, asset: URL?, digest: String?)? {
+                var req = URLRequest(url: URL(string: "https://api.github.com/repos/\(UpdateKit.repo)/releases/latest")!)
+                req.setValue("TokenMeterApp", forHTTPHeaderField: "User-Agent")
+                req.timeoutInterval = 10
+                let data: Data
+                let resp: URLResponse
+                do {
+                    (data, resp) = try await URLSession.shared.data(for: req)
+                } catch {
+                    await MainActor.run { self.lastCheckError = Self.friendly(error) }
+                    return nil
+                }
+                guard let code = (resp as? HTTPURLResponse)?.statusCode else { return nil }
+                guard code == 200,
+                      let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                      let tag = json["tag_name"] as? String else {
+                    await MainActor.run { self.lastCheckError = "接口返回 HTTP \(code)" }
+                    return nil
+                }
+                let html = (json["html_url"] as? String).flatMap(URL.init(string:))
+                let asset = (json["assets"] as? [[String: Any]])?
+                    .first { ($0["name"] as? String) == "TokenMeter.app.zip" }
+                return (tag,
+                        html,
+                        (asset?["browser_download_url"] as? String).flatMap(URL.init(string:)),
+                        asset?["digest"] as? String)
+            }
+
+            /// 兜底通道：直接请求 releases/latest，跟随重定向拿到 tag。
+            /// 用于 api.github.com 被限流（403）或被公司网络拦截的情况。
+            func viaRedirect() async -> (tag: String, html: URL?)? {
+                var req = URLRequest(url: URL(string: "https://github.com/\(UpdateKit.repo)/releases/latest")!)
+                req.setValue("TokenMeterApp", forHTTPHeaderField: "User-Agent")
+                req.timeoutInterval = 10
+                guard let (_, resp) = try? await URLSession.shared.data(for: req),
+                      let finalURL = resp.url else { return nil }
+                let comps = finalURL.pathComponents
+                guard let idx = comps.firstIndex(of: "tag"), idx + 1 < comps.count else { return nil }
+                return (comps[idx + 1], finalURL)
+            }
+
+            var result = await viaAPI()
+            if result == nil { result = await viaRedirect().map { ($0.tag, $0.html, nil, nil) } }
+
+            guard let got = result else {
+                await MainActor.run {
+                    self.updateNotice = "检查失败：\(self.lastCheckError ?? "无法连接 GitHub")"
+                }
+                return
+            }
+            let latest = got.tag.hasPrefix("v") ? String(got.tag.dropFirst(1)) : got.tag
+            guard UpdateKit.isNewer(latest, than: current) else {
+                await MainActor.run {
+                    self.updateNotice = "已是最新版本（v\(current)）"
+                }
+                return
+            }
             await MainActor.run {
                 self.latestVersion = latest
-                self.releaseURL = url
-                self.latestAssetURL = assetURL
-                self.latestDigest = digest
+                self.releaseURL = got.html ?? URL(string: "https://github.com/\(UpdateKit.repo)/releases/latest")
+                self.latestAssetURL = got.asset
+                self.latestDigest = got.digest
+                self.updateNotice = got.asset == nil
+                    ? "发现新版本 v\(latest)（可手动下载）"
+                    : "发现新版本 v\(latest)"
             }
+        }
+    }
+
+    /// 把网络错误翻译成人话
+    static func friendly(_ error: Error) -> String {
+        let ns = error as NSError
+        switch ns.code {
+        case NSURLErrorNotConnectedToInternet: return "网络未连接"
+        case NSURLErrorTimedOut: return "连接超时"
+        case NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost: return "无法解析 GitHub 域名（可能被网络拦截）"
+        case NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateUntrusted:
+            return "HTTPS 连接被拦截（可能有代理或证书问题）"
+        default: return ns.localizedDescription
+        }
+    }
+
+    /// 提示文字自动消失，避免长期占位
+    func scheduleNoticeClear() {
+        let token = updateNotice
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 9_000_000_000)
+            if self?.updateNotice == token { self?.updateNotice = nil }
         }
     }
 

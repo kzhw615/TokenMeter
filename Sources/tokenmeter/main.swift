@@ -12,6 +12,28 @@ func parseArgs(_ args: [String]) -> (command: String, range: RangeKind, json: Bo
     while i < args.count {
         let a = args[i]
         switch a {
+        case "check-update":
+            let appPlist = "/Applications/TokenMeter.app/Contents/Info.plist"
+            let current = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+                ?? (NSDictionary(contentsOfFile: appPlist)?["CFBundleShortVersionString"] as? String)
+                ?? "未知"
+            print("当前版本: \(current)")
+            let sem = DispatchSemaphore(value: 0)
+            Task.detached {
+                do {
+                    let latest = try await UpdateInfo.fetchLatest()
+                    print("最新版本: \(latest.version)（通道: \(latest.channel)）")
+                    if let u = latest.pageURL { print("发布页:   \(u.absoluteString)") }
+                    if let a = latest.assetURL { print("安装包:   \(a.absoluteString)") } else { print("安装包:   无（该通道取不到，可手动下载）") }
+                    print(UpdateInfo.isNewer(latest.version, than: current) ? "结果:     有新版本" : "结果:     已是最新")
+                } catch {
+                    print("检查失败: \(error)")
+                }
+                sem.signal()
+            }
+            sem.wait()
+            exit(0)
+
         case "hook-event":
             let event = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "Unknown"
             HookEvent.record(event: event)

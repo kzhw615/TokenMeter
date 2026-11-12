@@ -226,6 +226,7 @@ struct PanelView: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .monospacedDigit()
+                .help(model.updateNotice ?? "")
             Button(action: { model.checkForUpdates(force: true) }) {
                 if model.updateChecking {
                     HStack(spacing: 3) {
@@ -240,6 +241,13 @@ struct PanelView: View {
             .foregroundStyle(.secondary)
             .disabled(model.updateChecking)
             .help("立即检查是否有新版本")
+            if let notice = model.updateNotice {
+                Text(notice)
+                    .font(.caption2)
+                    .foregroundStyle(notice.contains("失败") ? Color.red : Color.secondary)
+                    .lineLimit(1)
+                    .transition(.opacity)
+            }
             Button(action: { confirmQuit() }) {
                 Text("退出").font(.caption2)
             }

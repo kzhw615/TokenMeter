@@ -128,6 +128,20 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertNil(RangeKind.all.previousDayRange(now: now, calendar: cal), "全部范围无环比")
     }
 
+    // MARK: - 版本比较
+
+    /// 版本比较要正确处理多位数字段（0.9.10 > 0.9.9，字符串比较会得出相反结果）
+    func testVersionCompare() {
+        XCTAssertTrue(UpdateInfo.isNewer("0.13.1", than: "0.12.1"))
+        XCTAssertTrue(UpdateInfo.isNewer("0.9.10", than: "0.9.9"))
+        XCTAssertTrue(UpdateInfo.isNewer("1.0", than: "0.99.99"))
+        XCTAssertTrue(UpdateInfo.isNewer("0.13.1", than: "0.13"))
+        XCTAssertFalse(UpdateInfo.isNewer("0.13.0", than: "0.13"), "0.13.0 与 0.13 等价")
+        XCTAssertFalse(UpdateInfo.isNewer("0.13", than: "0.13.0"))
+        XCTAssertFalse(UpdateInfo.isNewer("0.12.1", than: "0.13.1"))
+        XCTAssertFalse(UpdateInfo.isNewer("0.13.1", than: "0.13.1"))
+    }
+
     // MARK: - 价格表
 
     /// 具体型号必须排在家族兜底之前，否则会被兜底价吃掉

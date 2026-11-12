@@ -222,6 +222,11 @@ struct SettingsView: View {
                 Spacer()
                 Button("检查更新") { model.checkForUpdates(force: true) }
                     .font(.caption)
+                if let notice = model.updateNotice {
+                    Text(notice)
+                        .font(.caption2)
+                        .foregroundStyle(notice.contains("失败") ? Color.red : Color.secondary)
+                }
                 Button("打开数据目录") {
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: ScanCache.cacheDir.path)
                 }

@@ -99,6 +99,10 @@ final class AppModel: ObservableObject {
     @Published var scanTotal: Int = 0
     private var scanProgress: ScanProgress?
     @Published var updateChecking = false
+    /// 检查更新的结果提示（已是最新 / 失败原因 / 发现新版），面板头部展示
+    @Published var updateNotice: String?
+    /// 最近一次检查失败的具体原因，用于拼提示文案
+    var lastCheckError: String?
     /// 面板是否展开（用于降低后台轮询频率省电）
     @Published var panelOpen = false
     /// 统计口径：true = 含缓存（input+output+cacheRead+cacheWrite），false = 不含缓存（input+output）
