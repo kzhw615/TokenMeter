@@ -184,6 +184,9 @@ public enum ActivityDetector {
     /// 0 运行中 = status working / active 且 60s 内活动；
     /// 1 待阅读 = 24h 内未读回执 / 最近 10min 内有 completed 会话；
     /// 2 空闲 = 其余（背景同步写日志不再误判）
+    /// WorkBuddy 三态。
+    /// 注意：DB 的 last_activity_at 只在若干事件点更新（实测可落后 3 分钟以上），
+    /// 单靠它会把正在跑的长任务判成空闲；真正的活跃信号是 traces 目录里持续追加的日志。
     public static func workBuddyState(now: Date = Date()) -> Int? {
         #if os(macOS)
         let path = NSString(string: "~/.workbuddy/workbuddy.db").expandingTildeInPath
@@ -199,11 +202,18 @@ public enum ActivityDetector {
             return sqlite3_column_int64(stmt, 0)
         }
         let nowMs = Int64(now.timeIntervalSince1970 * 1000)
-        if let n = scalar("SELECT COUNT(*) FROM sessions WHERE (status='working' AND last_activity_at > \(nowMs - 120_000)) OR (status='active' AND last_activity_at > \(nowMs - 60_000))"), n > 0 {
+        let freshWindow: Int64 = 180_000   // 3 分钟：容住 DB 活动时间的滞后
+
+        // ① 运行中：DB 里存在 working 会话，且「trace 正在写」或「DB 活动时间够新」
+        let workingLast = scalar("SELECT MAX(last_activity_at) FROM sessions WHERE status='working'")
+        if let last = workingLast, last > 0 {
+            if nowMs - last <= freshWindow { return 0 }
+            if workBuddyTracesActive(now: now) { return 0 }
+        }
+        if let n = scalar("SELECT COUNT(*) FROM sessions WHERE status='active' AND last_activity_at > \(nowMs - 60_000)"), n > 0 {
             return 0
         }
-        // WorkBuddy 有真实已读回执（sessions.unread），不再用「最近 10 分钟完成过」的时间启发式：
-        // 用户读掉之后必须立刻变灰，否则会一直绿着。
+        // ② 待阅读：有未读会话
         if let n = scalar("SELECT COUNT(*) FROM sessions WHERE unread = 1 AND last_activity_at > \(nowMs - 86_400_000)"), n > 0 {
             return 1
         }
@@ -211,6 +221,29 @@ public enum ActivityDetector {
         #else
         return nil
         #endif
+    }
+
+    /// traces 目录里是否还有近期写入（缓存 10 秒，避免每轮都 stat 数百个文件）
+    private static var tracesCache: (at: Date, active: Bool)?
+    public static func workBuddyTracesActive(now: Date = Date(), window: TimeInterval = 120) -> Bool {
+        if let c = tracesCache, now.timeIntervalSince(c.at) < 10 { return c.active }
+        let fm = FileManager.default
+        let base = SourcePaths.expand("~/.workbuddy/traces")
+        var newest: Date?
+        if let names = try? fm.contentsOfDirectory(atPath: base) {
+            for name in names {
+                let dir = base + "/" + name
+                guard let files = try? fm.contentsOfDirectory(atPath: dir) else { continue }
+                for f in files where f.hasSuffix(".jsonl") {
+                    let p = dir + "/" + f
+                    if let m = try? fm.attributesOfItem(atPath: p)[.modificationDate] as? Date,
+                       m > (newest ?? .distantPast) { newest = m }
+                }
+            }
+        }
+        let active = newest.map { now.timeIntervalSince($0) <= window } ?? false
+        tracesCache = (now, active)
+        return active
     }
 
     /// WorkBuddy 真实已读态：sessions.unread=1 的会话数（macOS；其他平台 0）

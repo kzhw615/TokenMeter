@@ -13,6 +13,11 @@ func parseArgs(_ args: [String]) -> (command: String, range: RangeKind, json: Bo
         let a = args[i]
         switch a {
         case "debug-activity":
+            if let wb = ActivityDetector.workBuddyState() {
+                let label = ["运行中", "待阅读", "空闲"][max(0, min(2, wb))]
+                let traces = ActivityDetector.workBuddyTracesActive() ? "trace 正在写" : "trace 无近期写入"
+                print("  wb-state      \(label)（DB 状态 + \(traces)）")
+            }
             if let cs = ActivityDetector.codexTurnState() {
                 let age = cs.lastActive.map { Int(Date().timeIntervalSince($0)) }.map { "\($0)s 前" } ?? "-"
                 print("  codex-turn    \(cs.running ? "运行中" : "已结束")（sqlite turn 状态，最近活动 \(age)）")

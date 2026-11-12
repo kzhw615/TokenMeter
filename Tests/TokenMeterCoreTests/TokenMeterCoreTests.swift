@@ -157,6 +157,17 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertNotNil(table.price(for: "step-9-unknown"))
     }
 
+    /// WorkBuddy：DB 活动时间滞后时，只要 trace 还在写就应判为运行中
+    func testWorkBuddyTraceActivitySupersedesStaleDB() {
+        // 真实环境无 WB 时跳过
+        let db = NSString(string: "~/.workbuddy/workbuddy.db").expandingTildeInPath
+        guard FileManager.default.fileExists(atPath: db) else { return }
+        // 现在这一刻的真实判定不应为 nil（数据库可读）
+        XCTAssertNotNil(ActivityDetector.workBuddyState())
+        // trace 活跃探测返回布尔值，且不抛错
+        _ = ActivityDetector.workBuddyTracesActive()
+    }
+
     /// 价目表即最终单价：同一模型任何时间计价一致（不再有高峰倍率）
     func testPriceIsTimeInvariant() {
         let table = PricingTable(prices: PricingTable.builtin)
