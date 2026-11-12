@@ -253,59 +253,56 @@ final class AppModel: ObservableObject {
         range = r   //  summariesByRange 已预计算，直接查表，无需重扫
     }
 
-    /// 燃烧状态的彩色火苗帧（平稳版）
-    static let flameFrames: [NSImage] = (0..<16).compactMap { i in
-        guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame_\(i)@2x.png"),
-              let img = NSImage(contentsOf: url) else { return nil }
-        img.size = NSSize(width: 19, height: 19)
-        img.isTemplate = false
-        return img
+    /// 燃烧状态的彩色火苗帧，三档：平稳 / 微旺 / 旺盛
+    static let flameFrameCount = 24
+
+    private static func loadFlameFrames(_ prefix: String, pointSize: CGFloat) -> [NSImage] {
+        (0..<flameFrameCount).compactMap { i in
+            guard let url = Bundle.main.resourceURL?.appendingPathComponent("\(prefix)\(i)@2x.png"),
+                  let img = NSImage(contentsOf: url) else { return nil }
+            img.size = NSSize(width: pointSize, height: pointSize)
+            img.isTemplate = false
+            return img
+        }
     }
 
-    /// 旺盛版火苗帧：燃烧速率超过阈值时切换（更大轮廓+侧舌+白热芯+火星）
-    static let flameFramesIntense: [NSImage] = (0..<16).compactMap { i in
-        guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame_hot_\(i)@2x.png"),
-              let img = NSImage(contentsOf: url) else { return nil }
-        img.size = NSSize(width: 19, height: 19)
-        img.isTemplate = false
-        return img
-    }
+    static let flameFrames = loadFlameFrames("menubar_flame_", pointSize: 19)
+    static let flameFramesWarm = loadFlameFrames("menubar_flame_warm_", pointSize: 19)
+    static let flameFramesIntense = loadFlameFrames("menubar_flame_hot_", pointSize: 19)
+    static let flameFramesIntenseBig = loadFlameFrames("menubar_flame_hot_big_", pointSize: 19)
 
-    /// 大尺寸火苗帧（高速率时用，避免放大失真）
-    static let flameFramesBig: [NSImage] = (0..<16).compactMap { i in
-        guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame_big_\(i)@2x.png"),
-              let img = NSImage(contentsOf: url) else { return nil }
-        img.isTemplate = false
-        return img
-    }
-
-    static let flameFramesIntenseBig: [NSImage] = (0..<16).compactMap { i in
-        guard let url = Bundle.main.resourceURL?.appendingPathComponent("menubar_flame_hot_big_\(i)@2x.png"),
-              let img = NSImage(contentsOf: url) else { return nil }
-        img.isTemplate = false
-        return img
-    }
-
-    /// 旺盛档阈值：15K tokens/s
+    /// 档位阈值：≥4K 微旺，≥15K 旺盛（原来只有 0 / 15K 两态，观感上等于没有变化）
+    static let warmRateThreshold: Int64 = 4_000
     static let intenseRateThreshold: Int64 = 15_000
-    var flameIntense: Bool { (burnRate ?? 0) >= Self.intenseRateThreshold }
 
-    /// 火苗点尺寸随速率连续变化（13 → 20pt，对数压缩让低速也有变化）
+    enum FlameTier { case calm, warm, hot }
+
+    var flameTier: FlameTier {
+        let rate = burnRate ?? 0
+        if rate >= Self.intenseRateThreshold { return .hot }
+        if rate >= Self.warmRateThreshold { return .warm }
+        return .calm
+    }
+
+    /// 火苗点尺寸随速率连续变化（12 → 22pt，对数压缩让低速也有变化）
     var flamePointSize: CGFloat {
         let rate = Double(burnRate ?? 0)
-        guard rate > 0 else { return 13 }
+        guard rate > 0 else { return 12 }
         let t = min(1.0, pow(rate / 60_000.0, 0.45))
-        return 13 + 7 * t
+        return 12 + 10 * t
     }
 
     var currentFlameFrames: [NSImage] {
-        let big = flamePointSize >= 17
-        if flameIntense {
+        switch flameTier {
+        case .hot:
+            let big = flamePointSize >= 18
             let set = big && !Self.flameFramesIntenseBig.isEmpty ? Self.flameFramesIntenseBig : Self.flameFramesIntense
             return set.isEmpty ? Self.flameFrames : set
+        case .warm:
+            return Self.flameFramesWarm.isEmpty ? Self.flameFrames : Self.flameFramesWarm
+        case .calm:
+            return Self.flameFrames
         }
-        let set = big && !Self.flameFramesBig.isEmpty ? Self.flameFramesBig : Self.flameFrames
-        return set.isEmpty ? Self.flameFrames : set
     }
 
     /// 火苗帧计数器独立成小对象：只让火苗图标重绘，避免 10fps 重绘整个面板树
@@ -376,8 +373,9 @@ final class AppModel: ObservableObject {
                     return
                 }
                 guard self.isBurning, !self.currentFlameFrames.isEmpty else { return }
-                // 旺盛档 10fps，平稳档 5fps
-                let step = self.flameIntense ? 1 : 2
+                // 旺盛档 15fps，平稳/微旺 12fps（原来 10/5，明显偏卡）
+                let fps = self.flameTier == .hot ? 15 : 12
+                let step = max(1, Int((10.0 / Double(fps)).rounded()))
                 guard self.flameTick % step == 0 else { return }
                 self.flame.advance(count: self.currentFlameFrames.count)
             }

@@ -176,6 +176,21 @@ final class StatusBarController: NSObject {
     /// 上次渲染结果，用于跳过无变化的重绘（状态栏文字排版较贵）
     private var lastRendered: (frame: Int, size: CGFloat, text: String, red: Bool)?
 
+    /// 火苗缩放结果缓存：每帧都 copy + 设 size 会持续分配内存，
+    /// 按「档位 + 帧号 + 0.5pt 尺寸」缓存后，同一尺寸只生成一次。
+    private var flameCache: [String: NSImage] = [:]
+
+    private func scaledFlame(_ base: NSImage, tier: AppModel.FlameTier, frame: Int, size: CGFloat) -> NSImage? {
+        let rounded = (size * 2).rounded() / 2
+        let key = "\(tier)-\(frame)-\(rounded)"
+        if let hit = flameCache[key] { return hit }
+        if flameCache.count > 240 { flameCache.removeAll(keepingCapacity: true) }
+        let img = (base.copy() as? NSImage) ?? base
+        img.size = NSSize(width: rounded, height: rounded)
+        flameCache[key] = img
+        return img
+    }
+
     private func refreshButton() {
         guard let button = item.button else { return }
 
@@ -201,10 +216,9 @@ final class StatusBarController: NSObject {
             let frames = model.currentFlameFrames
             if !frames.isEmpty {
                 let size = model.flamePointSize
-                let base = frames[model.flame.frame % frames.count]
-                let img = (base.copy() as? NSImage) ?? base
-                img.size = NSSize(width: size, height: size)
-                button.image = img
+                let idx = model.flame.frame % frames.count
+                button.image = scaledFlame(frames[idx], tier: model.flameTier, frame: idx, size: size)
+                    ?? frames[idx]
             } else {
                 button.image = NSImage(systemSymbolName: "flame.fill", accessibilityDescription: "燃烧中")
             }

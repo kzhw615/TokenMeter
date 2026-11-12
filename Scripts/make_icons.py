@@ -8,7 +8,7 @@ import sys
 from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TOTAL = 16
+TOTAL = 24
 ASSETS = os.path.join(ROOT, "Assets")
 os.makedirs(ASSETS, exist_ok=True)
 
@@ -100,7 +100,7 @@ def menubar_glyph(px: int) -> Image.Image:
     return out
 
 
-def menubar_flame(px: int, frame: int = 0, total: int = 16) -> Image.Image:
+def menubar_flame(px: int, frame: int = 0, total: int = 24) -> Image.Image:
     """彩色火苗（非模板图）：橙红渐变外焰 + 黄色内焰；frame 决定摆动相位"""
     import math
     s = px
@@ -134,7 +134,44 @@ def menubar_flame(px: int, frame: int = 0, total: int = 16) -> Image.Image:
     return out
 
 
-def menubar_flame_intense(px: int, frame: int = 0, total: int = 16) -> Image.Image:
+def menubar_flame_warm(px: int, frame: int = 0, total: int = 24) -> Image.Image:
+    """中间档：比平稳版略大、焰尖更活、内焰偏亮，但还没有侧舌和火星"""
+    import math
+    s = px
+    phase = 2 * math.pi * frame / total
+    sway = math.sin(phase) * s * 0.075
+    sway2 = math.sin(phase + 0.8) * s * 0.03
+    breathe = 0.96 + 0.10 * math.sin(phase + math.pi / 2)
+    mask = Image.new("L", (s, s), 0)
+    d = ImageDraw.Draw(mask)
+    d.ellipse([s * 0.13, s * 0.32, s * 0.87, s * 0.99], fill=255)
+    d.ellipse([s * 0.24 + sway * 0.45, s * 0.20, s * 0.76 + sway * 0.45, s * 0.68], fill=255)
+    d.polygon([(s * 0.5 + sway, s * 0.01), (s * 0.29, s * 0.44), (s * 0.71, s * 0.44)], fill=255)
+    # 单侧小舌，暗示开始"舔动"
+    d.polygon([(s * 0.78, s * 0.62), (s * 0.92 - sway2, s * 0.40), (s * 0.72, s * 0.50)], fill=255)
+
+    warm = 0.5 + 0.5 * math.sin(phase)
+    grad = Image.new("RGBA", (s, s))
+    gd = ImageDraw.Draw(grad)
+    c0 = lerp((255, 196, 40), (255, 150, 10), warm)
+    c1 = (255, 69, 48)
+    for y in range(s):
+        gd.line([(0, y), (s, y)], fill=lerp(c0, c1, (y / s) ** 1.1) + (255,))
+    out = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    out.paste(grad, (0, 0), mask)
+
+    ih = 0.42 * breathe
+    inner = Image.new("L", (s, s), 0)
+    idr = ImageDraw.Draw(inner)
+    idr.ellipse([s * 0.32, s * (0.93 - ih * 0.85), s * 0.68, s * 0.93], fill=255)
+    idr.polygon([(s * 0.5 + sway * 0.35, s * (0.93 - ih - 0.09)),
+                 (s * 0.36, s * (0.93 - ih * 0.5)), (s * 0.64, s * (0.93 - ih * 0.5))], fill=255)
+    bright = Image.new("RGBA", (s, s), (255, 236, 140, 255))
+    out = Image.alpha_composite(out, Image.composite(bright, Image.new("RGBA", (s, s), (0, 0, 0, 0)), inner))
+    return out
+
+
+def menubar_flame_intense(px: int, frame: int = 0, total: int = 24) -> Image.Image:
     """旺盛版火苗：更大轮廓 + 侧舌 + 白热内芯 + 飞溅火星；摆幅与帧率由 App 侧配合"""
     import math
     s = px
@@ -204,12 +241,12 @@ def main():
     menubar_glyph(44).save(os.path.join(ASSETS, "menubar_icon.png"))
     for i in range(TOTAL):
         menubar_flame(88, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_{i}@2x.png"))
+        menubar_flame_warm(88, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_warm_{i}@2x.png"))
         menubar_flame_intense(88, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_hot_{i}@2x.png"))
-        # 更大尺寸档（高速率时放大显示）
-        menubar_flame(112, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_big_{i}@2x.png"))
+        # 大尺寸档只保留旺盛版：高速率时放大显示，避免所有档位都存两套
         menubar_flame_intense(112, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_hot_big_{i}@2x.png"))
     menubar_flame(88, 0).save(os.path.join(ASSETS, "menubar_flame@2x.png"))
-    print(f"wrote menubar icons + {TOTAL} calm + {TOTAL} intense frames (+big variants)")
+    print(f"wrote menubar icons + {TOTAL} frames × 3 tiers (calm/warm/hot) + hot big")
 
     master.resize((512, 512), Image.LANCZOS).save(os.path.join(ROOT, ".research", "icon-preview.png"))
     print("preview:", os.path.join(ROOT, ".research", "icon-preview.png"))
