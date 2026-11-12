@@ -270,15 +270,19 @@ final class AppModel: ObservableObject {
     static let flameFramesWarm = loadFlameFrames("menubar_flame_warm_", pointSize: 19)
     static let flameFramesIntense = loadFlameFrames("menubar_flame_hot_", pointSize: 19)
     static let flameFramesIntenseBig = loadFlameFrames("menubar_flame_hot_big_", pointSize: 19)
+    static let flameFramesInferno = loadFlameFrames("menubar_flame_inferno_", pointSize: 19)
+    static let flameFramesInfernoBig = loadFlameFrames("menubar_flame_inferno_big_", pointSize: 19)
 
-    /// 档位阈值：≥4K 微旺，≥15K 旺盛（原来只有 0 / 15K 两态，观感上等于没有变化）
+    /// 档位阈值：≥4K 微旺，≥15K 旺盛，≥40K 爆燃
     static let warmRateThreshold: Int64 = 4_000
     static let intenseRateThreshold: Int64 = 15_000
+    static let infernoRateThreshold: Int64 = 40_000
 
-    enum FlameTier { case calm, warm, hot }
+    enum FlameTier { case calm, warm, hot, inferno }
 
     var flameTier: FlameTier {
         let rate = burnRate ?? 0
+        if rate >= Self.infernoRateThreshold { return .inferno }
         if rate >= Self.intenseRateThreshold { return .hot }
         if rate >= Self.warmRateThreshold { return .warm }
         return .calm
@@ -289,11 +293,17 @@ final class AppModel: ObservableObject {
         let rate = Double(burnRate ?? 0)
         guard rate > 0 else { return 12 }
         let t = min(1.0, pow(rate / 60_000.0, 0.45))
-        return 12 + 10 * t
+        // 爆燃档再额外放大一点，让"更旺"不只体现在形状上
+        let bonus: CGFloat = flameTier == .inferno ? 2 : 0
+        return 12 + 10 * t + bonus
     }
 
     var currentFlameFrames: [NSImage] {
         switch flameTier {
+        case .inferno:
+            let big = flamePointSize >= 18
+            let set = big && !Self.flameFramesInfernoBig.isEmpty ? Self.flameFramesInfernoBig : Self.flameFramesInferno
+            return set.isEmpty ? Self.flameFramesIntense : set
         case .hot:
             let big = flamePointSize >= 18
             let set = big && !Self.flameFramesIntenseBig.isEmpty ? Self.flameFramesIntenseBig : Self.flameFramesIntense
@@ -373,8 +383,13 @@ final class AppModel: ObservableObject {
                     return
                 }
                 guard self.isBurning, !self.currentFlameFrames.isEmpty else { return }
-                // 旺盛档 15fps，平稳/微旺 12fps（原来 10/5，明显偏卡）
-                let fps = self.flameTier == .hot ? 15 : 12
+                // 档位越高帧率越高：爆燃最"急"
+                let fps: Int
+                switch self.flameTier {
+                case .inferno: fps = 18
+                case .hot: fps = 15
+                default: fps = 12
+                }
                 let step = max(1, Int((10.0 / Double(fps)).rounded()))
                 guard self.flameTick % step == 0 else { return }
                 self.flame.advance(count: self.currentFlameFrames.count)

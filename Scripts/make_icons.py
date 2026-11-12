@@ -171,6 +171,84 @@ def menubar_flame_warm(px: int, frame: int = 0, total: int = 24) -> Image.Image:
     return out
 
 
+def menubar_flame_inferno(px: int, frame: int = 0, total: int = 24) -> Image.Image:
+    """极高强度：更宽的焰体、分叉焰尖、两层侧舌、白热大芯、环绕火星与外发光。
+    这是第三档（旺盛）之上的「爆燃」档，用于极端速率。"""
+    import math
+    from PIL import ImageFilter
+    s = px
+    phase = 2 * math.pi * frame / total
+    sway = math.sin(phase) * s * 0.12
+    sway2 = math.sin(phase + 1.1) * s * 0.08
+    sway3 = math.sin(phase + 2.2) * s * 0.05
+
+    mask = Image.new("L", (s, s), 0)
+    d = ImageDraw.Draw(mask)
+    # 主焰体：更宽更饱满
+    d.ellipse([s * 0.04, s * 0.26, s * 0.96, s * 1.00], fill=255)
+    d.ellipse([s * 0.14 + sway * 0.5, s * 0.12, s * 0.86 + sway * 0.5, s * 0.70], fill=255)
+    # 主焰尖 + 两侧小尖刺（比"双峰"更像爆燃，小尺寸下也更清晰）
+    d.polygon([(s * 0.50 + sway, -s * 0.04), (s * 0.26, s * 0.46), (s * 0.74, s * 0.46)], fill=255)
+    d.polygon([(s * 0.30 + sway2 * 0.6, s * 0.10), (s * 0.16, s * 0.44), (s * 0.42, s * 0.38)], fill=255)
+    d.polygon([(s * 0.72 + sway2 * 0.4, s * 0.06), (s * 0.60, s * 0.40), (s * 0.88, s * 0.44)], fill=255)
+    # 两层侧舌
+    d.polygon([(s * 0.14, s * 0.66), (0.0 + sway2, s * 0.34), (s * 0.26, s * 0.48)], fill=255)
+    d.polygon([(s * 0.86, s * 0.66), (s - sway2, s * 0.34), (s * 0.74, s * 0.48)], fill=255)
+    d.polygon([(s * 0.22, s * 0.80), (s * 0.04 + sway3, s * 0.54), (s * 0.32, s * 0.62)], fill=255)
+    d.polygon([(s * 0.78, s * 0.80), (s * 0.96 - sway3, s * 0.54), (s * 0.68, s * 0.62)], fill=255)
+
+    # 外发光：模糊后的焰体轮廓垫在底下
+    glowMask = mask.filter(ImageFilter.GaussianBlur(s * 0.05))
+    glow = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    glow.paste(Image.new("RGBA", (s, s), (255, 140, 40, 70)), (0, 0), glowMask)
+    out = glow
+
+    # 三段渐变：近白尖 -> 橙 -> 深红底
+    grad = Image.new("RGBA", (s, s))
+    gd = ImageDraw.Draw(grad)
+    c0, c1, c2 = (255, 246, 190), (255, 138, 20), (233, 42, 48)
+    for y in range(s):
+        t = y / s
+        col = lerp(c0, c1, min(1.0, t * 2.0)) if t < 0.5 else lerp(c1, c2, (t - 0.5) / 0.5)
+        gd.line([(0, y), (s, y)], fill=col + (255,))
+    body = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    body.paste(grad, (0, 0), mask)
+    out = Image.alpha_composite(out, body)
+
+    # 白热大芯
+    core = Image.new("L", (s, s), 0)
+    cd = ImageDraw.Draw(core)
+    cd.ellipse([s * 0.28, s * 0.44, s * 0.72, s * 0.97], fill=255)
+    cd.polygon([(s * 0.5 + sway * 0.5, s * 0.18), (s * 0.32, s * 0.64), (s * 0.68, s * 0.64)], fill=255)
+    out = Image.alpha_composite(out, Image.composite(
+        Image.new("RGBA", (s, s), (255, 250, 214, 255)),
+        Image.new("RGBA", (s, s), (0, 0, 0, 0)), core))
+    inner = Image.new("L", (s, s), 0)
+    ImageDraw.Draw(inner).ellipse([s * 0.38, s * 0.66, s * 0.62, s * 0.96], fill=255)
+    out = Image.alpha_composite(out, Image.composite(
+        Image.new("RGBA", (s, s), (255, 255, 250, 255)),
+        Image.new("RGBA", (s, s), (0, 0, 0, 0)), inner))
+
+    # 六颗环绕火星，半径/相位各自不同
+    sparks = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(sparks)
+    for i in range(6):
+        ang = phase * 1.6 + i * (math.pi / 3)
+        rx = s * (0.30 + 0.16 * (0.5 + 0.5 * math.sin(phase * 1.7 + i)))
+        cy = s * (0.18 + 0.10 * math.sin(ang * 1.3 + i))
+        cx = s * 0.5 + math.cos(ang) * rx
+        r = s * (0.030 if i % 2 == 0 else 0.020)
+        alpha = int(200 + 55 * math.sin(phase * 2 + i))
+        sd.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 210, 90, max(90, min(255, alpha))))
+    composed = Image.alpha_composite(out, sparks)
+    # 收缩到 90% 并居中：留出边距，避免外发光被画布裁掉、也避免比其他档大太多
+    inner = composed.resize((int(s * 0.9), int(s * 0.9)), Image.LANCZOS)
+    canvas = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    off = (s - inner.width) // 2
+    canvas.paste(inner, (off, off), inner)
+    return canvas
+
+
 def menubar_flame_intense(px: int, frame: int = 0, total: int = 24) -> Image.Image:
     """旺盛版火苗：更大轮廓 + 侧舌 + 白热内芯 + 飞溅火星；摆幅与帧率由 App 侧配合"""
     import math
@@ -243,10 +321,12 @@ def main():
         menubar_flame(88, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_{i}@2x.png"))
         menubar_flame_warm(88, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_warm_{i}@2x.png"))
         menubar_flame_intense(88, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_hot_{i}@2x.png"))
-        # 大尺寸档只保留旺盛版：高速率时放大显示，避免所有档位都存两套
+        menubar_flame_inferno(88, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_inferno_{i}@2x.png"))
+        # 大尺寸档只保留旺盛及以上：高速率时放大显示
         menubar_flame_intense(112, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_hot_big_{i}@2x.png"))
+        menubar_flame_inferno(112, i, TOTAL).save(os.path.join(ASSETS, f"menubar_flame_inferno_big_{i}@2x.png"))
     menubar_flame(88, 0).save(os.path.join(ASSETS, "menubar_flame@2x.png"))
-    print(f"wrote menubar icons + {TOTAL} frames × 3 tiers (calm/warm/hot) + hot big")
+    print(f"wrote menubar icons + {TOTAL} frames × 3 tiers (calm/warm/hot/inferno) + hot big")
 
     master.resize((512, 512), Image.LANCZOS).save(os.path.join(ROOT, ".research", "icon-preview.png"))
     print("preview:", os.path.join(ROOT, ".research", "icon-preview.png"))

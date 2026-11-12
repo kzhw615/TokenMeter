@@ -25,7 +25,7 @@ fi
 cp Assets/menubar_icon.png Assets/menubar_icon@2x.png "$APP/Contents/Resources/"
 cp Assets/menubar_flame@2x.png "$APP/Contents/Resources/"
 # 火苗动画帧（16 帧平稳 + 16 帧旺盛 + 大尺寸变体）
-cp Assets/menubar_flame_*@2x.png Assets/menubar_flame_hot_*@2x.png "$APP/Contents/Resources/"
+cp Assets/menubar_flame_*@2x.png "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
