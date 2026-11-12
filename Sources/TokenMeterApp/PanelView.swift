@@ -545,31 +545,44 @@ struct PanelView: View {
     /// 环比（上一个等长周期）与本月预测
     @ViewBuilder
     private func deltaNotes(_ s: Summary) -> some View {
-        if let prev = s.previousCounts, prev.total > 0 {
-            // 「今天」场景下两者都已限定为「已过完的整点」，口径一致
-            let currentRaw = s.comparableCounts.map { disp($0) } ?? disp(s.counts)
-            let prevRaw = disp(prev)
-            let diff = prevRaw > 0 ? Double(currentRaw - prevRaw) / Double(prevRaw) : 0
-            HStack(spacing: 4) {
-                Image(systemName: diff >= 0 ? "arrow.up.right" : "arrow.down.right")
-                    .font(.caption2)
+        VStack(alignment: .leading, spacing: 3) {
+            if let prev = s.previousCounts, prev.total > 0 {
+                // 「今天」场景下两者都已限定为「已过完的整点」，口径一致
+                let currentRaw = s.comparableCounts.map { disp($0) } ?? disp(s.counts)
+                let prevRaw = disp(prev)
+                let tokenDiff = prevRaw > 0 ? Double(currentRaw - prevRaw) / Double(prevRaw) : 0
                 let target = s.previousLabel ?? "上一周期"
-                Text(diff >= 0 ? "比\(target)多 \(Fmt.percent(abs(diff)))" : "比\(target)少 \(Fmt.percent(abs(diff)))")
-                    .font(.caption)
-                if let pc = s.previousCost {
-                    let cur = s.comparableCost ?? s.cost
-                    Text("· \(pc > 0 ? Fmt.cost(pc) : "$0") → \(Fmt.cost(cur))")
-                        .font(.caption).foregroundStyle(.secondary)
+
+                // ① 用量变化（token）
+                HStack(spacing: 4) {
+                    Image(systemName: tokenDiff >= 0 ? "arrow.up.right" : "arrow.down.right")
+                        .font(.caption2)
+                    Text("用量比\(target)\(tokenDiff >= 0 ? "多" : "少") \(Fmt.percent(abs(tokenDiff)))")
+                        .font(.caption)
+                }
+                .foregroundStyle(tokenDiff >= 0 ? Color.orange : Color.green)
+
+                // ② 费用变化（与用量分开显示：模型不同会让两者方向相反）
+                if let pc = s.previousCost, let cur = s.comparableCost {
+                    let costDiff = pc > 0 ? (cur - pc) / pc : 0
+                    HStack(spacing: 4) {
+                        Image(systemName: costDiff >= 0 ? "arrow.up.right" : "arrow.down.right")
+                            .font(.caption2)
+                        Text("费用比\(target)\(costDiff >= 0 ? "多" : "少") \(Fmt.percent(abs(costDiff)))")
+                            .font(.caption)
+                        Text("（\(Fmt.cost(pc)) → \(Fmt.cost(cur))）")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .foregroundStyle(costDiff >= 0 ? Color.orange : Color.green)
                 }
             }
-            .foregroundStyle(diff >= 0 ? Color.orange : Color.green)
-        }
-        if let fc = s.forecastCost, fc > 0 {
-            HStack(spacing: 4) {
-                Image(systemName: "chart.line.uptrend.xyaxis").font(.caption2)
-                Text("按当前速度预计本月 \(Fmt.cost(fc))").font(.caption)
+            if let fc = s.forecastCost, fc > 0 {
+                HStack(spacing: 4) {
+                    Image(systemName: "chart.line.uptrend.xyaxis").font(.caption2)
+                    Text("按当前速度预计本月 \(Fmt.cost(fc))").font(.caption)
+                }
+                .foregroundStyle(.secondary)
             }
-            .foregroundStyle(.secondary)
         }
     }
 
