@@ -157,6 +157,18 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertNotNil(table.price(for: "step-9-unknown"))
     }
 
+    /// Claudian 这类 Obsidian 插件：前台是 Obsidian 时，最新会话 cwd 在装了插件
+    /// 的 vault 里 ⇒ 认为用户正在看 Claude Code（用于「已读」判定）
+    func testClaudeViewedInObsidian() {
+        guard let vault = ActivityDetector.newestClaudeProjectPath(),
+              ActivityDetector.vaultHasClaudianPlugin(vault) else {
+            return   // 本机没有 Claudian 时跳过
+        }
+        XCTAssertTrue(ActivityDetector.claudeViewedInObsidian(frontName: "Obsidian", frontBundle: "md.obsidian"))
+        XCTAssertFalse(ActivityDetector.claudeViewedInObsidian(frontName: "Finder", frontBundle: "com.apple.finder"))
+        XCTAssertFalse(ActivityDetector.claudeViewedInObsidian(frontName: nil, frontBundle: nil))
+    }
+
     /// Claude Code：任务结束后日志 stop_reason 为 end_turn，判定应立刻为「已结束」
     func testClaudeTaskRunningDetectsEndTurn() throws {
         let base = NSString(string: "~/.claude/projects").expandingTildeInPath

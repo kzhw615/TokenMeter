@@ -13,6 +13,10 @@ func parseArgs(_ args: [String]) -> (command: String, range: RangeKind, json: Bo
         let a = args[i]
         switch a {
         case "debug-activity":
+            if let vault = ActivityDetector.newestClaudeProjectPath() {
+                let has = ActivityDetector.vaultHasClaudianPlugin(vault)
+                print("  claude-vault  \(vault)  装 Claudian=\(has ? "是" : "否")")
+            }
             if let running = ActivityDetector.claudeTaskRunning() {
                 print("  claude-task   \(running ? "运行中" : "已结束")（日志尾部 stop_reason 判定）")
             }

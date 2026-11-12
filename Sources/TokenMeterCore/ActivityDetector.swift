@@ -38,25 +38,36 @@ public enum ActivityDetector {
         }
     }
 
-    /// 名字关键词 → 数据源：当前台 App 的名字包含关键词时，认为是该工具的宿主 App。
+    /// 名字关键词 → 数据源（前台 App 名称命中即认为该工具正在被查看）：当前台 App 的名字包含关键词时，认为是该工具的宿主 App。
     /// 覆盖面比硬编码 bundle id 广（Kiro / Qoder / ZCode / OpenCode 等装了桌面版就能识别）。
+    /// 前台 App 名称关键词表：命中即视为「用户正在看该工具」
+    public static let hostAppKeywords: [(String, [String])] = [
+        // Claude Code 可能通过桌面客户端 / Obsidian 插件（Claudian）驱动
+        ("Claude Code", ["claude", "claudian", "anthropic"]),
+        ("Codex", ["codex"]),
+        ("DSH", ["deepseek", "dsh"]),
+        ("WorkBuddy", ["workbuddy"]),
+        ("Kiro", ["kiro"]),
+        ("Qoder", ["qoder"]),
+        ("ZCode", ["zcode"]),
+        ("Hermes", ["hermes"]),
+        ("OpenCode", ["opencode"]),
+        ("Droid", ["droid", "factory"]),
+        ("MiniMax Code", ["minimax"]),
+        ("Reasonix", ["reasonix"]),
+        ("Copilot CLI", ["copilot"]),
+    ]
+
+    /// 该数据源是否有「可判断已读」的宿主 App 信号
+    public static func hasHostAppSignal(for source: String) -> Bool {
+        if sourceBundleIDs[source] != nil { return true }
+        return hostAppKeywords.contains { $0.0 == source }
+    }
+
     public static func sourceName(matching appName: String?, bundleID: String?) -> String? {
         let hay = [appName, bundleID].compactMap { $0?.lowercased() }.joined(separator: " ")
         guard !hay.isEmpty else { return nil }
-        let keywords: [(String, [String])] = [
-            ("Codex", ["codex"]),
-            ("DSH", ["deepseek", "dsh"]),
-            ("WorkBuddy", ["workbuddy"]),
-            ("Kiro", ["kiro"]),
-            ("Qoder", ["qoder"]),
-            ("ZCode", ["zcode"]),
-            ("Hermes", ["hermes"]),
-            ("OpenCode", ["opencode"]),
-            ("Droid", ["droid", "factory"]),
-            ("MiniMax Code", ["minimax"]),
-            ("Reasonix", ["reasonix"]),
-            ("Copilot CLI", ["copilot"]),
-        ]
+        let keywords = hostAppKeywords
         for (source, words) in keywords where words.contains(where: hay.contains) {
             return source
         }
@@ -184,6 +195,75 @@ public enum ActivityDetector {
     /// 0 运行中 = status working / active 且 60s 内活动；
     /// 1 待阅读 = 24h 内未读回执 / 最近 10min 内有 completed 会话；
     /// 2 空闲 = 其余（背景同步写日志不再误判）
+    /// Claude Code 是否正被「Obsidian 插件（如 Claudian）」查看。
+    /// 这类客户端跑在 Obsidian 里，前台 App 永远是 Obsidian，只能靠
+    /// 「最新会话的工作目录是个装了 claudian 插件的 vault」来推断。
+    public static func claudeViewedInObsidian(frontName: String?, frontBundle: String?) -> Bool {
+        let front = [frontName ?? "", frontBundle ?? ""].joined(separator: " ").lowercased()
+        guard front.contains("obsidian") else { return false }
+        guard let vault = newestClaudeProjectPath() else { return false }
+        return vaultHasClaudianPlugin(vault)
+    }
+
+    private static var claudeVaultCache: (at: Date, path: String?)?
+
+    /// 从会话日志开头提取 cwd（只读前 256KB）
+    static func cwdFromLog(_ path: String) -> String? {
+        guard let fh = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? fh.close() }
+        guard let data = try? fh.read(upToCount: 256 * 1024) else { return nil }
+        for line in LineReader.split(data) {
+            guard line.contains("\"cwd\"") else { continue }
+            if let o = JSONUtil.object(line), let cwd = JSONUtil.string(o, "cwd"), !cwd.isEmpty {
+                return cwd
+            }
+        }
+        return nil
+    }
+
+    /// 最新 Claude 会话所属项目路径（由 projects 目录名解码，缓存 30 秒）
+    public static func newestClaudeProjectPath() -> String? {
+        let now = Date()
+        if let c = claudeVaultCache, now.timeIntervalSince(c.at) < 30 { return c.path }
+        let base = SourcePaths.expand("~/.claude/projects")
+        var newest: (dir: String, mtime: Date)?
+        if let projects = try? FileManager.default.contentsOfDirectory(atPath: base) {
+            for project in projects {
+                let dir = base + "/" + project
+                guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir) else { continue }
+                for f in files where f.hasSuffix(".jsonl") {
+                    guard let m = SourcePaths.mtime(dir + "/" + f) else { continue }
+                    if newest == nil || m > newest!.mtime { newest = (dir, m) }
+                }
+            }
+        }
+        // 目录名编码有损（中文会变成 ----），直接读日志里的 cwd 更可靠
+        var path: String?
+        if let dir = newest?.dir,
+           let files = try? FileManager.default.contentsOfDirectory(atPath: dir),
+           let newestFile = files.filter({ $0.hasSuffix(".jsonl") })
+               .max(by: { (SourcePaths.mtime(dir + "/" + $0) ?? .distantPast) < (SourcePaths.mtime(dir + "/" + $1) ?? .distantPast) }) {
+            path = Self.cwdFromLog(dir + "/" + newestFile)
+        }
+        claudeVaultCache = (now, path)
+        return path
+    }
+
+    private static var claudianCache: [String: (at: Date, has: Bool)] = [:]
+
+    /// 该目录是否装了 claudian 插件（缓存 60 秒）
+    public static func vaultHasClaudianPlugin(_ path: String) -> Bool {
+        let now = Date()
+        if let c = claudianCache[path], now.timeIntervalSince(c.at) < 60 { return c.has }
+        let plugins = path + "/.obsidian/plugins"
+        var has = false
+        if let names = try? FileManager.default.contentsOfDirectory(atPath: plugins) {
+            has = names.contains { $0.lowercased().contains("claudian") }
+        }
+        claudianCache[path] = (now, has)
+        return has
+    }
+
     /// Claude Code 是否仍在推进：读最新会话日志尾部，看最后一条事件的语义。
     /// - assistant.stop_reason == tool_use ⇒ 在跑工具（运行中）
     /// - assistant.stop_reason == end_turn / max_tokens ⇒ 本轮已结束

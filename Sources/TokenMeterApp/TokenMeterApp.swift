@@ -488,8 +488,9 @@ final class AppModel: ObservableObject {
                 let top = item.topLevel ?? last
                 let age = now.timeIntervalSince(top)
                 let fresh = now.timeIntervalSince(last) <= ActivityDetector.defaultWindow
-                // 有宿主 App 能判断「是否正在看」的源，待阅读窗口收窄到 3 分钟
-                let readWindow: TimeInterval = ActivityDetector.sourceBundleIDs[item.name] != nil ? 180 : 600
+                // 能判断「是否正在看」的源给 3 分钟；其余（如通过 Obsidian 插件驱动的
+                // Claude Code，前台永远是 Obsidian）无法感知已读，绿灯只保留 90 秒。
+                let readWindow: TimeInterval = ActivityDetector.hasHostAppSignal(for: item.name) ? 180 : 90
                 var st = fresh ? 0 : (age < readWindow ? 1 : 2)
                 var done: Date? = top
 
@@ -542,6 +543,9 @@ final class AppModel: ObservableObject {
                 let frontApp = NSWorkspace.shared.frontmostApplication
                 let frontBundle = frontApp?.bundleIdentifier
                 let frontSource = ActivityDetector.sourceName(matching: frontApp?.localizedName, bundleID: frontBundle)
+                // Claudian 这类 Obsidian 插件：前台是 Obsidian，需靠 vault 推断
+                let claudeInObsidian = ActivityDetector.claudeViewedInObsidian(
+                    frontName: frontApp?.localizedName, frontBundle: frontBundle)
                 let adjusted = states.map { item -> (String, Int) in
                     guard item.st == 1 else { return (item.name, item.st) }
                     // WorkBuddy 有自己的真实已读回执，不用我们猜
@@ -550,6 +554,7 @@ final class AppModel: ObservableObject {
                     }
                     let isFrontHost = frontSource == item.name
                         || (ActivityDetector.sourceBundleIDs[item.name].map { $0 == frontBundle } ?? false)
+                        || (item.name == "Claude Code" && claudeInObsidian)
                     guard isFrontHost || item.done != nil else { return (item.name, item.st) }
                     if isFrontHost, let done = item.done {
                         self.markRead(name: item.name, completedAt: done)
@@ -594,8 +599,7 @@ final class AppModel: ObservableObject {
                 })
                 let todayTotal = all[.today]?.counts.total ?? 0
                 let fileTotal = statuses.reduce(0) { $0 + $1.files }
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
+                Task { @MainActor in
                     self.summariesByRange = all
                     self.loadHarnessIcons()
                     self.lastScan = Date()
