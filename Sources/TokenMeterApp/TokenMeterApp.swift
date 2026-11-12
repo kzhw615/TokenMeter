@@ -580,9 +580,9 @@ final class AppModel: ObservableObject {
             let t0 = Date()
 
             /// 把一份 buckets 汇总成七个范围并推到 UI
-            func publish(_ buckets: [UsageBucket], statuses: [SourceStatus], sessions: SessionTotals, partial: Bool) {
+            func publish(_ buckets: [UsageBucket], statuses: [SourceStatus], partial: Bool) {
                 let all: [RangeKind: Summary] = Dictionary(uniqueKeysWithValues: RangeKind.allCases.map { r in
-                    (r, Aggregator.summarize(buckets: buckets, range: r, pricing: pricing, statuses: statuses, sessions: sessions))
+                    (r, Aggregator.summarize(buckets: buckets, range: r, pricing: pricing, statuses: statuses))
                 })
                 let todayTotal = all[.today]?.counts.total ?? 0
                 let fileTotal = statuses.reduce(0) { $0 + $1.files }
@@ -602,7 +602,7 @@ final class AppModel: ObservableObject {
             let recentCutoff = Calendar.current.date(byAdding: .day, value: -2, to: Date())
             let quick = Aggregator.scan(cache: &cache, progress: nil, recentOnlySince: recentCutoff)
             if !quick.buckets.isEmpty {
-                publish(quick.buckets, statuses: quick.statuses, sessions: quick.sessions, partial: true)
+                publish(quick.buckets, statuses: quick.statuses, partial: true)
             }
 
             // ── 阶段二：全量补齐历史（阶段一已解析的文件命中缓存，几乎零开销）──────────
@@ -612,7 +612,7 @@ final class AppModel: ObservableObject {
             }
             let scanned = Aggregator.scan(cache: &cache, progress: progress)
             let all: [RangeKind: Summary] = Dictionary(uniqueKeysWithValues: RangeKind.allCases.map { r in
-                (r, Aggregator.summarize(buckets: scanned.buckets, range: r, pricing: pricing, statuses: scanned.statuses, sessions: scanned.sessions))
+                (r, Aggregator.summarize(buckets: scanned.buckets, range: r, pricing: pricing, statuses: scanned.statuses))
             })
             // 落盘后释放内存中的全量分桶缓存（约 150-200MB），下次从磁盘按需加载
             if cache.dirty {

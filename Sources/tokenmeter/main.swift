@@ -77,7 +77,7 @@ var cache = timed("cache-load") { opts.noCache ? ScanCache() : ScanCache.load() 
 let scanned = timed("scan") { Aggregator.scan(cache: &cache) }
 if !opts.noCache { timed("cache-save") { cache.save() } }
 let pricing = PricingTable.load()
-let summary = timed("summarize") { Aggregator.summarize(buckets: scanned.buckets, range: opts.range, pricing: pricing, statuses: scanned.statuses, sessions: scanned.sessions) }
+let summary = timed("summarize") { Aggregator.summarize(buckets: scanned.buckets, range: opts.range, pricing: pricing, statuses: scanned.statuses) }
 
 switch opts.command {
 case "activity":
@@ -90,19 +90,6 @@ case "activity":
         print("当前无活跃会话（近 2 分钟无日志写入）")
     } else {
         print("正在燃烧 token 的会话：\(active.joined(separator: ", "))")
-    }
-case "sessions":
-    let list = summary.sessions
-    if opts.json {
-        let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted]
-        if let d = try? enc.encode(list) { print(String(decoding: d, as: UTF8.self)) }
-    } else {
-        print("按会话（\(opts.range.rawValue)）：")
-        for (i, s0) in list.enumerated() {
-            print(String(format: "  %2d. %-10s %-12s %10.2f亿  $%-8.2f %@",
-                         i + 1, (s0.tool as NSString).utf8String!, (s0.session as NSString).utf8String!,
-                         Double(s0.counts.total) / 100_000_000, s0.cost, s0.project))
-        }
     }
 case "verify":
     var issues = DataCheck.run(buckets: scanned.buckets, statuses: scanned.statuses)

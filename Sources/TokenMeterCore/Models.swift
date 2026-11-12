@@ -34,24 +34,22 @@ public struct UsageBucket: Codable, Equatable, Sendable {
     public var tool: String
     public var model: String
     public var project: String    // 项目/仓库名；未知为 "-"
-    public var session: String    // 会话/对话标识；未知为 "-"
     public var counts: TokenCounts
     public var requests: Int      // 模型调用次数
 
     public init(day: String, hour: Int = 0, tool: String, model: String, project: String = "-",
-                session: String = "-", counts: TokenCounts, requests: Int) {
+                counts: TokenCounts, requests: Int) {
         self.day = day
         self.hour = hour
         self.tool = tool
         self.model = model
         self.project = project
-        self.session = session
         self.counts = counts
         self.requests = requests
     }
 
     private enum CodingKeys: String, CodingKey {
-        case day, hour, tool, model, project, session, counts, requests
+        case day, hour, tool, model, project, counts, requests
     }
 
     public init(from decoder: Decoder) throws {
@@ -61,7 +59,6 @@ public struct UsageBucket: Codable, Equatable, Sendable {
         tool = try c.decode(String.self, forKey: .tool)
         model = try c.decode(String.self, forKey: .model)
         project = try c.decodeIfPresent(String.self, forKey: .project) ?? "-"
-        session = try c.decodeIfPresent(String.self, forKey: .session) ?? "-"
         counts = try c.decode(TokenCounts.self, forKey: .counts)
         requests = try c.decodeIfPresent(Int.self, forKey: .requests) ?? 0
     }
@@ -200,17 +197,6 @@ public struct ProjectStat: Codable, Sendable {
     public var tools: [String]
 }
 
-public struct SessionStat: Codable, Sendable {
-    public var session: String       // 会话标识（已缩短显示名）
-    public var tool: String
-    public var project: String
-    public var counts: TokenCounts
-    public var cost: Double
-    public var requests: Int
-    public var share: Double
-    public var lastActive: String?   // yyyy-MM-dd HH:mm（该会话最后活动）
-}
-
 public struct HourStat: Codable, Sendable {
     public var hour: Int
     public var counts: TokenCounts
@@ -231,7 +217,6 @@ public struct Summary: Codable, Sendable {
     public var projects: [ProjectStat]     // 按项目降序
     public var hours: [HourStat]           // 逐小时（单日为当日 24 桶；多日为范围内按钟点汇总）
     public var hoursMode: String           // 逐小时图的标题说明
-    public var sessions: [SessionStat]     // 按会话降序（Top N + 其他）
     public var unpricedModels: [String]    // 没有价格表条目的模型
     public var sourceStatuses: [SourceStatus]
     /// 环比：上一个等长周期的总量（用于「本周 vs 上周」）

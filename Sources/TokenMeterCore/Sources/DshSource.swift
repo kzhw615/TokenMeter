@@ -24,7 +24,6 @@ public struct DshSource: UsageSource {
             return ScanResult(buckets: scanPlain(plain, cache: &cache), files: files.count, note: note)
         }
         let builder = BucketBuilder(tool: "DSH")
-        var sess = SessionAgg()
         for path in files {
             // 压缩日志：按 zstd 帧边界增量解析，避免每次解压整个文件（活跃会话可达数 MB）
             // 活跃文件一直在增长：不能要求指纹完全一致，只要求「比上次更大」（append-only）
@@ -42,7 +41,6 @@ public struct DshSource: UsageSource {
                     let merged = mergeBuckets(entry.buckets, parsed.buckets)
                     cache.update(path: path, buckets: merged, offset: boundary, lastModel: parsed.model)
                     builder.merge(merged)
-                    sess.add(tool: "DSH", path: path, project: merged.first?.project ?? "-", buckets: merged)
                     ScanProgressReporter.current?.bump()
                     continue
                 }
@@ -50,7 +48,6 @@ public struct DshSource: UsageSource {
             if let cached = cache.cachedBuckets(path: path) {
                 ScanProgressReporter.current?.bump()
                 builder.merge(cached)
-                sess.add(tool: "DSH", path: path, project: cached.first?.project ?? "-", buckets: cached)
                 continue
             }
             if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
@@ -70,10 +67,9 @@ public struct DshSource: UsageSource {
             let offset = path.hasSuffix(".zstd") ? (Zstd.lastFrameStart(path: path) ?? 0) : 0
             cache.store(path: path, buckets: local, offset: offset, lastModel: model)
             builder.merge(local)
-            sess.add(tool: "DSH", path: path, project: local.first?.project ?? "-", buckets: local)
             ScanProgressReporter.current?.bump()
         }
-        return ScanResult(buckets: builder.buckets, files: files.count, sessions: sess.totals)
+        return ScanResult(buckets: builder.buckets, files: files.count)
     }
 
     private func scanPlain(_ files: [String], cache: inout ScanCache) -> [UsageBucket] {

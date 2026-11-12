@@ -21,12 +21,10 @@ public struct WorkBuddySource: UsageSource {
         var toParse: [String] = []
         // 并行取指纹（数千个 stat 串行是主要耗时）
         let prints = SourcePaths.parallelFingerprints(files)
-        var sess = SessionAgg()
         for (i, path) in files.enumerated() {
             if let fp = prints[i], let cached = cache.cachedBuckets(path: path, size: fp.size, mtime: fp.mtime) {
                 ScanProgressReporter.current?.bump()
                 builder.merge(cached)
-                sess.add(tool: "WorkBuddy", path: path, project: cached.first?.project ?? "-", buckets: cached)
             } else {
                 toParse.append(path)
             }
@@ -39,9 +37,8 @@ public struct WorkBuddySource: UsageSource {
         }, handle: { path, buckets in
             cache.store(path: path, buckets: buckets)
             builder.merge(buckets)
-            sess.add(tool: "WorkBuddy", path: path, project: buckets.first?.project ?? "-", buckets: buckets)
         })
-        return ScanResult(buckets: builder.buckets, files: files.count, sessions: sess.totals)
+        return ScanResult(buckets: builder.buckets, files: files.count)
     }
 
     public func parseFile(path: String) -> [UsageBucket] {

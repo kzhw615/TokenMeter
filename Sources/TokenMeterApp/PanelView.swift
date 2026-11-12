@@ -122,7 +122,6 @@ struct PanelView: View {
                     toolsSection(s)
                     modelsSection(s)
                     projectsSection(s)
-                    sessionsSection(s)
                     trendSection(s)
                     hoursSection(s)
                     footnotes(s)
@@ -388,36 +387,6 @@ struct PanelView: View {
                 }
                 .background(rowBackground("proj-\(p.project)"))
                 .onHover { hoveredRow = $0 ? "proj-\(p.project)" : nil }
-            }
-        }
-    }
-
-    /// 按会话排行：回答「哪一次对话最烧钱」
-    private func sessionsSection(_ s: Summary) -> some View {
-        let totalDisp = s.sessions.reduce(Int64(0)) { $0 + disp($1.counts) }
-        let list = Array(s.sessions.prefix(8))
-        return VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("按会话 · 近 7 天")
-            if list.isEmpty { emptyNote }
-            ForEach(Array(list.enumerated()), id: \.element.session) { idx, item in
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(item.session).font(.callout).lineLimit(1).truncationMode(.middle)
-                        Text([item.project == "-" ? nil : item.project, item.tool == "-" ? nil : item.tool]
-                                .compactMap { $0 }.joined(separator: " · "))
-                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    .frame(width: 110, alignment: .leading)
-                    bar(share: dispShare(item.counts, total: totalDisp), color: palette[idx % palette.count])
-                    Text(Fmt.tokens(disp(item.counts))).font(.callout).monospacedDigit()
-                        .frame(width: 62, alignment: .trailing)
-                    Text(Fmt.percent(dispShare(item.counts, total: totalDisp))).font(.caption)
-                        .foregroundStyle(.secondary).monospacedDigit().frame(width: 46, alignment: .trailing)
-                    Text(Fmt.cost(item.cost)).font(.callout).monospacedDigit().frame(width: 58, alignment: .trailing)
-                }
-                .background(rowBackground("sess-\(item.session)"))
-                .onHover { hoveredRow = $0 ? "sess-\(item.session)" : nil }
-                .help(item.lastActive.map { "最后活动：\($0)" } ?? "")
             }
         }
     }

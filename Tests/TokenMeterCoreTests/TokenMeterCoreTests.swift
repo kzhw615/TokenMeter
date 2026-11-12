@@ -117,33 +117,6 @@ final class TokenMeterCoreTests: XCTestCase {
 
     // MARK: - 新维度：会话 / 环比 / 预测 / 体检
 
-    /// 会话维度：同一 tool+project 下不同 session 应分别统计
-    func testSessionDimension() {
-        let today = DayKey.key(for: Date())
-        let sessions: SessionTotals = [
-            "DSH|p|aaaa1111": [today: ["m": TokenCounts(input: 100, output: 10)]],
-            "DSH|p|bbbb2222": [today: ["m": TokenCounts(input: 300, output: 30)]],
-        ]
-        let s = Aggregator.summarize(buckets: [], range: .today, pricing: PricingTable(prices: []),
-                                     statuses: [], sessions: sessions)
-        XCTAssertEqual(s.sessions.count, 2)
-        XCTAssertEqual(s.sessions.first?.session, "bbbb2222", "按用量降序，大的在前")
-        XCTAssertEqual(s.sessions.first?.counts.total, 330)
-    }
-
-    /// 会话 Top 12 之后折叠为「其他」
-    func testSessionTopN() {
-        let today = DayKey.key(for: Date())
-        var sessions: SessionTotals = [:]
-        for i in 0..<20 {
-            sessions["DSH|p|s\(i)"] = [today: ["m": TokenCounts(input: Int64(100 - i))]]
-        }
-        let s = Aggregator.summarize(buckets: [], range: .today, pricing: PricingTable(prices: []),
-                                     statuses: [], sessions: sessions)
-        XCTAssertEqual(s.sessions.count, 13, "Top 12 + 其他")
-        XCTAssertTrue(s.sessions.last?.session.hasPrefix("其他") == true)
-    }
-
     /// 环比：d7 应能算出上一个 7 天
     func testPreviousPeriodRange() {
         let cal = Calendar.current

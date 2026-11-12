@@ -53,66 +53,14 @@ public extension UsageSource {
     func parseFile(path: String) -> [UsageBucket] { [] }
 }
 
-/// 会话级统计（不走分桶，避免数千个历史文件各占一份分桶把内存撑爆）。
-/// 结构：tool|project|session → day → model → counts
-/// 保留模型维度是为了按官方单价算准费用，仅有近 7 天，内存可忽略。
-public typealias SessionTotals = [String: [String: [String: TokenCounts]]]
-
-public struct SessionAgg {
-    private var map: SessionTotals = [:]
-    /// 会话维度只看最近 N 天：更早的历史不再保留明细
-    public static let windowDays = 7
-
-    public init() {}
-
-    public mutating func add(tool: String, path: String, project: String, buckets: [UsageBucket],
-                             calendar: Calendar = .current) {
-        guard let sync = Self.cutoffDay(calendar: calendar) else { return }
-        let session = SessionName.from(path)
-        let key = tool + "|" + project + "|" + session
-        var existing = map[key] ?? [:]
-        var touched = false
-        for b in buckets where b.day >= sync {
-            var days = existing[b.day] ?? [:]
-            days[b.model, default: TokenCounts()] += b.counts
-            existing[b.day] = days
-            touched = true
-        }
-        guard touched else { return }
-        map[key] = existing
-    }
-
-    public mutating func absorb(_ other: SessionTotals) {
-        for (key, days) in other {
-            var existing = map[key] ?? [:]
-            for (day, models) in days {
-                var ms = existing[day] ?? [:]
-                for (model, c) in models { ms[model, default: TokenCounts()] += c }
-                existing[day] = ms
-            }
-            map[key] = existing
-        }
-    }
-
-    public var totals: SessionTotals { map }
-
-    private static func cutoffDay(calendar: Calendar) -> String? {
-        guard let d = calendar.date(byAdding: .day, value: -windowDays, to: Date()) else { return nil }
-        return DayKey.key(for: d, calendar: calendar)
-    }
-}
-
 public struct ScanResult {
     public var buckets: [UsageBucket]
     public var files: Int
     public var note: String?
-    public var sessions: SessionTotals
-    public init(buckets: [UsageBucket] = [], files: Int = 0, note: String? = nil,
-                sessions: SessionTotals = [:]) {
+    public init(buckets: [UsageBucket] = [], files: Int = 0, note: String? = nil) {
         self.buckets = buckets
         self.files = files
         self.note = note
-        self.sessions = sessions
     }
 }
 
@@ -161,42 +109,6 @@ public enum ProjectName {
     public static func basename(_ path: String) -> String {
         let comps = path.split(whereSeparator: { $0 == "/" || $0 == "\\" })
         return comps.last.map(String.init) ?? path
-    }
-}
-
-public enum SessionName {
-    /// 从日志路径推断会话标识（「按会话」排行用）。取短标识，避免缓存膨胀。
-    public static func from(_ path: String) -> String {
-        let comps = path.split(separator: "/").map(String.init)
-        // DSH: .../session-<uuid>/session.v4.jsonl.zstd（也兼容 session.<x> 形式）
-        if let dir = comps.dropLast().last, dir.hasPrefix("session") {
-            let stripped = dir.drop { $0 == "s" || $0 == "e" || $0 == "s" || $0 == "i"
-                || $0 == "o" || $0 == "n" || $0 == "-" || $0 == "." || $0 == "_" }
-            let candidate = stripped.isEmpty ? dir : String(stripped)
-            return short(candidate)
-        }
-        var name = comps.last ?? "-"
-        for suf in [".jsonl.zst", ".jsonl.zstd", ".jsonl", ".zst", ".json", ".db", ".sqlite"] where name.hasSuffix(suf) {
-            name = String(name.dropLast(suf.count)); break
-        }
-        // 文件名本身没有信息量（如 session.v4）时，退回上一级目录名
-        if name.lowercased().hasPrefix("session"), comps.count >= 3 {
-            let dir = comps[comps.count - 2]
-            if !dir.lowercased().hasPrefix("session") { return short(ProjectName.decodeGeneric(dir)) }
-        }
-        // Codex: rollout-2026-11-11T11-09-52-<uuid> ⇒ 取 uuid
-        if let last = name.split(separator: "-").last, last.count >= 8 {
-            let tail = String(last)
-            let isHex = tail.allSatisfy { ($0.isHexDigit) }
-            if isHex { return short(tail) }
-        }
-        if let dash = name.split(separator: "-").last, dash.count >= 6 { return short(String(dash)) }
-        return short(name)
-    }
-
-    private static func short(_ s: String) -> String {
-        let t = s.prefix(8)
-        return t.isEmpty ? "-" : String(t)
     }
 }
 
