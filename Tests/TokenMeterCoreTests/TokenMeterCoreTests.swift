@@ -157,6 +157,25 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertNotNil(table.price(for: "step-9-unknown"))
     }
 
+    /// hooks 状态文件：运行中/已结束能被正确读出（无文件时应为 nil）
+    func testClaudeHookState() throws {
+        let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("TokenMeter/claude-state.json")
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        let running = #"{"event":"UserPromptSubmit","running":true,"at":\#(Date().timeIntervalSince1970)}"#
+        try running.write(to: url, atomically: true, encoding: .utf8)
+        let state = ActivityDetector.claudeHookState()
+        XCTAssertEqual(state?.running, true)
+
+        let stopped = #"{"event":"Stop","running":false,"at":\#(Date().timeIntervalSince1970)}"#
+        try stopped.write(to: url, atomically: true, encoding: .utf8)
+        XCTAssertEqual(ActivityDetector.claudeHookState()?.running, false)
+
+        try? FileManager.default.removeItem(at: url)
+        XCTAssertNil(ActivityDetector.claudeHookState(), "无状态文件时应回退")
+    }
+
     /// Claudian 这类 Obsidian 插件：前台是 Obsidian 时，最新会话 cwd 在装了插件
     /// 的 vault 里 ⇒ 认为用户正在看 Claude Code（用于「已读」判定）
     func testClaudeViewedInObsidian() {

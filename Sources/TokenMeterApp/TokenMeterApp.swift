@@ -481,6 +481,7 @@ final class AppModel: ObservableObject {
             let dshRunning = DshSource.isTaskRunning()
             let codexTurn = ActivityDetector.codexTurnState(now: now)
             let wbState = ActivityDetector.workBuddyState(now: now)
+            let claudeHook = ActivityDetector.claudeHookState(now: now)
             let claudeRunning = ActivityDetector.claudeTaskRunning(now: now)
 
             let states: [(name: String, st: Int, done: Date?)] = snapshot.compactMap { item in
@@ -509,10 +510,12 @@ final class AppModel: ObservableObject {
                         }
                     }
                 case "Claude Code":
-                    // 双向判定：
-                    // ① 日志出现 end_turn ⇒ 立刻熄灭，不等 60 秒超时
-                    // ② 日志尾部是 tool_use ⇒ 长工具执行期间日志不写也要保持亮灯
-                    if let running = claudeRunning {
+                    // ① 装了 hooks ⇒ 用事件精确判定（Stop 一触发就是结束）
+                    // ② 否则回退日志尾部 stop_reason：
+                    //    end_turn ⇒ 立刻熄灭；tool_use ⇒ 长工具期间保持亮灯
+                    if let hook = claudeHook {
+                        if hook.running { st = 0 } else if st == 0 { st = 1 }
+                    } else if let running = claudeRunning {
                         if running { st = 0 } else if st == 0 { st = 1 }
                     }
                 case "WorkBuddy":

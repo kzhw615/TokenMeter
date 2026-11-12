@@ -195,6 +195,22 @@ public enum ActivityDetector {
     /// 0 运行中 = status working / active 且 60s 内活动；
     /// 1 待阅读 = 24h 内未读回执 / 最近 10min 内有 completed 会话；
     /// 2 空闲 = 其余（背景同步写日志不再误判）
+    /// 读取 Claude Code hooks 写入的状态（最精确的信号来源）。
+    /// 返回 nil 表示没装 hook 或状态太旧，调用方回退到日志解析。
+    public static func claudeHookState(now: Date = Date()) -> (running: Bool, at: Date, cwd: String)? {
+        let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("TokenMeter", isDirectory: true)
+            .appendingPathComponent("claude-state.json")
+        guard let data = try? Data(contentsOf: url),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let at = (obj["at"] as? Double) ?? (obj["at"] as? NSNumber)?.doubleValue else { return nil }
+        let date = Date(timeIntervalSince1970: at)
+        // 超过 10 分钟没更新视为失效（例如 hook 被移除）
+        guard now.timeIntervalSince(date) < 600 else { return nil }
+        let running = (obj["running"] as? Bool) ?? false
+        return (running, date, (obj["cwd"] as? String) ?? "")
+    }
+
     /// Claude Code 是否正被「Obsidian 插件（如 Claudian）」查看。
     /// 这类客户端跑在 Obsidian 里，前台 App 永远是 Obsidian，只能靠
     /// 「最新会话的工作目录是个装了 claudian 插件的 vault」来推断。

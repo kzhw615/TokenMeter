@@ -12,7 +12,19 @@ func parseArgs(_ args: [String]) -> (command: String, range: RangeKind, json: Bo
     while i < args.count {
         let a = args[i]
         switch a {
+        case "hook-event":
+            let event = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "Unknown"
+            HookEvent.record(event: event)
+            exit(0)
+        case "hook-install":
+            HookEvent.install(apply: CommandLine.arguments.contains("--apply"))
+            exit(0)
         case "debug-activity":
+            if let hook = ActivityDetector.claudeHookState() {
+                print("  claude-hook   \(hook.running ? "运行中" : "已结束")（hooks 事件：\(Int(Date().timeIntervalSince(hook.at)))s 前）")
+            } else {
+                print("  claude-hook   未启用（回退日志解析）")
+            }
             if let vault = ActivityDetector.newestClaudeProjectPath() {
                 let has = ActivityDetector.vaultHasClaudianPlugin(vault)
                 print("  claude-vault  \(vault)  装 Claudian=\(has ? "是" : "否")")

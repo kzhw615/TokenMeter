@@ -30,6 +30,16 @@ echo "==> 已安装 $DEST/TokenMeter.app v${INSTALLED_VERSION}"
 # 清除隔离标记，避免更新替换后被 Gatekeeper 拦
 xattr -dr com.apple.quarantine "$DEST/TokenMeter.app" >/dev/null 2>&1 || true
 
+# 把 CLI 放到稳定路径：Claude Code hooks 等外部调用依赖固定路径
+SUPPORT="$HOME/Library/Application Support/TokenMeter/bin"
+if [ -f "./build/tokenmeter" ]; then
+    mkdir -p "$SUPPORT"
+    cp "./build/tokenmeter" "$SUPPORT/tokenmeter" && echo "==> CLI 已安装到 $SUPPORT/tokenmeter"
+    if [ -w /usr/local/bin ]; then
+        cp "./build/tokenmeter" /usr/local/bin/tokenmeter 2>/dev/null && echo "==> CLI 已安装到 /usr/local/bin/tokenmeter"
+    fi
+fi
+
 open "$DEST/TokenMeter.app"
 sleep 3
 if pgrep -x TokenMeter >/dev/null; then
