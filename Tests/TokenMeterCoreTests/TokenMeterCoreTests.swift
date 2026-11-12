@@ -157,20 +157,34 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertNotNil(table.price(for: "step-9-unknown"))
     }
 
-    /// hooks 状态文件：运行中/已结束能被正确读出（无文件时应为 nil）
+    /// hooks 状态文件：按会话记录，任一在跑即视为运行中；无文件则回退
     func testClaudeHookState() throws {
         let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("TokenMeter/claude-state.json")
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
-        let running = #"{"event":"UserPromptSubmit","running":true,"at":\#(Date().timeIntervalSince1970)}"#
-        try running.write(to: url, atomically: true, encoding: .utf8)
-        let state = ActivityDetector.claudeHookState()
-        XCTAssertEqual(state?.running, true)
+        let now = Date().timeIntervalSince1970
+        func write(_ sessions: [String: [String: Any]]) throws {
+            let data = try JSONSerialization.data(withJSONObject: ["sessions": sessions])
+            try data.write(to: url)
+        }
 
-        let stopped = #"{"event":"Stop","running":false,"at":\#(Date().timeIntervalSince1970)}"#
-        try stopped.write(to: url, atomically: true, encoding: .utf8)
+        // 单个会话在跑
+        try write(["s1": ["running": true, "at": now, "cwd": "/tmp"]])
+        XCTAssertEqual(ActivityDetector.claudeHookState()?.running, true)
+
+        // 一个结束、另一个仍在跑 ⇒ 仍算运行中（多会话场景）
+        try write(["s1": ["running": false, "at": now, "cwd": "/tmp"],
+                   "s2": ["running": true, "at": now, "cwd": "/tmp"]])
+        XCTAssertEqual(ActivityDetector.claudeHookState()?.running, true, "任一会话在跑即运行中")
+
+        // 全部结束
+        try write(["s1": ["running": false, "at": now, "cwd": "/tmp"]])
         XCTAssertEqual(ActivityDetector.claudeHookState()?.running, false)
+
+        // 超时（10 分钟无心跳）视为失效
+        try write(["s1": ["running": true, "at": now - 3600, "cwd": "/tmp"]])
+        XCTAssertNil(ActivityDetector.claudeHookState(), "过期状态应回退")
 
         try? FileManager.default.removeItem(at: url)
         XCTAssertNil(ActivityDetector.claudeHookState(), "无状态文件时应回退")

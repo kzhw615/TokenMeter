@@ -202,13 +202,26 @@ public enum ActivityDetector {
             .appendingPathComponent("TokenMeter", isDirectory: true)
             .appendingPathComponent("claude-state.json")
         guard let data = try? Data(contentsOf: url),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let at = (obj["at"] as? Double) ?? (obj["at"] as? NSNumber)?.doubleValue else { return nil }
-        let date = Date(timeIntervalSince1970: at)
-        // 超过 10 分钟没更新视为失效（例如 hook 被移除）
-        guard now.timeIntervalSince(date) < 600 else { return nil }
-        let running = (obj["running"] as? Bool) ?? false
-        return (running, date, (obj["cwd"] as? String) ?? "")
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        guard let sessions = obj["sessions"] as? [String: Any], !sessions.isEmpty else { return nil }
+
+        var anyRunning = false
+        var newest: Date?
+        var cwd = ""
+        for (_, value) in sessions {
+            guard let e = value as? [String: Any],
+                  let at = (e["at"] as? Double) ?? (e["at"] as? NSNumber)?.doubleValue else { continue }
+            let date = Date(timeIntervalSince1970: at)
+            // 单会话超过 10 分钟没心跳视为已失效（避免崩溃/强退导致灯常亮）
+            guard now.timeIntervalSince(date) < 600 else { continue }
+            if (e["running"] as? Bool) == true { anyRunning = true }
+            if newest == nil || date > newest! {
+                newest = date
+                cwd = (e["cwd"] as? String) ?? ""
+            }
+        }
+        guard let last = newest else { return nil }
+        return (anyRunning, last, cwd)
     }
 
     /// Claude Code 是否正被「Obsidian 插件（如 Claudian）」查看。

@@ -30,16 +30,32 @@ enum HookEvent {
         case "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse": running = true
         default: running = false
         }
-        let payload: [String: Any] = [
-            "event": event,
-            "running": running,
-            "sessionId": sessionID,
-            "cwd": cwd,
-            "at": Date().timeIntervalSince1970,
-        ]
+        // 按会话分别记录：Claudian 等客户端会同时开多个 claude 进程，
+        // 若只存「最后一个事件」，一个会话结束会误把另一个正在跑的灭掉。
         try? FileManager.default.createDirectory(at: stateURL.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
-        if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) {
+        var root: [String: Any] = [:]
+        if let data = try? Data(contentsOf: stateURL),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            root = obj
+        }
+        var sessions = (root["sessions"] as? [String: Any]) ?? [:]
+        let now = Date().timeIntervalSince1970
+        // 清理 2 小时前的记录，避免文件无限增长
+        sessions = sessions.filter { _, v in
+            guard let e = v as? [String: Any], let at = (e["at"] as? Double) else { return false }
+            return now - at < 7200
+        }
+        let key = sessionID.isEmpty ? "unknown" : sessionID
+        sessions[key] = [
+            "event": event,
+            "running": running,
+            "cwd": cwd,
+            "at": now,
+        ]
+        root["sessions"] = sessions
+        root["at"] = now
+        if let data = try? JSONSerialization.data(withJSONObject: root, options: [.sortedKeys]) {
             try? data.write(to: stateURL, options: .atomic)
         }
     }
@@ -60,7 +76,9 @@ enum HookEvent {
             "/opt/homebrew/bin/tokenmeter",
         ]
         let cmdBase = candidates.first { FileManager.default.isExecutableFile(atPath: $0) } ?? exe
-        let events = ["SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"]
+        // PostToolUse 作为「心跳」：长任务期间每次工具返回都会刷新状态，避免 10 分钟无事件被误判失效。
+        // 它只在工具调用结束时触发，开销可忽略。
+        let events = ["SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "SessionEnd"]
         var hooks: [String: [[String: Any]]] = [:]
         for e in events {
             hooks[e] = [["hooks": [["type": "command", "command": "\(cmdBase) hook-event \(e)"]]]]
