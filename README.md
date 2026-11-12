@@ -45,7 +45,7 @@ macOS 菜单栏 token 用量统计器，灵感来自 [CodeBurn](https://codeburn
 | Codex CLI / Desktop | `~/.codex/sessions/**/rollout-*.jsonl` 与 `.jsonl.zst`（新版会话为 zstd 压缩）、`archived_sessions/` | `event_msg.payload.type=token_count` 的 `info.last_token_usage`（单次增量），模型取 `session_meta.payload.model` / `thread_settings.model` / `base_instructions.provenance.model` |
 | DSH（DeepSeek Harness） | `~/.dsh/sessions/*/*/session.v*.jsonl.zstd`（zstd） | `assistant/message` 事件的 `data.usage{inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens}`；模型取 `data.stream` 里 finish chunk 的 `replayState.response.model` |
 | WorkBuddy | `~/.workbuddy/traces/*/trace_*.jsonl` | generation span 的 `span_end.toolOutput`（原始 chat.completion 响应数组）里的 `usage{prompt_tokens, completion_tokens, prompt_tokens_details.cached_tokens/cache_write_tokens}`；被 `tracePayloadTruncated` 截断的 toolOutput 用碎片提取兜底 |
-| OpenCode | `~/.local/share/opencode/opencode.db` | `message` 表 `data.tokens{input,output,reasoning,cache{read,write}}`、`data.modelID` |
+| OpenCode（含 OpenChamber 等客户端） | `~/.local/share/opencode/opencode.db` | 兼容两套表结构：旧 `message` 表的 `data.tokens{input,output,reasoning,cache{read,write}}`/`data.modelID`；新 `session_message` + `session_v2` 的 `data.tokens`/`data.model.id` |
 | Hermes | `~/.hermes/state.db` + `~/.hermes/profiles/*/state.db` | `session_model_usage` 表（input/output/cache_read/cache_write_tokens、last_seen） |
 | ZCode | `~/.zcode/cli/db/db.sqlite` | `model_usage` 表（model_id、started_at、input/output/reasoning/cache_creation/cache_read_input_tokens） |
 | Kiro | `~/Library/Application Support/KiroUser/globalStorage/kiro.kiroagent/dev_data/devdata.sqlite` | `tokens_generated` 表 |
