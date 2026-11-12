@@ -99,17 +99,25 @@ tokenmeter sources                # 查看数据源状态
 
 ## 预估价格
 
-内置价格表取自各家**官方 API 定价页**（2026-11 抓取，USD / 1M tokens）：
+内置价目表覆盖 **110+ 个模型**（USD / 1M tokens，2026-11 更新），按「明细价优先 → 型号前缀 → 家族兜底」的顺序匹配：
 
-- OpenAI `developers.openai.com/api/docs/pricing`：gpt-6-astra 10/50、gpt-6.1-sol 2/10、gpt-6.1-terra 1/5、gpt-6-luna 0.1/0.5（输入/输出，缓存读 0.1×、30m 缓存写 1.25×）等
-- Anthropic `anthropic.com/pricing`：Opus 4.5/4.6 5/25、Sonnet 4.5 3/15、Haiku 4.5 1/5（缓存读 0.1×、写 1.25×）
-- Google `ai.google.dev/gemini-api/docs/pricing`：gemini-4-argon 2/10、gemini-3.8-flash 0.75/3.75 等
-- DeepSeek `api-docs.deepseek.com/quick_start/pricing`：人民币价按 7.0 汇率折算，取**空闲时段**价（高峰 ×2）；deepseek-flash 输入 1 元 / 缓存命中 0.02 元 / 输出 4 元
-- 千问 `help.aliyun.com/zh/model-studio/model-pricing`：qwen3.8-max 12 元 / 36 元；缓存命中按输入价 10%、显式创建按 125%
+- **OpenAI**：GPT-6 系列（astra 10/50、6.1-sol 2/10、6.1-terra 1/5、6-luna 0.1/0.5）、GPT-5.6 / 5.5 / 5.4、GPT-5 Mini、codex 系列等
+- **Anthropic**：Opus 5.5（4/20）、Opus 4.8/4.7/4.6/4.5（5/25）、Fable 5 / 5.1、Mythos 5.1、Sonnet 5.5/5（2/10）、Sonnet 4.6（3/15）、Haiku 5.5（0.1/0.5）、Haiku 4.5（1/5）
+- **Google**：Gemini 4 Argon / Carbon（2/10）、3.1 Pro（2/12）、3.8 / 3.7 Flash（0.75/3.75）
+- **DeepSeek**：V4 Pro（标准价 1.32/3.96）、V4.1 Flash（0.3/1.2）、Chat（0.28/0.42）。**高峰时段（北京时间工作日 9-12 / 14-18）按标准价，其余时段 50%**
+- **国产模型**：GLM-5.3 / 5.2 / 5.1（1.4/4.4）、GLM-5.3-FlashX / Flash、DeepSeek、MiniMax M3.1 / M3 / M2.7、Kimi K3.1 / K3 / K2.7 / K2.6、MiMo V2.6 / V2.5、通义千问、混元 HY4 / HY3、阶跃 Step、美团 LongCat
+- **其他**：Grok 4.7 / 4.6 / 4.5 / 4 Fast、Cursor Composer 2.5
+- **家族兜底价**：未单列的型号按家族估价（GLM 1.4/4.4、豆包方舟 0.11/0.28、MiniMax 0.3/1.2、混元 0.15/0.4、千问 0.4/1.2、阶跃 0.5/2、MiMo 0.4/2）
+- **免费模型**：GLM-4.7-Flash 官方免费，费用记 0
 
-覆盖 / 自定义：编辑 `~/Library/Application Support/TokenMeter/pricing.json`（首次启动 App 会自动生成模板），
-格式为 `{"prices":[{"pattern":"子串(小写无关)","input":2,"output":10,"cacheRead":0.1,"cacheWrite":2.5}]}`，
-按顺序第一个命中的 pattern 生效；未命中的模型费用记 0 并在面板/CLI 中列出。
+**自定义价格**：编辑 `~/Library/Application Support/TokenMeter/pricing.json`（首次启动自动生成）。
+格式 `{"prices":[{"pattern":"子串(小写无关)","input":2,"output":10,"cacheRead":0.1,"cacheWrite":2.5}]}`，
+按顺序第一个命中的 pattern 生效。
+
+> 文件里带 `templateVersion` 字段表示这是自动生成的模板：**升级新版本时会自动换成最新价目**，你在其中自行添加的型号会被保留。
+> 若你把 `templateVersion` 删掉，则该文件会被视为完全自定义表，不再随版本更新。
+
+未命中任何规则的模型费用记 0，并在面板底部与 `tokenmeter verify` 中提示。
 
 ## 已知限制
 

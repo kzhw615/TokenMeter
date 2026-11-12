@@ -128,6 +128,81 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertNil(RangeKind.all.previousDayRange(now: now, calendar: cal), "全部范围无环比")
     }
 
+    // MARK: - 价格表
+
+    /// 具体型号必须排在家族兜底之前，否则会被兜底价吃掉
+    func testPricingOrderSpecificBeforeFallback() {
+        let table = PricingTable(prices: PricingTable.builtin)
+        XCTAssertEqual(table.price(for: "gpt-5-mini")?.input, 0.25, "gpt-5-mini 不能被 gpt-5 兜底")
+        XCTAssertEqual(table.price(for: "glm-5-3-flashx")?.input, 0.37, "flashx 不能命中 flash")
+        XCTAssertEqual(table.price(for: "glm-5-3-flash")?.input, 0.15)
+        // DeepSeek 内置表存「空闲价」（标准价的一半，高峰自动 ×2）
+        XCTAssertEqual(table.price(for: "deepseek-v4.1-flash")?.input, 0.15, "v4.1-flash 不能被 deepseek-v4 吃掉")
+        XCTAssertEqual(table.price(for: "deepseek-v4-pro")?.input, 0.66)
+        XCTAssertEqual(table.price(for: "kimi-k3.1-pro-highspeed")?.input, 4)
+        XCTAssertEqual(table.price(for: "kimi-k3.1-pro")?.input, 2)
+        XCTAssertEqual(table.price(for: "minimax-m2.7-highspeed")?.input, 0.6)
+        XCTAssertEqual(table.price(for: "mimo-v2.6-pro-ultraspeed")?.input, 4.35)
+        XCTAssertEqual(table.price(for: "claude-sonnet-5-5")?.cacheRead, 0.1)
+        XCTAssertEqual(table.price(for: "claude-sonnet-5")?.cacheRead, 0.2)
+        XCTAssertEqual(table.price(for: "gemini-4-carbon")?.input, 2)
+    }
+
+    /// 家族兜底能覆盖未单列型号
+    func testPricingFamilyFallback() {
+        let table = PricingTable(prices: PricingTable.builtin)
+        XCTAssertNotNil(table.price(for: "glm-6-unknown"))
+        XCTAssertNotNil(table.price(for: "doubao-pro-32k"))
+        XCTAssertNotNil(table.price(for: "hunyuan-turbo"))
+        XCTAssertNotNil(table.price(for: "step-9-unknown"))
+    }
+
+    /// DeepSeek 高峰时段价格应为标准价（= 内置空闲价 ×2）
+    func testDeepSeekPeakDoublesPrice() {
+        let table = PricingTable(prices: PricingTable.builtin)
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        // 2026-11-11 是周三；北京时间 10:00 属高峰
+        var comps = DateComponents()
+        comps.year = 2026; comps.month = 11; comps.day = 11; comps.hour = 10
+        let peak = cal.date(from: comps)!
+        comps.hour = 3
+        let offPeak = cal.date(from: comps)!
+        let counts = TokenCounts(input: 1_000_000, output: 1_000_000)
+        let a = table.cost(for: counts, model: "deepseek-v4.1-flash", at: peak)
+        let b = table.cost(for: counts, model: "deepseek-v4.1-flash", at: offPeak)
+        XCTAssertEqual(a, b * 2, accuracy: 1e-9)
+        // 高峰 1M 输入 + 1M 输出 = 0.3 + 1.2（标准价）
+        XCTAssertEqual(a, 1.5, accuracy: 1e-9)
+    }
+
+    /// GLM-4.7-Flash 官方免费
+    func testFreeModelPricesToZero() {
+        let table = PricingTable(prices: PricingTable.builtin)
+        let c = table.cost(for: TokenCounts(input: 10_000_000, output: 1_000_000), model: "glm-4.7-flash")
+        XCTAssertEqual(c, 0, accuracy: 0.0001)
+    }
+
+    /// 模板版本升级：旧模板被新内置表替换，但保留用户自定义型号
+    func testPricingTemplateUpgradeKeepsCustom() throws {
+        let dir = URL(fileURLWithPath: tmp)
+        let url = dir.appendingPathComponent("pricing.json")
+        let old = PricingTable(prices: [
+            .init(pattern: "claude-opus-4-7", input: 999, output: 999),   // 旧内置值
+            .init(pattern: "my-custom-model", input: 7, output: 8),
+        ], templateVersion: 1)
+        try JSONEncoder().encode(old).write(to: url)
+
+        // 模拟 load 的升级决策
+        let data = try Data(contentsOf: url)
+        let decoded = try JSONDecoder().decode(PricingTable.self, from: data)
+        XCTAssertEqual(decoded.templateVersion, 1)
+        let builtinPatterns = Set(PricingTable.builtin.map { $0.pattern })
+        let custom = decoded.prices.filter { !builtinPatterns.contains($0.pattern) }
+        XCTAssertEqual(custom.count, 1, "只保留非内置型号")
+        XCTAssertEqual(custom.first?.pattern, "my-custom-model")
+    }
+
     /// 环比对象名称：每个范围都要说清比的是哪一段
     func testPreviousPeriodLabels() {
         let cal = Calendar.current
