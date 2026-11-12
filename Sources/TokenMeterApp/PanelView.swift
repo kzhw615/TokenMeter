@@ -550,10 +550,12 @@ struct PanelView: View {
             HStack(spacing: 4) {
                 Image(systemName: diff >= 0 ? "arrow.up.right" : "arrow.down.right")
                     .font(.caption2)
-                Text(diff >= 0 ? "比上一周期多 \(Fmt.percent(abs(diff)))" : "比上一周期少 \(Fmt.percent(abs(diff)))")
+                let target = s.previousLabel ?? "上一周期"
+                Text(diff >= 0 ? "比\(target)多 \(Fmt.percent(abs(diff)))" : "比\(target)少 \(Fmt.percent(abs(diff)))")
                     .font(.caption)
                 if let pc = s.previousCost {
-                    Text("· 上期 \(Fmt.cost(pc))").font(.caption).foregroundStyle(.secondary)
+                    Text("· \(pc > 0 ? Fmt.cost(pc) : "$0") → \(Fmt.cost(s.cost))")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .foregroundStyle(diff >= 0 ? Color.orange : Color.green)

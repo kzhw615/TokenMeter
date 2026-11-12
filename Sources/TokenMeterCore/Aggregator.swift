@@ -132,7 +132,19 @@ public enum Aggregator {
             // 会话聚合（Top N 用）
         }
 
-        // 上一等长周期（环比）
+        // 上一等长周期（环比）：同时给出对象名称与具体日期，避免「上一周期」含糊
+        var previousLabel: String?
+        if let pr = prevRange {
+            let name = range.previousPeriodName(now: now, calendar: cal0) ?? "上一周期"
+            func md(_ key: String) -> String {
+                let parts = key.split(separator: "-")
+                guard parts.count == 3 else { return key }
+                return "\(Int(parts[1]) ?? 0)/\(Int(parts[2]) ?? 0)"
+            }
+            let span = pr.start == pr.end ? md(pr.start) : "\(md(pr.start))–\(md(pr.end))"
+            // 「昨天」这类单日对象直接带日期，长区间带区间
+            previousLabel = "\(name)（\(span)）"
+        }
         if let pr = prevRange {
             for b in buckets where b.day >= pr.start && b.day <= pr.end {
                 let dt = Self.bucketDate(day: b.day, hour: b.hour, calendar: cal0)
@@ -196,6 +208,7 @@ public enum Aggregator {
                        unpricedModels: Array(unpriced).sorted(), sourceStatuses: statuses,
                        previousCounts: prevRange == nil ? nil : prevCounts,
                        previousCost: prevRange == nil ? nil : prevCost,
+                       previousLabel: previousLabel,
                        forecastCost: forecastCost, forecastCounts: forecastCounts)
     }
 

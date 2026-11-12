@@ -128,6 +128,37 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertNil(RangeKind.all.previousDayRange(now: now, calendar: cal), "全部范围无环比")
     }
 
+    /// 环比对象名称：每个范围都要说清比的是哪一段
+    func testPreviousPeriodLabels() {
+        let cal = Calendar.current
+        let now = DayKey.date(from: "2026-11-12")!
+        XCTAssertEqual(RangeKind.today.previousPeriodName(now: now, calendar: cal), "昨天")
+        XCTAssertEqual(RangeKind.yesterday.previousPeriodName(now: now, calendar: cal), "前天")
+        XCTAssertEqual(RangeKind.d7.previousPeriodName(now: now, calendar: cal), "前 7 天")
+        XCTAssertEqual(RangeKind.d30.previousPeriodName(now: now, calendar: cal), "前 30 天")
+        XCTAssertEqual(RangeKind.thisMonth.previousPeriodName(now: now, calendar: cal), "上月同期")
+        XCTAssertNil(RangeKind.all.previousPeriodName(now: now, calendar: cal))
+    }
+
+    /// 本月环比应为「上月同期」（1 号到同一天），不是上月最后 N 天
+    func testThisMonthPreviousIsSamePeriodLastMonth() {
+        let cal = Calendar.current
+        let now = DayKey.date(from: "2026-11-12")!
+        let r = RangeKind.thisMonth.previousDayRange(now: now, calendar: cal)
+        XCTAssertEqual(r?.start, "2026-10-01")
+        XCTAssertEqual(r?.end, "2026-10-12", "应到同一天，而非上月最后一天")
+    }
+
+    /// 上月环比应为「上上月」的完整自然月
+    func testLastMonthPreviousIsFullCalendarMonth() {
+        let cal = Calendar.current
+        let now = DayKey.date(from: "2026-11-12")!
+        let r = RangeKind.lastMonth.previousDayRange(now: now, calendar: cal)
+        XCTAssertEqual(r?.start, "2026-09-01")
+        XCTAssertEqual(r?.end, "2026-09-30", "应是 9 月整月，而不是按天数倒推的 8/31")
+        XCTAssertEqual(RangeKind.lastMonth.previousPeriodName(now: now, calendar: cal), "2026 年 9 月")
+    }
+
     /// 预测：本月范围内给出整月外推
     func testForecast() {
         let b = UsageBucket(day: "2026-11-11", hour: 10, tool: "DSH", model: "deepseek-v4.1-flash",

@@ -103,11 +103,54 @@ public enum RangeKind: String, CaseIterable, Codable, Sendable {
         }
     }
     /// 范围结束日（闭区间）；开放式范围返回 nil
+    /// 环比对象的自然语言说明（配合 previousDayRange 的起止日给出具体日期）
+    public func previousPeriodName(now: Date = Date(), calendar: Calendar = .current) -> String? {
+        switch self {
+        case .today: return "昨天"
+        case .yesterday: return "前天"
+        case .d7: return "前 7 天"
+        case .d30: return "前 30 天"
+        case .thisMonth: return "上月同期"
+        case .lastMonth:
+            // 「上月」的上一个月：从本月 1 号往前推 2 个月
+            guard let monthStart = calendar.dateInterval(of: .month, for: now)?.start,
+                  let target = calendar.date(byAdding: .month, value: -2, to: monthStart) else { return nil }
+            let c = calendar.dateComponents([.year, .month], from: target)
+            guard let y = c.year, let m = c.month else { return nil }
+            return "\(y) 年 \(m) 月"
+        case .all: return nil
+        }
+    }
+
     /// 上一个等长周期的起止日（用于环比）；`.all` 无环比
     public func previousDayRange(now: Date = Date(), calendar: Calendar = .current) -> (start: String, end: String)? {
         guard let startKey = startDayKey(now: now, calendar: calendar),
               let start = DayKey.date(from: startKey, calendar: calendar) else { return nil }
-        // 结束日：昨天=与起始同一天；上月=上月最后一天；其余=今天
+        // 本月：与上月同期（上月 1 号到同一天）对比，而不是「上月最后 N 天」
+        if self == .thisMonth {
+            let comps = calendar.dateComponents([.year, .month, .day], from: now)
+            guard let day = comps.day, comps.year != nil, comps.month != nil else { return nil }
+            var prevComps = DateComponents()
+            prevComps.year = comps.year
+            prevComps.month = (comps.month ?? 1) - 1
+            prevComps.day = 1
+            guard let prevFirst = calendar.date(from: prevComps),
+                  let prevSameDay = calendar.date(byAdding: .day, value: day - 1, to: prevFirst) else { return nil }
+            return (DayKey.key(for: prevFirst, calendar: calendar),
+                    DayKey.key(for: prevSameDay, calendar: calendar))
+        }
+        // 上月：与「上上月」整月对比（自然月，长度可以不同，语义才对得上标签）
+        if self == .lastMonth {
+            guard let ek = endDayKey(now: now, calendar: calendar),
+                  let lastMonthStart = DayKey.date(from: ek, calendar: calendar) else { return nil }
+            // lastMonthStart 是「昨天」；上月起点 = 上月 1 号
+            guard let monthStart = calendar.dateInterval(of: .month, for: lastMonthStart)?.start,
+                  let prevMonthStart = calendar.date(byAdding: .month, value: -1, to: monthStart),
+                  let prevMonthEnd = calendar.date(byAdding: .day, value: -1, to: monthStart) else { return nil }
+            return (DayKey.key(for: prevMonthStart, calendar: calendar),
+                    DayKey.key(for: prevMonthEnd, calendar: calendar))
+        }
+        // 其余：昨天=与起始同一天；其他=今天
         let end: Date
         switch self {
         case .yesterday:
@@ -222,6 +265,8 @@ public struct Summary: Codable, Sendable {
     /// 环比：上一个等长周期的总量（用于「本周 vs 上周」）
     public var previousCounts: TokenCounts?
     public var previousCost: Double?
+    /// 环比对象说明，如「昨天」「前 7 天（11/04–11/10）」「上月同期（10/01–10/12）」
+    public var previousLabel: String?
     /// 本月预测（仅在 range == .month 时有效）
     public var forecastCost: Double?
     public var forecastCounts: TokenCounts?
