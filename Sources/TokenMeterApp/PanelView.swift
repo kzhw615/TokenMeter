@@ -552,28 +552,20 @@ struct PanelView: View {
                 let prevRaw = disp(prev)
                 let tokenDiff = prevRaw > 0 ? Double(currentRaw - prevRaw) / Double(prevRaw) : 0
                 let target = s.previousLabel ?? "上一周期"
-
-                // ① 用量变化（token）
-                HStack(spacing: 4) {
-                    Image(systemName: tokenDiff >= 0 ? "arrow.up.right" : "arrow.down.right")
-                        .font(.caption2)
-                    Text("用量比\(target)\(tokenDiff >= 0 ? "多" : "少") \(Fmt.percent(abs(tokenDiff)))")
-                        .font(.caption)
-                }
-                .foregroundStyle(tokenDiff >= 0 ? Color.orange : Color.green)
-
-                // ② 费用变化（与用量分开显示：模型不同会让两者方向相反）
-                if let pc = s.previousCost, let cur = s.comparableCost {
-                    let costDiff = pc > 0 ? (cur - pc) / pc : 0
-                    HStack(spacing: 4) {
-                        Image(systemName: costDiff >= 0 ? "arrow.up.right" : "arrow.down.right")
-                            .font(.caption2)
-                        Text("费用比\(target)\(costDiff >= 0 ? "多" : "少") \(Fmt.percent(abs(costDiff)))")
-                            .font(.caption)
-                        Text("（\(Fmt.cost(pc)) → \(Fmt.cost(cur))）")
-                            .font(.caption).foregroundStyle(.secondary)
+                // 用带符号的百分比，避免「A → B」被误读成涨幅算式
+                HStack(spacing: 6) {
+                    Text("用量 \(tokenDiff >= 0 ? "+" : "−")\(Fmt.percent(abs(tokenDiff)))")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(tokenDiff >= 0 ? Color.orange : Color.green)
+                    if let pc = s.previousCost, let cur = s.comparableCost, pc > 0 {
+                        let costDiff = (cur - pc) / pc
+                        Text("费用 \(costDiff >= 0 ? "+" : "−")\(Fmt.percent(abs(costDiff)))")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(costDiff >= 0 ? Color.orange : Color.green)
                     }
-                    .foregroundStyle(costDiff >= 0 ? Color.orange : Color.green)
+                    Text("对比\(target)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
             if let fc = s.forecastCost, fc > 0 {
