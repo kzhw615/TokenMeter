@@ -330,10 +330,10 @@ struct SideDockView: View {
     @ViewBuilder
     private var iconView: some View {
         if model.isBurning {
-            FlameIcon(ticker: model.flame, frames: model.currentFlameFrames, size: 13)
+            FlameIcon(ticker: model.flame, frames: model.currentFlameFrames, size: 26)
         } else {
             Image(systemName: "circle.hexagongrid.fill")
-                .font(.system(size: 12))
+                .font(.system(size: 20))
                 .foregroundStyle(.white.opacity(0.75))
         }
     }
