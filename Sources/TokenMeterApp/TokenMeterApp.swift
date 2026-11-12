@@ -293,9 +293,11 @@ final class AppModel: ObservableObject {
         let rate = Double(burnRate ?? 0)
         guard rate > 0 else { return 12 }
         let t = min(1.0, pow(rate / 60_000.0, 0.45))
-        // 爆燃档再额外放大一点，让"更旺"不只体现在形状上
-        let bonus: CGFloat = flameTier == .inferno ? 2 : 0
-        return 12 + 10 * t + bonus
+        // 15K → 40K 之间把「爆燃加成」线性引入（0 → 2pt），
+        // 这样跨档瞬间尺寸连续，不会突然弹一下；仅形状切换。
+        let ramp = min(1.0, max(0.0, (rate - Double(Self.intenseRateThreshold))
+                                       / (Double(Self.infernoRateThreshold) - Double(Self.intenseRateThreshold))))
+        return 12 + 10 * t + 2 * CGFloat(ramp)
     }
 
     var currentFlameFrames: [NSImage] {
