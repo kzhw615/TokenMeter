@@ -39,31 +39,14 @@ public struct PricingTable: Codable {
         cost(for: counts, model: model, at: nil)
     }
 
-    /// 带时间的计价：DeepSeek 官方分高峰/空闲时段（北京时间工作日 9:00-12:00、14:00-18:00 为高峰，
-    /// 高峰价 = 空闲价 ×2）。内置表存空闲价，命中高峰时段自动 ×2。
+    /// 计价：内置价目表即最终单价（不做时段倍率，保证与公开价目一致）
     public func cost(for counts: TokenCounts, model: String, at date: Date?) -> Double {
         guard let p = price(for: model) else { return 0 }
-        let mult: Double
-        if let date, model.lowercased().contains("deepseek"), Self.isDeepSeekPeak(date) {
-            mult = 2.0
-        } else {
-            mult = 1.0
-        }
         var c = Double(counts.input) / 1e6 * p.input
         c += Double(counts.output) / 1e6 * p.output
         c += Double(counts.cacheRead) / 1e6 * (p.cacheRead ?? p.input * 0.1)
         c += Double(counts.cacheWrite) / 1e6 * (p.cacheWrite ?? p.input * 1.25)
-        return c * mult
-    }
-
-    /// 北京时间工作日 9:00-12:00 / 14:00-18:00 为 DeepSeek 高峰时段
-    public static func isDeepSeekPeak(_ date: Date) -> Bool {
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
-        let weekday = cal.component(.weekday, from: date)   // 1=周日 ... 7=周六
-        guard (2...6).contains(weekday) else { return false }
-        let hour = cal.component(.hour, from: date)
-        return (9..<12).contains(hour) || (14..<18).contains(hour)
+        return c
     }
 
     // MARK: - 加载 / 保存
@@ -77,7 +60,7 @@ public struct PricingTable: Codable {
 
     /// 内置默认表 + 用户覆盖（~/Library/Application Support/TokenMeter/pricing.json）
     /// 内置价目版本号：更新内置表时递增，用于把旧的自动生成模板升级到新价目
-    public static let builtinVersion = 2
+    public static let builtinVersion = 3
 
     public static func load() -> PricingTable {
         guard let data = try? Data(contentsOf: overrideURL) else {
@@ -164,7 +147,9 @@ public struct PricingTable: Codable {
         .init(pattern: "gpt-5.6-terra", input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.5),
         .init(pattern: "gpt-5.6-luna", input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite: 0.25),
         .init(pattern: "gpt-5.5", input: 5, output: 30, cacheRead: 0.5, cacheWrite: 5),
+        .init(pattern: "gpt-5-5", input: 5, output: 30, cacheRead: 0.5, cacheWrite: 5),
         .init(pattern: "gpt-5.4", input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 2.5),
+        .init(pattern: "gpt-5-4", input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 2.5),
         .init(pattern: "gpt-5-mini", input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0.25),
         .init(pattern: "gpt-5.3-codex", input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 2.1875),
         .init(pattern: "gpt-5.2", input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 2.1875, note: "estimate"),
@@ -188,6 +173,7 @@ public struct PricingTable: Codable {
         .init(pattern: "gemini-3.6-flash", input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0.75),
         .init(pattern: "gemini-3.5-flash", input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite: 0.3),
         .init(pattern: "gemini-3.1-pro", input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2),
+        .init(pattern: "gemini-3-1-pro", input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2),
         .init(pattern: "gemini-3-pro", input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2),
         .init(pattern: "gemini-3-flash", input: 0.5, output: 3, cacheRead: 0.05, cacheWrite: 0.5),
         .init(pattern: "gemini-2.5-pro", input: 1.25, output: 10, cacheRead: 0.125),
@@ -204,18 +190,13 @@ public struct PricingTable: Codable {
         .init(pattern: "glm-4", input: 0.4, output: 1.6, cacheRead: 0.08, note: "estimate"),
         .init(pattern: "glm", input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 1.4, note: "estimate: 家族兜底"),
 
-        // ── DeepSeek（存「空闲时段价」= 标准价的一半，高峰自动 ×2）───────
-        // 官方标准价（=高峰）：v4-pro 1.32/3.96/0.044、v4.1-flash 0.3/1.2/0.006、
-        // deepseek-chat 0.28/0.42/0.028（USD / 1M）。下方为其 50% 空闲价。
-        .init(pattern: "deepseek-v4-pro", input: 0.66, output: 1.98, cacheRead: 0.022, cacheWrite: 0.66,
-              note: "空闲价；高峰 ×2 = 1.32/3.96"),
-        .init(pattern: "deepseek-v4.1-flash", input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0.15,
-              note: "空闲价；高峰 ×2 = 0.3/1.2"),
-        .init(pattern: "deepseek-v4-flash", input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0.15),
-        .init(pattern: "deepseek-v4", input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0.15, note: "estimate: 同 v4-flash"),
-        .init(pattern: "deepseek-chat", input: 0.14, output: 0.21, cacheRead: 0.014, cacheWrite: 0.14,
-              note: "空闲价；高峰 ×2 = 0.28/0.42"),
-        .init(pattern: "deepseek", input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0.15, note: "estimate: 家族兜底"),
+        // ── DeepSeek（按公开价目原值使用，不再按时段折算）─────────────
+        .init(pattern: "deepseek-v4-pro", input: 1.32, output: 3.96, cacheRead: 0.044, cacheWrite: 1.32),
+        .init(pattern: "deepseek-v4.1-flash", input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0.3),
+        .init(pattern: "deepseek-v4-flash", input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0.3),
+        .init(pattern: "deepseek-v4", input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0.3, note: "estimate: 同 v4-flash"),
+        .init(pattern: "deepseek-chat", input: 0.28, output: 0.42, cacheRead: 0.028, cacheWrite: 0.28),
+        .init(pattern: "deepseek", input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0.3, note: "estimate: 家族兜底"),
 
         // ── 通义千问 ──────────────────────────────────────────────
         .init(pattern: "qwen3.8-max", input: 1.714, output: 5.143, cacheRead: 0.171, cacheWrite: 2.143),

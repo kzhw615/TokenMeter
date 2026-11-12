@@ -136,9 +136,9 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertEqual(table.price(for: "gpt-5-mini")?.input, 0.25, "gpt-5-mini 不能被 gpt-5 兜底")
         XCTAssertEqual(table.price(for: "glm-5-3-flashx")?.input, 0.37, "flashx 不能命中 flash")
         XCTAssertEqual(table.price(for: "glm-5-3-flash")?.input, 0.15)
-        // DeepSeek 内置表存「空闲价」（标准价的一半，高峰自动 ×2）
-        XCTAssertEqual(table.price(for: "deepseek-v4.1-flash")?.input, 0.15, "v4.1-flash 不能被 deepseek-v4 吃掉")
-        XCTAssertEqual(table.price(for: "deepseek-v4-pro")?.input, 0.66)
+        XCTAssertEqual(table.price(for: "deepseek-v4.1-flash")?.input, 0.3, "v4.1-flash 不能被 deepseek-v4 吃掉")
+        XCTAssertEqual(table.price(for: "deepseek-v4-pro")?.input, 1.32)
+        XCTAssertEqual(table.price(for: "deepseek-chat")?.output, 0.42)
         XCTAssertEqual(table.price(for: "kimi-k3.1-pro-highspeed")?.input, 4)
         XCTAssertEqual(table.price(for: "kimi-k3.1-pro")?.input, 2)
         XCTAssertEqual(table.price(for: "minimax-m2.7-highspeed")?.input, 0.6)
@@ -157,8 +157,8 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertNotNil(table.price(for: "step-9-unknown"))
     }
 
-    /// DeepSeek 高峰时段价格应为标准价（= 内置空闲价 ×2）
-    func testDeepSeekPeakDoublesPrice() {
+    /// 价目表即最终单价：同一模型任何时间计价一致（不再有高峰倍率）
+    func testPriceIsTimeInvariant() {
         let table = PricingTable(prices: PricingTable.builtin)
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "Asia/Shanghai")!
@@ -171,8 +171,8 @@ final class TokenMeterCoreTests: XCTestCase {
         let counts = TokenCounts(input: 1_000_000, output: 1_000_000)
         let a = table.cost(for: counts, model: "deepseek-v4.1-flash", at: peak)
         let b = table.cost(for: counts, model: "deepseek-v4.1-flash", at: offPeak)
-        XCTAssertEqual(a, b * 2, accuracy: 1e-9)
-        // 高峰 1M 输入 + 1M 输出 = 0.3 + 1.2（标准价）
+        XCTAssertEqual(a, b, accuracy: 1e-9, "不同时段价格应一致")
+        // 1M 输入 + 1M 输出 = 0.3 + 1.2（价目表原值）
         XCTAssertEqual(a, 1.5, accuracy: 1e-9)
     }
 
@@ -344,21 +344,19 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertEqual(Fmt.cost(45.12), "$45.12")
     }
 
-    func testDeepSeekPeakPricing() {
+    /// 价目表即最终单价：DeepSeek 不再有高峰倍率，任何时刻计价一致
+    func testDeepSeekPriceHasNoTimeMultiplier() {
         let t = PricingTable(prices: [ModelPrice(pattern: "deepseek-flash", input: 1, output: 4, cacheRead: 0.1, cacheWrite: 1.25)])
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "Asia/Shanghai")!
-        // 2026-11-10 是周二：10:00 高峰、20:00 空闲、周六 10:00 空闲
         let peak = cal.date(from: DateComponents(year: 2026, month: 11, day: 10, hour: 10))!
         let off = cal.date(from: DateComponents(year: 2026, month: 11, day: 10, hour: 20))!
         let sat = cal.date(from: DateComponents(year: 2026, month: 11, day: 14, hour: 10))!
         let counts = TokenCounts(input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0)
-        let offCost = t.cost(for: counts, model: "deepseek-flash", at: off)
-        XCTAssertEqual(offCost, 1.0, accuracy: 1e-9)
-        XCTAssertEqual(t.cost(for: counts, model: "deepseek-flash", at: peak), 2.0, accuracy: 1e-9, "工作日高峰应 ×2")
-        XCTAssertEqual(t.cost(for: counts, model: "deepseek-flash", at: sat), 1.0, accuracy: 1e-9, "周末不算高峰")
-        XCTAssertTrue(PricingTable.isDeepSeekPeak(peak))
-        XCTAssertFalse(PricingTable.isDeepSeekPeak(off))
+        let base = t.cost(for: counts, model: "deepseek-flash", at: off)
+        XCTAssertEqual(base, 1.0, accuracy: 1e-9)
+        XCTAssertEqual(t.cost(for: counts, model: "deepseek-flash", at: peak), base, accuracy: 1e-9, "高峰不应再翻倍")
+        XCTAssertEqual(t.cost(for: counts, model: "deepseek-flash", at: sat), base, accuracy: 1e-9)
     }
 
     func testProjectNameDecode() {
