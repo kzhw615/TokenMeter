@@ -314,25 +314,31 @@ struct SideDockView: View {
     }
     /// 悬浮某个工具时，底行改为显示「状态 + 判定依据」
     @State private var hoveredSource: String?
-    /// 拖拽起始时的窗口原点
-    @State private var dragOrigin: NSPoint?
+    /// 拖拽起始时的「屏幕坐标鼠标位置」与「窗口原点」。
+    /// 不能用 SwiftUI 的 translation：窗口自身在被移动，局部坐标系随之变化，
+    /// 会形成反馈回路（实测表现为位移减半 + 来回抖动）。
+    @State private var dragStartMouse: NSPoint?
+    @State private var dragStartOrigin: NSPoint?
 
     /// 显式拖拽：SwiftUI 的点击手势会让 isMovableByWindowBackground 失效，
-    /// 因此自己按位移移动窗口（3pt 阈值，单击/双击不受影响）
+    /// 因此自己按「鼠标屏幕位移」移动窗口（3pt 阈值，单击/双击不受影响）
     private var dragGesture: some Gesture {
         DragGesture(minimumDistance: 3)
-            .onChanged { value in
+            .onChanged { _ in
                 guard let panel = controller.dragPanel else { return }
-                if dragOrigin == nil {
-                    dragOrigin = panel.frame.origin
+                let mouse = NSEvent.mouseLocation          // 屏幕绝对坐标，不受窗口移动影响
+                if dragStartMouse == nil {
+                    dragStartMouse = mouse
+                    dragStartOrigin = panel.frame.origin
                     controller.beginUserDrag()
                 }
-                guard let base = dragOrigin else { return }
-                panel.setFrameOrigin(NSPoint(x: base.x + value.translation.width,
-                                             y: base.y - value.translation.height))
+                guard let m0 = dragStartMouse, let o0 = dragStartOrigin else { return }
+                panel.setFrameOrigin(NSPoint(x: o0.x + (mouse.x - m0.x),
+                                             y: o0.y + (mouse.y - m0.y)))
             }
             .onEnded { _ in
-                dragOrigin = nil
+                dragStartMouse = nil
+                dragStartOrigin = nil
                 controller.endUserDrag()
             }
     }
