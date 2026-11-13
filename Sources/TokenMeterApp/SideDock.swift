@@ -129,7 +129,7 @@ final class SideDockController: ObservableObject {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
-        panel.isMovableByWindowBackground = true
+        panel.isMovableByWindowBackground = false   // 改由视图内的 DragGesture 显式移动
         panel.contentView = NSHostingView(rootView:
             SideDockView(controller: self).environmentObject(model))
         panel.contextMenu = AppActions.shared.buildMenu(model: model)
@@ -200,6 +200,18 @@ final class SideDockController: ObservableObject {
     /// 面板所在屏幕（多显示器时 NSScreen.main 可能是主屏，不能用来判断吸附目标）
     private func screen(for panel: NSPanel) -> NSScreen? {
         panel.screen ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+    }
+
+    /// 供视图内的显式拖拽手势使用
+    var dragPanel: NSPanel? { panel }
+
+    func beginUserDrag() {
+        guard fuse == 1 else { return }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { fuse = 0 }
+    }
+
+    func endUserDrag() {
+        snap()
     }
 
     func snap() {
@@ -294,7 +306,7 @@ struct SideDockView: View {
     private var tokensText: String {
         guard let s = todaySummary else { return "—" }   // 数据未就绪时不留 0
         let t = model.includeCache ? s.counts.total : s.counts.input + s.counts.output
-        return Fmt.compactTokens(t)
+        return Fmt.tokens(t)
     }
     private var costText: String {
         guard let s = todaySummary else { return " " }
@@ -302,6 +314,28 @@ struct SideDockView: View {
     }
     /// 悬浮某个工具时，底行改为显示「状态 + 判定依据」
     @State private var hoveredSource: String?
+    /// 拖拽起始时的窗口原点
+    @State private var dragOrigin: NSPoint?
+
+    /// 显式拖拽：SwiftUI 的点击手势会让 isMovableByWindowBackground 失效，
+    /// 因此自己按位移移动窗口（3pt 阈值，单击/双击不受影响）
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { value in
+                guard let panel = controller.dragPanel else { return }
+                if dragOrigin == nil {
+                    dragOrigin = panel.frame.origin
+                    controller.beginUserDrag()
+                }
+                guard let base = dragOrigin else { return }
+                panel.setFrameOrigin(NSPoint(x: base.x + value.translation.width,
+                                             y: base.y - value.translation.height))
+            }
+            .onEnded { _ in
+                dragOrigin = nil
+                controller.endUserDrag()
+            }
+    }
 
     private func stateColor(_ state: Int) -> Color {
         switch state {
@@ -447,6 +481,7 @@ struct SideDockView: View {
         .background(BarFlareShape(side: controller.side, fuse: controller.fuse, bottomInset: controller.bottomInset).fill(ink))
         .overlay(BarFlareShape(side: controller.side, fuse: controller.fuse, bottomInset: controller.bottomInset).stroke(Color.white.opacity(0.06), lineWidth: 0.5))
         .contentShape(Rectangle())
+        .gesture(dragGesture)
         .onTapGesture(count: 2) { controller.resetPosition(mode: model.sideDock == "left" ? "left" : "right") }
         .onTapGesture { controller.showDetail(model: model) }
     }
