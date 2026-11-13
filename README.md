@@ -79,6 +79,14 @@ Cursor、Gemini CLI、Trae、Grok Bot 的本地日志不含可解析的 token �
 > 首次运行会扫描历史日志（几 GB，约 6–7 分钟），面板会显示进度条；之后是秒级增量刷新。
 > 想从源码构建或使用 CLI，见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
+**命令行工具已随 App 一起安装**，无需额外步骤：
+
+```bash
+/Applications/TokenMeter.app/Contents/Resources/tokenmeter report    # 直接用完整路径
+# 或安装到 PATH（install.sh 会自动放到 ~/.local/bin）
+tokenmeter report
+```
+
 CLI 用户可以只用命令行，不需要安装 App：
 
 ```bash

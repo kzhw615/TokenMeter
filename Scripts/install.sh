@@ -38,6 +38,10 @@ if [ -f "./build/tokenmeter" ]; then
     if [ -w /usr/local/bin ]; then
         cp "./build/tokenmeter" /usr/local/bin/tokenmeter 2>/dev/null && echo "==> CLI 已安装到 /usr/local/bin/tokenmeter"
     fi
+    # 用户级 PATH 目录（无需 sudo）
+    if [ -d "$HOME/.local/bin" ]; then
+        cp "./build/tokenmeter" "$HOME/.local/bin/tokenmeter" && echo "==> CLI 已安装到 ~/.local/bin/tokenmeter"
+    fi
 fi
 
 open "$DEST/TokenMeter.app"

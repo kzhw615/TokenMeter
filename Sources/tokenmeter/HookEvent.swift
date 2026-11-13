@@ -71,6 +71,7 @@ enum HookEvent {
         let supportBin = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("TokenMeter/bin/tokenmeter").path
         let candidates = [
+            "/Applications/TokenMeter.app/Contents/Resources/tokenmeter",   // App 包内（随应用安装即有）
             supportBin,
             "/usr/local/bin/tokenmeter",
             "/opt/homebrew/bin/tokenmeter",

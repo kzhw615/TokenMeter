@@ -17,6 +17,10 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BUILD/TokenMeterApp" "$APP/Contents/MacOS/TokenMeter"
 cp "$BUILD/tokenmeter" "$OUT/tokenmeter"
+# 同时把 CLI 放进 App 包：用户从 Release 拖进「应用程序」后也能直接调用。
+# 注意不能放在 Contents/MacOS/ 下：macOS 文件系统大小写不敏感，
+# tokenmeter 会覆盖主程序 TokenMeter（曾导致包内主程序被替换成 CLI）。
+cp "$BUILD/tokenmeter" "$APP/Contents/Resources/tokenmeter"
 cp Assets/TokenMeter.icns "$APP/Contents/Resources/"
 # SwiftPM 资源包（harness 品牌图标等）
 if [ -d "$BUILD/TokenMeter_TokenMeterApp.bundle" ]; then
