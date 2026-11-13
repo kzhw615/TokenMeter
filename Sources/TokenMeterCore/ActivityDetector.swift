@@ -120,8 +120,8 @@ public enum ActivityDetector {
                            lastActive: latestMtime(under: "~/.workbuddy/traces", suffixes: [".jsonl"]),
                            topLevel: latestMtime(under: "~/.workbuddy/traces", suffixes: [".jsonl"])),
             SourceActivity(name: "OpenCode",
-                           lastActive: fileMtime("~/.local/share/opencode/opencode.db"),
-                           topLevel: fileMtime("~/.local/share/opencode/opencode.db")),
+                           lastActive: openCodeLastActivity(),
+                           topLevel: openCodeLastActivity()),
             SourceActivity(name: "Hermes",
                            lastActive: hermesMtime(),
                            topLevel: hermesMtime()),
@@ -347,6 +347,39 @@ public enum ActivityDetector {
         #else
         return nil
         #endif
+    }
+
+    /// OpenCode 最近一次「真正产出用量」的时间。
+    /// 不能用 opencode.db 的文件修改时间：OpenChamber 关闭后它拉起的 serve 进程仍在后台
+    /// 做 WAL 检查点等写入，mtime 会持续变化，导致没在用时也闪成"运行中"。
+    public static func openCodeLastUsage() -> Date? {
+        #if os(macOS)
+        let path = SourcePaths.expand("~/.local/share/opencode/opencode.db")
+        guard FileManager.default.fileExists(atPath: path) else { return nil }
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { return nil }
+        defer { sqlite3_close(db) }
+        func maxTime(_ sql: String) -> Int64? {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return nil }
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_step(stmt) == SQLITE_ROW,
+                  sqlite3_column_type(stmt, 0) != SQLITE_NULL else { return nil }
+            return sqlite3_column_int64(stmt, 0)
+        }
+        // 只读 time_created / type 两列，不触碰 data 大字段
+        let newer = maxTime("SELECT MAX(time_created) FROM session_message WHERE type='assistant'")
+        let older = maxTime("SELECT MAX(time_created) FROM message")
+        guard let ms = [newer, older].compactMap({ $0 }).max() else { return nil }
+        return Date(timeIntervalSince1970: Double(ms) / 1000)
+        #else
+        return nil
+        #endif
+    }
+
+    /// OpenCode 的活动时间：优先「真实用量时间」，取不到才退回数据库 mtime
+    static func openCodeLastActivity() -> Date? {
+        openCodeLastUsage() ?? fileMtime("~/.local/share/opencode/opencode.db")
     }
 
     /// WorkBuddy 三态。
