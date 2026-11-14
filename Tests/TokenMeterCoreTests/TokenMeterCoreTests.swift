@@ -128,6 +128,68 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertNil(RangeKind.all.previousDayRange(now: now, calendar: cal), "全部范围无环比")
     }
 
+    // MARK: - Codex 模型识别
+
+    private func writeJSONL(_ lines: [String], to url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: url)
+    }
+
+    private func tokenCountLine(ts: String = "2026-11-14T09:00:00.000Z") -> String {
+        #"{"timestamp":"\#(ts)","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":10}}}}"#
+    }
+
+    /// 旧版把模型写在 base_instructions.provenance.model；新版写成 model 对象
+    func testCodexModelExtraction() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tm-codex-\(UUID().uuidString)/sessions")
+        defer { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }
+
+        let legacy = dir.appendingPathComponent("rollout-legacy.jsonl")
+        try writeJSONL([
+            #"{"type":"session_meta","payload":{"id":"t-legacy","base_instructions":{"provenance":{"type":"model","model":"gpt-6.1-sol"}}}}"#,
+            tokenCountLine(),
+        ], to: legacy)
+        let legacyParsed = CodexSource().parseFileDetailed(path: legacy.path)
+        XCTAssertTrue(legacyParsed.buckets.allSatisfy { $0.model == "gpt-6.1-sol" })
+
+        let modern = dir.appendingPathComponent("rollout-modern.jsonl")
+        try writeJSONL([
+            #"{"type":"session_meta","payload":{"id":"t-modern","model":{"model":"gpt-6.1-terra"}}}"#,
+            tokenCountLine(),
+        ], to: modern)
+        let modernParsed = CodexSource().parseFileDetailed(path: modern.path)
+        XCTAssertTrue(modernParsed.buckets.allSatisfy { $0.model == "gpt-6.1-terra" })
+    }
+
+    /// 子智能体会话的 session_meta 不记录模型，必须按 parent_thread_id 继承父线程
+    func testCodexSubagentInheritsParentModel() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("tm-codex-sub-\(UUID().uuidString)")
+        let dir = root.appendingPathComponent("sessions")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try writeJSONL([
+            #"{"type":"session_meta","payload":{"id":"parent-1","thread_source":"user","base_instructions":{"provenance":{"model":"gpt-6.1-sol"}}}}"#,
+            tokenCountLine(),
+        ], to: dir.appendingPathComponent("rollout-parent.jsonl"))
+
+        try writeJSONL([
+            #"{"type":"session_meta","payload":{"id":"child-1","thread_source":"subagent","parent_thread_id":"parent-1"}}"#,
+            tokenCountLine(),
+        ], to: dir.appendingPathComponent("rollout-child.jsonl"))
+
+        setenv("TOKENMETER_CODEX_DIR", root.path, 1)
+        defer { unsetenv("TOKENMETER_CODEX_DIR") }
+
+        var cache = ScanCache()
+        let buckets = CodexSource().scan(cache: &cache).buckets
+        XCTAssertFalse(buckets.isEmpty)
+        let models = Set(buckets.map(\.model))
+        XCTAssertFalse(models.contains("unknown"), "子会话应继承父线程模型，实际: \(models)")
+        XCTAssertEqual(models, ["gpt-6.1-sol"])
+        XCTAssertEqual(cache.threadModels?["parent-1"], "gpt-6.1-sol")
+    }
+
     // MARK: - 增量解析边界
 
     /// 只应消费到最后一个完整行：末尾未写完的半行必须留到下次

@@ -24,7 +24,11 @@ public struct ScanCache: Codable, Sendable {
     /// 本次会话是否有新解析（决定是否值得写回磁盘），不持久化
     public var dirty: Bool = false
 
-    private enum CodingKeys: String, CodingKey { case version, entries }
+    /// 线程 id → 模型名。Codex 的子智能体会话文件不记录模型，
+    /// 只能靠父线程继承；这里持久化映射，避免每次都重建。
+    public var threadModels: [String: String]?
+
+    private enum CodingKeys: String, CodingKey { case version, entries, threadModels }
 
     public init() {}
 
