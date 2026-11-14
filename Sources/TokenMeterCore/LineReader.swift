@@ -22,15 +22,46 @@ public final class LineReader {
         self.handle = h
     }
 
+    /// 从 offset 读到 endOffset（不含），用于增量解析时排除末尾未写完的半行
+    public init?(path: String, offset: UInt64, endOffset: UInt64) {
+        guard let h = FileHandle(forReadingAtPath: path) else { return nil }
+        do { try h.seek(toOffset: offset) } catch { return nil }
+        self.handle = h
+        self.remaining = endOffset > offset ? Int64(endOffset - offset) : 0
+    }
+
+    private var remaining: Int64 = -1
+
+    /// 文件末尾「最后一个完整行之后」的偏移：只解析到这里，剩余半行等下次写完再读
+    public static func lastCompleteLineBoundary(path: String) -> Int64? {
+        guard let fh = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? fh.close() }
+        guard let endU = try? fh.seekToEnd() else { return nil }
+        let size = Int64(endU)
+        guard size > 0 else { return 0 }
+        let tailLen = min(size, Int64(1 << 20))
+        guard (try? fh.seek(toOffset: UInt64(size - tailLen))) != nil,
+              let tail = try? fh.read(upToCount: Int(tailLen)),
+              !tail.isEmpty else { return nil }
+        if let idx = tail.lastIndex(of: 0x0A) {
+            return size - tailLen + Int64(tail.distance(from: tail.startIndex, to: idx)) + 1
+        }
+        // 末尾 1MB 内没有换行：这一行还没写完，暂不消费
+        return size - tailLen > 0 ? size - tailLen : 0
+    }
+
     public func forEachLine(_ body: (String) -> Void) {
         while true {
             // 关键：read(upToCount:) 返回的 Data 是自动释放对象，必须和解析一起放进
             // autoreleasepool，否则整份日志的块会在池里累积（实测 1.4GB 文件 → 1.5GB 内存，
             // 修正后仅 8MB）。
             let finished: Bool = autoreleasepool {
-                guard let chunk = (try? handle.read(upToCount: chunkSize)) ?? nil, !chunk.isEmpty else {
+                let want = remaining >= 0 ? Int(min(Int64(chunkSize), remaining)) : chunkSize
+                guard want > 0 else { return true }
+                guard let chunk = (try? handle.read(upToCount: want)) ?? nil, !chunk.isEmpty else {
                     return true
                 }
+                if remaining > 0 { remaining -= Int64(chunk.count) }
                 buffer.append(chunk)
                 flush(complete: false, body)
                 return false

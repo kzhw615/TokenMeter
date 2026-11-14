@@ -355,14 +355,12 @@ final class AppModel: ObservableObject {
         activityTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                // 面板收起时降到 15s 一次（省电）；燃烧中保持 5s 以便及时更新状态
-                if !self.panelOpen && !self.isBurning {
-                    let now = Date()
-                    if now.timeIntervalSince(self.lastPollAt) < 15 { return }
-                    self.lastPollAt = now
-                } else {
-                    self.lastPollAt = Date()
-                }
+                // 面板打开时才需要 5s 级的新鲜度；收起时（含燃烧中）放宽到 10~15s。
+                // 单次活动检测约 0.11s CPU，5s 一次等于白白吃掉 2%+ 单核。
+                let now = Date()
+                let minGap: TimeInterval = self.panelOpen ? 0 : (self.isBurning ? 10 : 15)
+                if now.timeIntervalSince(self.lastPollAt) < minGap { return }
+                self.lastPollAt = now
                 self.pollActivity()
             }
         }
@@ -645,6 +643,10 @@ final class AppModel: ObservableObject {
                     Date().timeIntervalSince(t0), quick.buckets.count).utf8))
             }
             let scanned = Aggregator.scan(cache: &cache, progress: progress)
+            if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
+                FileHandle.standardError.write(Data(String(format: "DBG phase2 %.1fs files=%d\n",
+                    Date().timeIntervalSince(t0), scanned.statuses.reduce(0) { $0 + $1.files }).utf8))
+            }
             let all: [RangeKind: Summary] = Dictionary(uniqueKeysWithValues: RangeKind.allCases.map { r in
                 (r, Aggregator.summarize(buckets: scanned.buckets, range: r, pricing: pricing, statuses: scanned.statuses))
             })

@@ -128,6 +128,26 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertNil(RangeKind.all.previousDayRange(now: now, calendar: cal), "全部范围无环比")
     }
 
+    // MARK: - 增量解析边界
+
+    /// 只应消费到最后一个完整行：末尾未写完的半行必须留到下次
+    func testLastCompleteLineBoundary() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("tm-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("a.jsonl")
+
+        // 末尾有换行：边界 = 文件大小
+        try Data("{\"a\":1}\n{\"b\":2}\n".utf8).write(to: file)
+        let size = try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int64
+        XCTAssertEqual(LineReader.lastCompleteLineBoundary(path: file.path), size)
+
+        // 末尾半行：边界应停在最后一个换行之后
+        let complete = Int64("{\"a\":1}\n".utf8.count)
+        try Data("{\"a\":1}\n{\"b\":".utf8).write(to: file)
+        XCTAssertEqual(LineReader.lastCompleteLineBoundary(path: file.path), complete)
+    }
+
     // MARK: - 版本比较
 
     /// 版本比较要正确处理多位数字段（0.9.10 > 0.9.9，字符串比较会得出相反结果）

@@ -205,7 +205,16 @@ struct PanelView: View {
             }
             Spacer()
             if model.scanning {
-                ProgressView().controlSize(.small)
+                HStack(spacing: 3) {
+                    ProgressView().controlSize(.small)
+                    // 有进度就显示百分比：大文件首次全量解析时不再是"无声转圈"
+                    if model.scanFraction > 0.02 {
+                        Text("\(Int(model.scanFraction * 100))%")
+                            .font(.caption2)
+                            .monospacedDigit()
+                            .foregroundStyle(.tertiary)
+                    }
+                }
             }
             if model.updateVisible, let v = model.latestVersion {
                 Button(action: {

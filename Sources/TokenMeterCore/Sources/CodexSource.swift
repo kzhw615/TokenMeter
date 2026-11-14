@@ -21,15 +21,47 @@ public struct CodexSource: UsageSource {
         let files = logFiles()
         let builder = BucketBuilder(tool: "Codex")
         var toParse: [String] = []
+        var toAppend: [(String, ScanCache.Entry, Int64)] = []
         // 并行取指纹（数千个 stat 串行是主要耗时）
         let prints = SourcePaths.parallelFingerprints(files)
         for (i, path) in files.enumerated() {
-            if let fp = prints[i], let cached = cache.cachedBuckets(path: path, size: fp.size, mtime: fp.mtime) {
+            guard let fp = prints[i] else { toParse.append(path); continue }
+            if let cached = cache.cachedBuckets(path: path, size: fp.size, mtime: fp.mtime) {
                 ScanProgressReporter.current?.bump()
                 builder.merge(cached)
+                continue
+            }
+            // 追加型 .jsonl：只解析上次之后新增的尾部。
+            // 否则一个 1.4GB 的活跃会话文件每次刷新都要全量重解析（实测单次 60-90 秒）。
+            if !path.hasSuffix(".zst"),
+               let entry = cache.entries[path],
+               entry.offset > 0,
+               fp.size > entry.offset,
+               fp.size >= entry.size,
+               let boundary = LineReader.lastCompleteLineBoundary(path: path),
+               boundary > entry.offset {
+                toAppend.append((path, entry, boundary))
             } else {
                 toParse.append(path)
             }
+        }
+        // 增量尾部解析：通常只有 1~3 个活跃文件，串行即可
+        for (path, entry, boundary) in toAppend {
+            guard let reader = LineReader(path: path, offset: UInt64(entry.offset),
+                                          endOffset: UInt64(boundary)) else {
+                toParse.append(path)
+                continue
+            }
+            let state = ParseState()
+            state.model = entry.lastModel ?? "unknown"
+            state.builder.project = entry.buckets.first(where: { $0.project != "-" })?.project ?? "-"
+            reader.forEachLine { state.consume($0) }
+            var merged = entry.buckets
+            merged.append(contentsOf: state.builder.buckets)
+            // 只消费到最后一个完整行：末尾半行留到下次
+            cache.store(path: path, buckets: merged, offset: boundary, lastModel: state.model)
+            builder.merge(state.builder.buckets)
+            ScanProgressReporter.current?.bump()
         }
         // 分块解析：每块解析完立刻入库并释放，峰值内存只与块大小相关
         BoundedParallel.chunkedMap(toParse, chunkSize: 32, transform: { path in
@@ -37,7 +69,8 @@ public struct CodexSource: UsageSource {
             ScanProgressReporter.current?.bump()
             return buckets
         }, handle: { path, buckets in
-            cache.store(path: path, buckets: buckets)
+            cache.store(path: path, buckets: buckets,
+                        offset: ScanCache.fingerprint(path: path)?.size ?? 0)
             builder.merge(buckets)
         })
         return ScanResult(buckets: builder.buckets, files: files.count)
@@ -71,7 +104,7 @@ public struct CodexSource: UsageSource {
         return state.builder.buckets
     }
 
-    private final class ParseState {
+    final class ParseState {
         let builder = BucketBuilder(tool: "Codex")
         var model = "unknown"
 
