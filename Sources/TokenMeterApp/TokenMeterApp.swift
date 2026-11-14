@@ -184,6 +184,10 @@ final class AppModel: ObservableObject {
     /// 坞底 harness 三态：0 运行中 / 1 待阅读 / 2 空闲；仅含本机有日志的源
     @Published var sourceStates: [(String, Int)] = []
     @Published var dataIssues: [DataIssue] = []
+    /// 顶部灵动岛：在菜单栏下方显示一枚玻璃胶囊（火苗/速率/用量/费用）
+    @Published var showIsland: Bool = UserDefaults.standard.object(forKey: "showIsland") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showIsland, forKey: "showIsland") }
+    }
     /// 侧边坞隐藏名单（默认全展示已安装源）
     @Published var hiddenDockSources: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "dockHiddenSources") ?? []) {
         didSet {

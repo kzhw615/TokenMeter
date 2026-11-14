@@ -58,6 +58,15 @@ struct SettingsView: View {
                 .controlSize(.small)
                 .labelsHidden()
             }
+            Toggle(isOn: Binding(get: { model.showIsland }, set: { model.showIsland = $0 })) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("顶部灵动岛").font(.caption)
+                    Text("菜单栏下方显示玻璃胶囊：火苗、速率、今日用量与费用（开启时菜单栏只留图标）")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
             Toggle("登录时自动启动", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
                 .toggleStyle(.switch)
                 .controlSize(.small)
