@@ -268,6 +268,16 @@ public struct HourStat: Codable, Sendable {
     public var cost: Double
 }
 
+/// 某个钟点的堆叠构成（parts 已按用量降序）
+public struct HourStack: Codable, Sendable {
+    public var hour: Int
+    public var parts: [StackPart]
+    public init(hour: Int, parts: [StackPart]) {
+        self.hour = hour
+        self.parts = parts
+    }
+}
+
 public struct Summary: Codable, Sendable {
     public var range: RangeKind
     public var generatedAt: Date
@@ -292,6 +302,8 @@ public struct Summary: Codable, Sendable {
     /// 与 previousCounts 同口径的「本期」值（今天只算已过完整点），保证百分比公平
     public var comparableCounts: TokenCounts?
     public var comparableCost: Double?
+    /// 逐小时按模型拆分（堆叠柱状图）
+    public var hoursByModel: [HourStack]?
     /// 近 30 天按工具拆分的每日用量（堆叠柱状图）
     public var trendByTool: [DayStack]?
     /// 近 30 天按模型拆分的每日用量（堆叠柱状图）

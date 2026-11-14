@@ -231,9 +231,8 @@ final class StatusBarController: NSObject {
         if model.menuBarStyle == "icon" {
             title = ""
         } else if let s = model.summary, s.counts.total > 0 {
-            // 燃烧中把速率放在最前，形成「火苗 + 速率 + 用量 + 费用」的紧凑一行
-            let rate = model.isBurning ? Fmt.compactTokens(model.burnRate ?? 0) + "/s · " : ""
-            title = " " + rate + model.menuBarText(s)
+            // menuBarText 内部已经带速率前缀（燃烧中才加），这里不要再加一遍
+            title = " " + model.menuBarText(s)
         } else {
             title = model.scanning ? " …" : " 0"
         }

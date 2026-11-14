@@ -93,6 +93,7 @@ public enum Aggregator {
         var modelMap: [String: (counts: TokenCounts, cost: Double, requests: Int, tools: Set<String>)] = [:]
         var projectMap: [String: (counts: TokenCounts, cost: Double, tools: Set<String>)] = [:]
         var hourMap: [Int: (counts: TokenCounts, cost: Double)] = [:]
+        var hourModelMap: [Int: [String: (TokenCounts, Double)]] = [:]
         var dayMap: [String: (counts: TokenCounts, cost: Double)] = [:]
         var dayMapAll: [String: (counts: TokenCounts, cost: Double)] = [:]
         // 每日按工具/模型拆分（堆叠柱状图用）
@@ -138,6 +139,9 @@ public enum Aggregator {
             var h = hourMap[b.hour] ?? (TokenCounts(), 0)
             h.counts += b.counts; h.cost += c
             hourMap[b.hour] = h
+            var hm = hourModelMap[b.hour]?[b.model] ?? (TokenCounts(), 0)
+            hm.0 += b.counts; hm.1 += c
+            hourModelMap[b.hour, default: [:]][b.model] = hm
             var d = dayMap[b.day] ?? (TokenCounts(), 0)
             d.counts += b.counts; d.cost += c
             dayMap[b.day] = d
@@ -218,6 +222,12 @@ public enum Aggregator {
             return HourStat(hour: h, counts: e?.counts ?? TokenCounts(), cost: e?.cost ?? 0)
         }
         let hoursMode = singleDay ? (range == .today ? "今日逐小时" : "昨日逐小时") : "按钟点分布（范围内汇总）"
+        let hoursByModel = (0..<24).map { h -> HourStack in
+            let parts = (hourModelMap[h] ?? [:])
+                .map { StackPart(name: $0.key, counts: $0.value.0, cost: $0.value.1) }
+                .sorted { $0.counts.total > $1.counts.total }
+            return HourStack(hour: h, parts: parts)
+        }
 
         // 本月预测：按「本月至今日均」外推到整月
         var forecastCost: Double? = nil
@@ -249,6 +259,7 @@ public enum Aggregator {
                        previousLabel: previousLabel,
                        comparableCounts: comparableCounts,
                        comparableCost: comparableCost,
+                       hoursByModel: hoursByModel,
                        trendByTool: trendByTool, trendByModel: trendByModel,
                        forecastCost: forecastCost, forecastCounts: forecastCounts)
     }

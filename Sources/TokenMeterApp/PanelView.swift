@@ -65,7 +65,7 @@ struct PanelView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hoveredDay: String?
     /// 每日用量图的堆叠维度：tool / model
-    @AppStorage("trendStackMode") private var trendStackMode: String = "tool"
+    @AppStorage("trendStackMode") private var trendStackMode: String = "model"
     @State private var hoveredHour: Int?
     @State private var hoveredRow: String?
 
@@ -410,18 +410,37 @@ struct PanelView: View {
         }
     }
 
+    /// 逐小时用量：堆叠柱（每段一种模型），与每日图同一套配色规则
     private func hoursSection(_ s: Summary) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let stacks = s.hoursByModel ?? []
+        let data: [HourStack] = stacks.isEmpty
+            ? s.hours.map { HourStack(hour: $0.hour, parts: $0.counts.total > 0
+                ? [StackPart(name: "全部模型", counts: $0.counts, cost: $0.cost)] : []) }
+            : stacks
+        var seriesTotals: [String: Int64] = [:]
+        for h in data { for p in h.parts { seriesTotals[p.name, default: 0] += p.counts.total } }
+        let series = seriesTotals.sorted { $0.value > $1.value }.map(\.key)
+        let colorMap: [String: Color] = Dictionary(uniqueKeysWithValues:
+            series.enumerated().map { ($0.element, palette[$0.offset % palette.count]) })
+        let grandTotal = max(1, seriesTotals.values.reduce(0, +))
+
+        return VStack(alignment: .leading, spacing: 8) {
             sectionTitle("逐小时用量 · \(s.hoursMode)")
-            Chart(s.hours, id: \.hour) { h in
-                BarMark(
-                    x: .value("小时", h.hour),
-                    y: .value("Tokens", Double(disp(h.counts)))
-                )
-                .foregroundStyle(model.theme.primary.gradient)
-                .cornerRadius(2)
-                .opacity(hoveredHour == nil || hoveredHour == h.hour ? 1 : 0.4)
+            Chart {
+                ForEach(data, id: \.hour) { h in
+                    ForEach(h.parts, id: \.name) { part in
+                        BarMark(
+                            x: .value("小时", h.hour),
+                            y: .value("Tokens", Double(disp(part.counts)))
+                        )
+                        .foregroundStyle(by: .value("模型", part.name))
+                        .cornerRadius(2)
+                        .opacity(hoveredHour == nil || hoveredHour == h.hour ? 1 : 0.35)
+                    }
+                }
             }
+            .chartForegroundStyleScale(domain: series, range: series.map { colorMap[$0] ?? .gray })
+            .chartLegend(.hidden)
             .chartXAxis {
                 AxisMarks(values: [0, 6, 12, 18, 23]) { value in
                     AxisValueLabel {
@@ -457,31 +476,54 @@ struct PanelView: View {
                                 }
                             }
                         if let hh = hoveredHour,
-                           let stat = s.hours.first(where: { $0.hour == hh }),
+                           let stat = data.first(where: { $0.hour == hh }),
                            let plotAnchor = proxy.plotFrame,
                            let xPos = proxy.position(forX: hh) {
                             let frame = geo[plotAnchor]
+                            let total = stat.parts.reduce(Int64(0)) { $0 + $1.counts.total }
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(String(format: "%02d:00 – %02d:59", hh, hh)).font(.caption2).foregroundStyle(.secondary)
-                                Text("\(Fmt.tokens(disp(stat.counts))) tokens")
-                                    .font(.caption).bold().monospacedDigit()
-                                Text(Fmt.cost(stat.cost))
+                                Text(String(format: "%02d:00 – %02d:59", hh, hh))
                                     .font(.caption2).foregroundStyle(.secondary)
+                                HStack(spacing: 4) {
+                                    Text(Fmt.tokens(total)).font(.caption).bold().monospacedDigit()
+                                    Text("tokens").font(.caption2).foregroundStyle(.secondary)
+                                }
+                                ForEach(stat.parts.prefix(3), id: \.name) { part in
+                                    HStack(spacing: 4) {
+                                        Circle().fill(colorMap[part.name] ?? .gray).frame(width: 5, height: 5)
+                                        Text(part.name).font(.caption2).lineLimit(1)
+                                        Spacer(minLength: 6)
+                                        Text(Fmt.compactTokens(disp(part.counts)))
+                                            .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+                                    }
+                                }
                             }
                             .padding(6)
+                            .frame(width: 165)
                             .background(RoundedRectangle(cornerRadius: 6).fill(.regularMaterial))
                             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
-                            .position(x: min(max(xPos + frame.origin.x, 70), geo.size.width - 70), y: 24)
+                            .position(x: min(max(xPos + frame.origin.x, 90), geo.size.width - 90), y: 40)
                             .allowsHitTesting(false)
                         }
                     }
                 }
             }
-            .frame(height: 80)
+            .frame(height: 96)
+            // 紧凑图例：取前 4 个模型
+            HStack(spacing: 10) {
+                ForEach(series.prefix(4), id: \.self) { name in
+                    HStack(spacing: 3) {
+                        Circle().fill(colorMap[name] ?? .gray).frame(width: 6, height: 6)
+                        Text(name).font(.system(size: 9)).lineLimit(1)
+                        Text(Fmt.percent(Double(seriesTotals[name] ?? 0) / Double(grandTotal)))
+                            .font(.system(size: 9)).monospacedDigit().foregroundStyle(.tertiary)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
         }
     }
 
-    /// 每日用量：堆叠柱（每段一种工具/模型），配色沿用主题调色板
     private func trendSection(_ s: Summary) -> some View {
         let byModel = trendStackMode == "model"
         let stacks: [DayStack] = byModel ? (s.trendByModel ?? []) : (s.trendByTool ?? [])
