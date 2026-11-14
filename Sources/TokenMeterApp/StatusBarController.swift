@@ -39,7 +39,6 @@ final class StatusBarController: NSObject {
     private var outsideMonitor: Any?
     private var keyMonitor: Any?
     private var visibilityTimer: Timer?
-    private var island: IslandController?
     private var resignObserver: NSObjectProtocol?
     private var settingsObservers: [NSObjectProtocol] = []
 
@@ -55,18 +54,6 @@ final class StatusBarController: NSObject {
 
         configureButton()
         rebuildPanel()
-        island = IslandController(model: model, actions: actions, anchor: { [weak self] in
-            self?.statusItemFrame() ?? .zero
-        })
-        island?.setEnabled(model.showIsland)
-        model.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] in
-                guard let self, let island = self.island else { return }
-                island.setEnabled(self.model.showIsland)
-                island.reposition()
-            }
-            .store(in: &cancellables)
 
         actions.openPanel = { [weak self] in self?.showPanel() }
         actions.closePanel = { [weak self] in self?.hidePanel() }
@@ -101,12 +88,6 @@ final class StatusBarController: NSObject {
         visibilityTimer.map { RunLoop.main.add($0, forMode: .common) }
     }
 
-    /// 状态项在屏幕坐标系里的位置（灵动岛据此贴靠）
-    func statusItemFrame() -> NSRect {
-        guard let button = item.button, let window = button.window else { return .zero }
-        return window.convertToScreen(button.convert(button.bounds, to: nil))
-    }
-
     func checkItemVisibility() {
         guard item.isVisible else {
             // 被系统标记为隐藏：重新声明可见
@@ -119,7 +100,6 @@ final class StatusBarController: NSObject {
             rebuildItem()
             return
         }
-        island?.reposition()
         // 落在屏幕外或刘海区域 ⇒ 实际不可见
         if let screen = window.screen ?? NSScreen.main {
             let frame = window.frame
@@ -248,13 +228,12 @@ final class StatusBarController: NSObject {
         // 关键：每帧无条件给 NSStatusItem 设 attributedTitle 会触发菜单栏
         // 重新度量与合成，实测能吃掉 20%+ 的单核 CPU（火焰动画 10fps 时）。
         let title: String
-        if model.showIsland {
-            // 灵动岛已经展示用量/费用，菜单栏只留火苗
-            title = ""
-        } else if model.menuBarStyle == "icon" {
+        if model.menuBarStyle == "icon" {
             title = ""
         } else if let s = model.summary, s.counts.total > 0 {
-            title = " " + model.menuBarText(s)
+            // 燃烧中把速率放在最前，形成「火苗 + 速率 + 用量 + 费用」的紧凑一行
+            let rate = model.isBurning ? Fmt.compactTokens(model.burnRate ?? 0) + "/s · " : ""
+            title = " " + rate + model.menuBarText(s)
         } else {
             title = model.scanning ? " …" : " 0"
         }
@@ -297,7 +276,6 @@ final class StatusBarController: NSObject {
     }
 
     func showPanel() {
-        island?.setHidden(true)
         guard let panel, let button = item.button, let window = button.window else { return }
         let buttonRect = window.convertToScreen(button.convert(button.bounds, to: nil))
         var x = buttonRect.midX - Self.panelSize.width / 2
@@ -323,7 +301,6 @@ final class StatusBarController: NSObject {
     }
 
     func hidePanel() {
-        island?.setHidden(false)
         panel?.orderOut(nil)
         model.panelOpen = false
         removeOutsideMonitor()
