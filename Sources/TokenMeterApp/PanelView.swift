@@ -64,6 +64,8 @@ struct PanelView: View {
     @EnvironmentObject var actions: AppActions
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hoveredDay: String?
+    /// 每日用量图的堆叠维度：tool / model
+    @AppStorage("trendStackMode") private var trendStackMode: String = "tool"
     @State private var hoveredHour: Int?
     @State private var hoveredRow: String?
 
@@ -479,24 +481,55 @@ struct PanelView: View {
         }
     }
 
+    /// 每日用量：堆叠柱（每段一种工具/模型），配色沿用主题调色板
     private func trendSection(_ s: Summary) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("每日用量（近 30 天）")
-            let days = s.trendDays
-            if days.isEmpty {
+        let byModel = trendStackMode == "model"
+        let stacks: [DayStack] = byModel ? (s.trendByModel ?? []) : (s.trendByTool ?? [])
+        let fallback: [DayStack] = s.trendDays.map { d in
+            DayStack(day: d.day, parts: d.counts.total > 0
+                ? [StackPart(name: byModel ? "全部模型" : "全部工具", counts: d.counts, cost: d.cost)] : [])
+        }
+        let data = stacks.isEmpty ? fallback : stacks
+        // 系列按总量降序，保证颜色稳定
+        var seriesTotals: [String: Int64] = [:]
+        for d in data { for p in d.parts { seriesTotals[p.name, default: 0] += p.counts.total } }
+        let series = seriesTotals.sorted { $0.value > $1.value }.map(\.key)
+        let colorMap: [String: Color] = Dictionary(uniqueKeysWithValues:
+            series.enumerated().map { ($0.element, palette[$0.offset % palette.count]) })
+        let grandTotal = max(1, seriesTotals.values.reduce(0, +))
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                sectionTitle(byModel ? "每日用量 · 按模型" : "每日用量 · 按工具")
+                Spacer()
+                Picker("", selection: $trendStackMode) {
+                    Text("工具").tag("tool")
+                    Text("模型").tag("model")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.mini)
+                .frame(width: 96)
+            }
+            if data.allSatisfy({ $0.parts.isEmpty }) {
                 emptyNote
             } else {
-                // 只标 5 个刻度，避免日期重叠
-                let labelDays = [0, 7, 14, 21, 29].compactMap { days.indices.contains($0) ? days[$0].day : nil }
-                Chart(days, id: \.day) { d in
-                    BarMark(
-                        x: .value("日期", d.day),
-                        y: .value("Tokens", Double(disp(d.counts)))
-                    )
-                    .foregroundStyle(model.theme.primary.gradient)
-                    .cornerRadius(2)
-                    .opacity(hoveredDay == nil || hoveredDay == d.day ? 1 : 0.4)
+                let labelDays = [0, 7, 14, 21, 29].compactMap { data.indices.contains($0) ? data[$0].day : nil }
+                Chart {
+                    ForEach(data, id: \.day) { d in
+                        ForEach(d.parts, id: \.name) { part in
+                            BarMark(
+                                x: .value("日期", d.day),
+                                y: .value("Tokens", Double(disp(part.counts)))
+                            )
+                            .foregroundStyle(by: .value("系列", part.name))
+                            .cornerRadius(2)
+                            .opacity(hoveredDay == nil || hoveredDay == d.day ? 1 : 0.35)
+                        }
+                    }
                 }
+                .chartForegroundStyleScale(domain: series, range: series.map { colorMap[$0] ?? .gray })
+                .chartLegend(.hidden)
                 .chartXAxis {
                     AxisMarks(values: labelDays) { value in
                         AxisValueLabel {
@@ -534,33 +567,55 @@ struct PanelView: View {
                                     }
                                 }
                             if let hd = hoveredDay,
-                               let stat = days.first(where: { $0.day == hd }),
+                               let d = data.first(where: { $0.day == hd }),
                                let plotAnchor = proxy.plotFrame,
                                let xPos = proxy.position(forX: hd) {
                                 let frame = geo[plotAnchor]
+                                let total = d.parts.reduce(Int64(0)) { $0 + $1.counts.total }
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(stat.day).font(.caption2).foregroundStyle(.secondary)
-                                    Text("\(Fmt.tokens(disp(stat.counts))) tokens")
-                                        .font(.caption).bold().monospacedDigit()
-                                    Text("\(Fmt.cost(stat.cost)) · \(stat.counts.total > 0 ? Fmt.percent(Double(stat.counts.cacheRead) / Double(max(1, stat.counts.input + stat.counts.cacheRead))) : "-") 缓存命中")
+                                    Text("\(d.day.dropFirst(5)) · \(Fmt.tokens(total))")
                                         .font(.caption2).foregroundStyle(.secondary)
+                                    ForEach(d.parts.prefix(4), id: \.name) { part in
+                                        HStack(spacing: 4) {
+                                            Circle().fill(colorMap[part.name] ?? .gray).frame(width: 5, height: 5)
+                                            Text(part.name).font(.caption2).lineLimit(1)
+                                            Spacer(minLength: 6)
+                                            Text(Fmt.tokens(disp(part.counts))).font(.caption2).monospacedDigit()
+                                        }
+                                    }
                                 }
                                 .padding(6)
+                                .frame(width: 155)
                                 .background(RoundedRectangle(cornerRadius: 6).fill(.regularMaterial))
                                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
-                                .position(x: min(max(xPos + frame.origin.x, 70), geo.size.width - 70), y: 26)
+                                .position(x: min(max(xPos + frame.origin.x, 85), geo.size.width - 85), y: 42)
                                 .allowsHitTesting(false)
                             }
                         }
                     }
                 }
-                .frame(height: 110)
+                .frame(height: 96)
+                // 图例：色点 + 名称 + 总量 + 占比
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(series.prefix(6), id: \.self) { name in
+                        HStack(spacing: 5) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(colorMap[name] ?? .gray)
+                                .frame(width: 8, height: 8)
+                            Text(name).font(.caption2).lineLimit(1)
+                            Spacer(minLength: 4)
+                            Text(Fmt.compactTokens(seriesTotals[name] ?? 0))
+                                .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+                            Text(Fmt.percent(Double(seriesTotals[name] ?? 0) / Double(grandTotal)))
+                                .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
+                                .frame(width: 42, alignment: .trailing)
+                        }
+                    }
+                }
             }
         }
     }
 
-    /// 环比（上一个等长周期）与本月预测
-    @ViewBuilder
     private func deltaNotes(_ s: Summary) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             if let prev = s.previousCounts, prev.total > 0 {

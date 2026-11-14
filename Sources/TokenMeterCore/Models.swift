@@ -232,6 +232,28 @@ public struct DayStat: Codable, Sendable {
     public var cost: Double
 }
 
+/// 堆叠柱的一段：某天某个工具（或模型）的用量
+public struct StackPart: Codable, Sendable {
+    public var name: String
+    public var counts: TokenCounts
+    public var cost: Double
+    public init(name: String, counts: TokenCounts, cost: Double) {
+        self.name = name
+        self.counts = counts
+        self.cost = cost
+    }
+}
+
+/// 一天的堆叠构成（parts 已按用量降序）
+public struct DayStack: Codable, Sendable {
+    public var day: String
+    public var parts: [StackPart]
+    public init(day: String, parts: [StackPart]) {
+        self.day = day
+        self.parts = parts
+    }
+}
+
 public struct ProjectStat: Codable, Sendable {
     public var project: String
     public var counts: TokenCounts
@@ -270,6 +292,10 @@ public struct Summary: Codable, Sendable {
     /// 与 previousCounts 同口径的「本期」值（今天只算已过完整点），保证百分比公平
     public var comparableCounts: TokenCounts?
     public var comparableCost: Double?
+    /// 近 30 天按工具拆分的每日用量（堆叠柱状图）
+    public var trendByTool: [DayStack]?
+    /// 近 30 天按模型拆分的每日用量（堆叠柱状图）
+    public var trendByModel: [DayStack]?
     /// 本月预测（仅在 range == .month 时有效）
     public var forecastCost: Double?
     public var forecastCounts: TokenCounts?

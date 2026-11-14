@@ -95,6 +95,9 @@ public enum Aggregator {
         var hourMap: [Int: (counts: TokenCounts, cost: Double)] = [:]
         var dayMap: [String: (counts: TokenCounts, cost: Double)] = [:]
         var dayMapAll: [String: (counts: TokenCounts, cost: Double)] = [:]
+        // 每日按工具/模型拆分（堆叠柱状图用）
+        var dayToolMap: [String: [String: (TokenCounts, Double)]] = [:]
+        var dayModelMap: [String: [String: (TokenCounts, Double)]] = [:]
         let prevRange = range.previousDayRange(now: now)
         var prevCounts = TokenCounts()
         var prevCost = 0.0
@@ -112,6 +115,12 @@ public enum Aggregator {
             var da = dayMapAll[b.day] ?? (TokenCounts(), 0)
             da.counts += b.counts; da.cost += c
             dayMapAll[b.day] = da
+            var dt = dayToolMap[b.day]?[b.tool] ?? (TokenCounts(), 0)
+            dt.0 += b.counts; dt.1 += c
+            dayToolMap[b.day, default: [:]][b.tool] = dt
+            var dm = dayModelMap[b.day]?[b.model] ?? (TokenCounts(), 0)
+            dm.0 += b.counts; dm.1 += c
+            dayModelMap[b.day, default: [:]][b.model] = dm
             if let startKey, b.day < startKey { continue }
             if let endKey, b.day > endKey { continue }
             counts += b.counts
@@ -191,6 +200,14 @@ public enum Aggregator {
             let e = dayMapAll[key]
             trend.append(DayStat(day: key, counts: e?.counts ?? TokenCounts(), cost: e?.cost ?? 0))
         }
+        func stack(_ m: [String: [String: (TokenCounts, Double)]], day key: String) -> DayStack {
+            let parts = (m[key] ?? [:])
+                .map { StackPart(name: $0.key, counts: $0.value.0, cost: $0.value.1) }
+                .sorted { $0.counts.total > $1.counts.total }
+            return DayStack(day: key, parts: parts)
+        }
+        let trendByTool = trend.map { stack(dayToolMap, day: $0.day) }
+        let trendByModel = trend.map { stack(dayModelMap, day: $0.day) }
         let denom = Double(counts.input + counts.cacheRead)
         let hit = denom > 0 ? Double(counts.cacheRead) / denom : 0
         let projects = projectMap.map { ProjectStat(project: $0.key, counts: $0.value.counts, cost: $0.value.cost, share: Double($0.value.counts.total) / Double(totalAll), tools: Array($0.value.tools).sorted()) }
@@ -232,6 +249,7 @@ public enum Aggregator {
                        previousLabel: previousLabel,
                        comparableCounts: comparableCounts,
                        comparableCost: comparableCost,
+                       trendByTool: trendByTool, trendByModel: trendByModel,
                        forecastCost: forecastCost, forecastCounts: forecastCounts)
     }
 
