@@ -437,10 +437,14 @@ struct PanelView: View {
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
                 Text(Fmt.compactTokens(stat.parts.reduce(Int64(0)) { $0 + disp($1.counts) }))
                     .font(.caption2.weight(.medium)).monospacedDigit()
-                ForEach(stat.parts.prefix(2), id: \.name) { part in
+                ForEach(stat.parts.prefix(3), id: \.name) { part in
                     HStack(spacing: 3) {
                         Circle().fill(colorMap[part.name] ?? .gray).frame(width: 5, height: 5)
-                        Text(part.name).font(.system(size: 9)).lineLimit(1)
+                        Text(part.name)
+                            .font(.system(size: 9)).lineLimit(1).truncationMode(.middle)
+                        Text(Fmt.compactTokens(disp(part.counts)))
+                            .font(.system(size: 9)).monospacedDigit()
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -458,10 +462,14 @@ struct PanelView: View {
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
                 Text(Fmt.compactTokens(stat.parts.reduce(Int64(0)) { $0 + disp($1.counts) }))
                     .font(.caption2.weight(.medium)).monospacedDigit()
-                ForEach(stat.parts.prefix(2), id: \.name) { part in
+                ForEach(stat.parts.prefix(3), id: \.name) { part in
                     HStack(spacing: 3) {
                         Circle().fill(colorMap[part.name] ?? .gray).frame(width: 5, height: 5)
-                        Text(part.name).font(.system(size: 9)).lineLimit(1)
+                        Text(part.name)
+                            .font(.system(size: 9)).lineLimit(1).truncationMode(.middle)
+                        Text(Fmt.compactTokens(disp(part.counts)))
+                            .font(.system(size: 9)).monospacedDigit()
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
