@@ -490,7 +490,9 @@ struct PanelView: View {
                         if let hh = hoveredHour,
                            let stat = data.first(where: { $0.hour == hh }),
                            let plotAnchor = proxy.plotFrame,
-                           let xPos = proxy.position(forX: hh) {
+                           // x 轴是字符串分类（"00"…"23"），这里必须传同样的键：
+                           // 传 Int 会返回 nil，导致整块悬浮提示永远不显示
+                           let xPos = proxy.position(forX: Self.hourKey(hh)) {
                             let frame = geo[plotAnchor]
                             let total = stat.parts.reduce(Int64(0)) { $0 + $1.counts.total }
                             VStack(alignment: .leading, spacing: 2) {
