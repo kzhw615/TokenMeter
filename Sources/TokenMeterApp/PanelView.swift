@@ -427,10 +427,15 @@ struct PanelView: View {
         return VStack(alignment: .leading, spacing: 8) {
             sectionTitle("逐小时用量 · \(s.hoursMode)")
             Chart {
+                // 每小时的零值占位柱：保证 24 个类别始终存在（没数据的钟点也不会被吞掉）
+                ForEach(data, id: \.hour) { h in
+                    BarMark(x: .value("小时", Self.hourKey(h.hour)), y: .value("Tokens", 0))
+                        .foregroundStyle(.clear)
+                }
                 ForEach(data, id: \.hour) { h in
                     ForEach(h.parts, id: \.name) { part in
                         BarMark(
-                            x: .value("小时", h.hour),
+                            x: .value("小时", Self.hourKey(h.hour)),
                             y: .value("Tokens", Double(disp(part.counts)))
                         )
                         .foregroundStyle(by: .value("模型", part.name))
@@ -441,10 +446,16 @@ struct PanelView: View {
             }
             .chartForegroundStyleScale(domain: series, range: series.map { colorMap[$0] ?? .gray })
             .chartLegend(.hidden)
+            // 显式给出 24 个类别：否则没数据的钟点不进 domain，柱子会被撑成半屏宽
+            .chartXScale(domain: (0..<24).map(Self.hourKey))
             .chartXAxis {
-                AxisMarks(values: [0, 6, 12, 18, 23]) { value in
+                // 分类轴：只标 5 个钟点，值按小时键（"00"…"23"）匹配
+                // 取靠内的刻度：贴边的标签会被绘图区裁成 "…"
+                AxisMarks(values: ["03", "09", "15", "21"]) { value in
                     AxisValueLabel {
-                        if let h = value.as(Int.self) { Text("\(h)时").font(.caption2) }
+                        if let key = value.as(String.self), let h = Int(key) {
+                            Text("\(h)时").font(.caption2)
+                        }
                     }
                 }
             }
@@ -466,7 +477,8 @@ struct PanelView: View {
                                 case .active(let loc):
                                     guard let plotAnchor = proxy.plotFrame else { hoveredHour = nil; return }
                                     let frame = geo[plotAnchor]
-                                    if let hour: Int = proxy.value(atX: loc.x - frame.origin.x) {
+                                    if let key: String = proxy.value(atX: loc.x - frame.origin.x),
+                                       let hour = Int(key) {
                                         hoveredHour = (0...23).contains(hour) ? hour : nil
                                     } else {
                                         hoveredHour = nil
@@ -754,6 +766,9 @@ private func budgetRow(label: String, value: Binding<Double>, cost: Double?) -> 
     private func dispShare(_ c: TokenCounts, total: Int64) -> Double {
         total > 0 ? Double(disp(c)) / Double(total) : 0
     }
+
+    /// 小时键：两位数字符串，用作分类轴的类别值
+    static func hourKey(_ hour: Int) -> String { String(format: "%02d", hour) }
 
     private func sectionTitle(_ t: String) -> some View {
         Text(t).font(.headline).padding(.top, 2)

@@ -370,7 +370,8 @@ struct SideDockView: View {
     @ViewBuilder
     private var iconView: some View {
         if model.isBurning {
-            FlameIcon(ticker: model.flame, frames: model.currentFlameFrames, size: 26)
+            FlameIcon(ticker: model.flame, frames: model.currentFlameFrames,
+                      size: model.flameTier == .blast ? 30 : 26)
         } else {
             Image(systemName: "circle.hexagongrid.fill")
                 .font(.system(size: 20))

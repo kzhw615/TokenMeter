@@ -276,16 +276,29 @@ final class AppModel: ObservableObject {
     static let flameFramesIntenseBig = loadFlameFrames("menubar_flame_hot_big_", pointSize: 19)
     static let flameFramesInferno = loadFlameFrames("menubar_flame_inferno_", pointSize: 19)
     static let flameFramesInfernoBig = loadFlameFrames("menubar_flame_inferno_big_", pointSize: 19)
+    static let flameFramesBlast = loadFlameFrames("menubar_flame_blast_", pointSize: 19)
+    static let flameFramesBlastBig = loadFlameFrames("menubar_flame_blast_big_", pointSize: 19)
 
-    /// 档位阈值：≥4K 微旺，≥15K 旺盛，≥40K 爆燃
+    /// 档位阈值：≥4K 微旺，≥15K 旺盛，≥30K 猛燃（多舌），≥50K 爆燃（最高档）
     static let warmRateThreshold: Int64 = 4_000
     static let intenseRateThreshold: Int64 = 15_000
-    static let infernoRateThreshold: Int64 = 40_000
+    static let infernoRateThreshold: Int64 = 30_000
+    static let blastRateThreshold: Int64 = 50_000
 
-    enum FlameTier { case calm, warm, hot, inferno }
+    enum FlameTier { case calm, warm, hot, inferno, blast }
 
     var flameTier: FlameTier {
+        // 诊断：TOKENMETER_FLAME_TIER=calm|warm|hot|inferno|blast 强制档位
+        switch ProcessInfo.processInfo.environment["TOKENMETER_FLAME_TIER"] {
+        case "calm": return .calm
+        case "warm": return .warm
+        case "hot": return .hot
+        case "inferno": return .inferno
+        case "blast": return .blast
+        default: break
+        }
         let rate = burnRate ?? 0
+        if rate >= Self.blastRateThreshold { return .blast }
         if rate >= Self.infernoRateThreshold { return .inferno }
         if rate >= Self.intenseRateThreshold { return .hot }
         if rate >= Self.warmRateThreshold { return .warm }
@@ -294,6 +307,16 @@ final class AppModel: ObservableObject {
 
     /// 火苗点尺寸随速率连续变化（12 → 22pt，对数压缩让低速也有变化）
     var flamePointSize: CGFloat {
+        if let forced = ProcessInfo.processInfo.environment["TOKENMETER_FLAME_TIER"] {
+            switch forced {
+            case "calm": return 13
+            case "warm": return 16
+            case "hot": return 19
+            case "inferno": return 22
+            case "blast": return 23
+            default: break
+            }
+        }
         let rate = Double(burnRate ?? 0)
         guard rate > 0 else { return 12 }
         let t = min(1.0, pow(rate / 60_000.0, 0.45))
@@ -301,11 +324,18 @@ final class AppModel: ObservableObject {
         // 这样跨档瞬间尺寸连续，不会突然弹一下；仅形状切换。
         let ramp = min(1.0, max(0.0, (rate - Double(Self.intenseRateThreshold))
                                        / (Double(Self.infernoRateThreshold) - Double(Self.intenseRateThreshold))))
-        return 12 + 10 * t + 2 * CGFloat(ramp)
+        // 爆燃档再加一段，封顶 23pt（菜单栏高度有限，再大就会被裁）
+        let ramp2 = min(1.0, max(0.0, (rate - Double(Self.infernoRateThreshold))
+                                        / (Double(Self.blastRateThreshold) - Double(Self.infernoRateThreshold))))
+        return min(23, 12 + 10 * t + 2 * CGFloat(ramp) + 1.5 * CGFloat(ramp2))
     }
 
     var currentFlameFrames: [NSImage] {
         switch flameTier {
+        case .blast:
+            let big = flamePointSize >= 18
+            let set = big && !Self.flameFramesBlastBig.isEmpty ? Self.flameFramesBlastBig : Self.flameFramesBlast
+            return set.isEmpty ? Self.flameFramesInferno : set
         case .inferno:
             let big = flamePointSize >= 18
             let set = big && !Self.flameFramesInfernoBig.isEmpty ? Self.flameFramesInfernoBig : Self.flameFramesInferno
@@ -390,6 +420,7 @@ final class AppModel: ObservableObject {
                 // 档位越高帧率越高：爆燃最"急"
                 let fps: Int
                 switch self.flameTier {
+                case .blast: fps = 22
                 case .inferno: fps = 18
                 case .hot: fps = 15
                 default: fps = 12
@@ -620,7 +651,27 @@ final class AppModel: ObservableObject {
                 let todayTotal = all[.today]?.counts.total ?? 0
                 let fileTotal = statuses.reduce(0) { $0 + $1.files }
                 Task { @MainActor in
-                    self.summariesByRange = all
+                    var next = all
+                    if partial {
+                        // 阶段一只扫了近两天：趋势/逐小时这类「跨天」图表拿到的数据不完整，
+                        // 直接推上去会闪一下（30 天柱状图只剩几天、且只剩一个模型的颜色）。
+                        // 这里沿用上一轮的完整系列数据，等阶段二算完再整体替换。
+                        for (r, var summary) in next {
+                            if let prev = self.summariesByRange[r] {
+                                // 有上一轮：沿用完整系列数据，避免闪成"只剩一个颜色"
+                                summary.trendByTool = prev.trendByTool
+                                summary.trendByModel = prev.trendByModel
+                                summary.hoursByModel = prev.hoursByModel
+                            } else {
+                                // 首启无上一轮：宁可空着（显示"暂无数据"）也不要画错的图
+                                summary.trendByTool = nil
+                                summary.trendByModel = nil
+                                summary.hoursByModel = nil
+                            }
+                            next[r] = summary
+                        }
+                    }
+                    self.summariesByRange = next
                     self.loadHarnessIcons()
                     self.lastScan = Date()
                     if !partial {
