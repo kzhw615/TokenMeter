@@ -30,34 +30,42 @@ struct BarFlareShape: Shape {
         let ixR = side == "right" ? w : w - ix
         var p = Path()
 
-        // 外侧（贴屏边那一侧）用「与两条边都相切的凹圆角」：
-        // 圆心取 (边内侧 r, 角内侧 r)，从边的垂足画 90° 圆弧 ——
-        // 这样上/下两角半径与内侧完全一致，端点切线水平/垂直，不会多出一截也不会有拐角。
+        // 四条边都用真圆弧（半径统一 = radius）：
+        // - 内侧（远离屏幕那一侧）：普通外凸圆角
+        // - 外侧（贴屏幕那一侧）：凹圆角（喇叭口），弧心在舱体外侧，
+        //   轮廓从顶边平滑地往屏幕方向「张开」再贴住边缘，看起来是融进屏幕而不是鼓出来
         if side == "right" {
             p.move(to: CGPoint(x: ixL + r, y: oy))
             p.addLine(to: CGPoint(x: w - r, y: oy))
-            p.addArc(center: CGPoint(x: w - r, y: oy + r), radius: r,
-                     startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false)
-            p.addLine(to: CGPoint(x: w, y: ob - r))
-            p.addArc(center: CGPoint(x: w - r, y: ob - r), radius: r,
-                     startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
+            // 上喇叭口：端点切线 水平 → 垂直，向内凹
+            p.addArc(center: CGPoint(x: w - r, y: oy - r), radius: r,
+                     startAngle: .degrees(90), endAngle: .degrees(0), clockwise: true)
+            p.addLine(to: CGPoint(x: w, y: ob + r))
+            // 下喇叭口
+            p.addArc(center: CGPoint(x: w - r, y: ob + r), radius: r,
+                     startAngle: .degrees(0), endAngle: .degrees(270), clockwise: true)
             p.addLine(to: CGPoint(x: ixL + r, y: ob))
-            p.addQuadCurve(to: CGPoint(x: ixL, y: ob - r), control: CGPoint(x: ixL, y: ob))
+            // 左侧两角：普通圆角
+            p.addArc(center: CGPoint(x: ixL + r, y: ob - r), radius: r,
+                     startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
             p.addLine(to: CGPoint(x: ixL, y: oy + r))
-            p.addQuadCurve(to: CGPoint(x: ixL + r, y: oy), control: CGPoint(x: ixL, y: oy))
+            p.addArc(center: CGPoint(x: ixL + r, y: oy + r), radius: r,
+                     startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
             p.closeSubpath()
         } else {
             p.move(to: CGPoint(x: ixR - r, y: oy))
             p.addLine(to: CGPoint(x: r, y: oy))
-            p.addArc(center: CGPoint(x: r, y: oy + r), radius: r,
-                     startAngle: .degrees(-90), endAngle: .degrees(180), clockwise: true)
-            p.addLine(to: CGPoint(x: 0, y: ob - r))
-            p.addArc(center: CGPoint(x: r, y: ob - r), radius: r,
-                     startAngle: .degrees(180), endAngle: .degrees(90), clockwise: true)
+            p.addArc(center: CGPoint(x: r, y: oy - r), radius: r,
+                     startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+            p.addLine(to: CGPoint(x: 0, y: ob + r))
+            p.addArc(center: CGPoint(x: r, y: ob + r), radius: r,
+                     startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
             p.addLine(to: CGPoint(x: ixR - r, y: ob))
-            p.addQuadCurve(to: CGPoint(x: ixR, y: ob - r), control: CGPoint(x: ixR, y: ob))
+            p.addArc(center: CGPoint(x: ixR - r, y: ob - r), radius: r,
+                     startAngle: .degrees(90), endAngle: .degrees(0), clockwise: true)
             p.addLine(to: CGPoint(x: ixR, y: oy + r))
-            p.addQuadCurve(to: CGPoint(x: ixR - r, y: oy), control: CGPoint(x: ixR, y: oy))
+            p.addArc(center: CGPoint(x: ixR - r, y: oy + r), radius: r,
+                     startAngle: .degrees(0), endAngle: .degrees(270), clockwise: true)
             p.closeSubpath()
         }
         return p
