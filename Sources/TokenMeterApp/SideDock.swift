@@ -24,30 +24,23 @@ struct BarFlareShape: Shape {
     func path(in rect: CGRect) -> Path {
         let w = rect.width, h = rect.height
         let r = radius
-        let f = flare * fuse         // 喇叭口水平外扩量
-        let oR = radius * (1 - fuse) // 外侧圆角半径
         let oy = barInsetY           // 舱体顶
         let ob = h - bottomInset     // 舱体底
         let ixL = side == "right" ? ix : 0     // 内侧边 x
         let ixR = side == "right" ? w : w - ix
-        // 外侧上角：浮块角弧端点 (w, oy+oR) ↔ 融合收尖端 (w, oy-rise)
-        let topEndY = oy + oR * (1 - fuse) - rise * fuse
-        let botEndY = ob - oR * (1 - fuse) + rise * fuse
-        // 控制点插值：浮块圆弧近似 (0.55r) ↔ 融合凹弧 (0.75f / 0.45wing)
-        let c1x = w - (r - 0.55 * r) * (1 - fuse) - (flare * 0.75) * fuse
-        let c2yTop = (oy + 0.45 * r) * (1 - fuse) + (oy - rise * 0.55) * fuse
-        let c2yBot = (ob - 0.45 * r) * (1 - fuse) + (ob + rise * 0.55) * fuse
         var p = Path()
+
+        // 外侧（贴屏边那一侧）用「与两条边都相切的凹圆角」：
+        // 圆心取 (边内侧 r, 角内侧 r)，从边的垂足画 90° 圆弧 ——
+        // 这样上/下两角半径与内侧完全一致，端点切线水平/垂直，不会多出一截也不会有拐角。
         if side == "right" {
             p.move(to: CGPoint(x: ixL + r, y: oy))
-            p.addLine(to: CGPoint(x: w - f - oR, y: oy))
-            p.addCurve(to: CGPoint(x: w, y: topEndY),
-                       control1: CGPoint(x: c1x, y: oy),
-                       control2: CGPoint(x: w, y: c2yTop))
-            p.addLine(to: CGPoint(x: w, y: botEndY))
-            p.addCurve(to: CGPoint(x: w - f - oR, y: ob),
-                       control1: CGPoint(x: w, y: c2yBot),
-                       control2: CGPoint(x: c1x, y: ob))
+            p.addLine(to: CGPoint(x: w - r, y: oy))
+            p.addArc(center: CGPoint(x: w - r, y: oy + r), radius: r,
+                     startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false)
+            p.addLine(to: CGPoint(x: w, y: ob - r))
+            p.addArc(center: CGPoint(x: w - r, y: ob - r), radius: r,
+                     startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
             p.addLine(to: CGPoint(x: ixL + r, y: ob))
             p.addQuadCurve(to: CGPoint(x: ixL, y: ob - r), control: CGPoint(x: ixL, y: ob))
             p.addLine(to: CGPoint(x: ixL, y: oy + r))
@@ -55,14 +48,12 @@ struct BarFlareShape: Shape {
             p.closeSubpath()
         } else {
             p.move(to: CGPoint(x: ixR - r, y: oy))
-            p.addLine(to: CGPoint(x: f + oR, y: oy))
-            p.addCurve(to: CGPoint(x: 0, y: topEndY),
-                       control1: CGPoint(x: w - c1x, y: oy),
-                       control2: CGPoint(x: 0, y: c2yTop))
-            p.addLine(to: CGPoint(x: 0, y: botEndY))
-            p.addCurve(to: CGPoint(x: f + oR, y: ob),
-                       control1: CGPoint(x: 0, y: c2yBot),
-                       control2: CGPoint(x: w - c1x, y: ob))
+            p.addLine(to: CGPoint(x: r, y: oy))
+            p.addArc(center: CGPoint(x: r, y: oy + r), radius: r,
+                     startAngle: .degrees(-90), endAngle: .degrees(180), clockwise: true)
+            p.addLine(to: CGPoint(x: 0, y: ob - r))
+            p.addArc(center: CGPoint(x: r, y: ob - r), radius: r,
+                     startAngle: .degrees(180), endAngle: .degrees(90), clockwise: true)
             p.addLine(to: CGPoint(x: ixR - r, y: ob))
             p.addQuadCurve(to: CGPoint(x: ixR, y: ob - r), control: CGPoint(x: ixR, y: ob))
             p.addLine(to: CGPoint(x: ixR, y: oy + r))
@@ -486,8 +477,6 @@ struct SideDockView: View {
         return AnyShape(BarFlareShape(side: controller.side,
                                       fuse: controller.fuse,
                                       bottomInset: controller.bottomInset,
-                                      flare: 26,
-                                      rise: 26,
                                       radius: 26))
     }
 
