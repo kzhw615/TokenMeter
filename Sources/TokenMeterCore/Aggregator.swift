@@ -32,6 +32,17 @@ public enum Aggregator {
     /// 诊断开关：扫描时把每个数据源耗时打到 stderr
     public nonisolated(unsafe) static var timingEnabled = false
     /// 由 day key + hour 还原本地时间（用于时段敏感计价）
+
+    /// 归一化模型名：去掉工具自己加的 provider 前缀。
+    /// 例：WorkBuddy 把本地 provider 写成 `custom-local:deepseek-flash`，
+    /// 直接展示会出现 "custom-local" 这个多余前缀，也会让价格表匹配不到。
+    static func normalizedModel(_ raw: String) -> String {
+        for prefix in ["custom-local:", "custom-remote:"] where raw.lowercased().hasPrefix(prefix) {
+            return String(raw.dropFirst(prefix.count))
+        }
+        return raw
+    }
+
     static func bucketDate(day: String, hour: Int, calendar: Calendar) -> Date? {
         guard let base = DayKey.date(for: day) else { return nil }
         return calendar.date(bySettingHour: hour, minute: 0, second: 0, of: base)
@@ -110,18 +121,19 @@ public enum Aggregator {
         let sameTimeCutoff: Int? = (range == .today && nowHour > 0) ? nowHour : nil
         let todayKey = DayKey.key(for: cal0.startOfDay(for: now), calendar: cal0)
         for b in buckets {
+            let model = Self.normalizedModel(b.model)
             let bucketDate = Self.bucketDate(day: b.day, hour: b.hour, calendar: cal0)
-            let c = pricing.cost(for: b.counts, model: b.model, at: bucketDate)
-            if pricing.price(for: b.model) == nil { unpriced.insert(b.model) }
+            let c = pricing.cost(for: b.counts, model: model, at: bucketDate)
+            if pricing.price(for: model) == nil { unpriced.insert(model) }
             var da = dayMapAll[b.day] ?? (TokenCounts(), 0)
             da.counts += b.counts; da.cost += c
             dayMapAll[b.day] = da
             var dt = dayToolMap[b.day]?[b.tool] ?? (TokenCounts(), 0)
             dt.0 += b.counts; dt.1 += c
             dayToolMap[b.day, default: [:]][b.tool] = dt
-            var dm = dayModelMap[b.day]?[b.model] ?? (TokenCounts(), 0)
+            var dm = dayModelMap[b.day]?[model] ?? (TokenCounts(), 0)
             dm.0 += b.counts; dm.1 += c
-            dayModelMap[b.day, default: [:]][b.model] = dm
+            dayModelMap[b.day, default: [:]][model] = dm
             if let startKey, b.day < startKey { continue }
             if let endKey, b.day > endKey { continue }
             counts += b.counts
@@ -130,18 +142,18 @@ public enum Aggregator {
             var t = toolMap[b.tool] ?? (TokenCounts(), 0, 0)
             t.counts += b.counts; t.cost += c; t.requests += b.requests
             toolMap[b.tool] = t
-            var m = modelMap[b.model] ?? (TokenCounts(), 0, 0, [])
+            var m = modelMap[model] ?? (TokenCounts(), 0, 0, [])
             m.counts += b.counts; m.cost += c; m.requests += b.requests; m.tools.insert(b.tool)
-            modelMap[b.model] = m
+            modelMap[model] = m
             var pj = projectMap[b.project] ?? (TokenCounts(), 0, [])
             pj.counts += b.counts; pj.cost += c; pj.tools.insert(b.tool)
             projectMap[b.project] = pj
             var h = hourMap[b.hour] ?? (TokenCounts(), 0)
             h.counts += b.counts; h.cost += c
             hourMap[b.hour] = h
-            var hm = hourModelMap[b.hour]?[b.model] ?? (TokenCounts(), 0)
+            var hm = hourModelMap[b.hour]?[model] ?? (TokenCounts(), 0)
             hm.0 += b.counts; hm.1 += c
-            hourModelMap[b.hour, default: [:]][b.model] = hm
+            hourModelMap[b.hour, default: [:]][model] = hm
             var d = dayMap[b.day] ?? (TokenCounts(), 0)
             d.counts += b.counts; d.cost += c
             dayMap[b.day] = d
@@ -170,7 +182,7 @@ public enum Aggregator {
                 if let cut = sameTimeCutoff, b.hour >= cut { continue }
                 let dt = Self.bucketDate(day: b.day, hour: b.hour, calendar: cal0)
                 prevCounts += b.counts
-                prevCost += pricing.cost(for: b.counts, model: b.model, at: dt)
+                prevCost += pricing.cost(for: b.counts, model: Self.normalizedModel(b.model), at: dt)
             }
         }
         // 同口径的「本期」值（今天只算已过完的整点），保证百分比可比较
@@ -180,7 +192,7 @@ public enum Aggregator {
             var cc = TokenCounts(); var ccost = 0.0
             for b in buckets where b.day == todayKey && b.hour < cut {
                 cc += b.counts
-                ccost += pricing.cost(for: b.counts, model: b.model,
+                ccost += pricing.cost(for: b.counts, model: Self.normalizedModel(b.model),
                                       at: Self.bucketDate(day: b.day, hour: b.hour, calendar: cal0))
             }
             comparableCounts = cc

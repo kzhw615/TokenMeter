@@ -210,6 +210,14 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertEqual(LineReader.lastCompleteLineBoundary(path: file.path), complete)
     }
 
+    /// 工具自带的 provider 前缀要去掉（WorkBuddy 把本地 provider 写成 custom-local:xxx）
+    func testModelPrefixNormalization() {
+        XCTAssertEqual(Aggregator.normalizedModel("custom-local:deepseek-flash"), "deepseek-flash")
+        XCTAssertEqual(Aggregator.normalizedModel("custom-local:deepseek/deepseek-flash"),
+                       "deepseek/deepseek-flash")
+        XCTAssertEqual(Aggregator.normalizedModel("gpt-6.1-sol"), "gpt-6.1-sol")
+    }
+
     /// 中转 API 的模型别名要按同族模型计价（auto-gpt-6-1-sol → gpt-6.1-sol）
     func testPricingAlias() {
         let table = PricingTable(prices: PricingTable.builtin)
