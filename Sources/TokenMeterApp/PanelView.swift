@@ -457,10 +457,16 @@ struct PanelView: View {
         for h in data { for p in h.parts { seriesTotals[p.name, default: 0] += p.counts.total } }
         let series = seriesTotals.sorted { $0.value > $1.value }.map(\.key)
         let colorMap = seriesColors(series, globalOrder: s.models.map(\.model))
-        let grandTotal = max(1, seriesTotals.values.reduce(0, +))
+        let totalTokens = seriesTotals.values.reduce(0, +)
+        let grandTotal = max(1, totalTokens)
 
         return VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("逐小时用量 · \(s.hoursMode)")
+            HStack(spacing: 6) {
+                sectionTitle("逐小时用量 · \(s.hoursMode)")
+                Spacer(minLength: 8)
+                Text("总计 \(Fmt.tokens(totalTokens))")
+                    .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+            }
             Chart {
                 // 每小时的零值占位柱：保证 24 个类别始终存在（没数据的钟点也不会被吞掉）
                 ForEach(data, id: \.hour) { h in
@@ -586,12 +592,15 @@ struct PanelView: View {
         for d in data { for p in d.parts { seriesTotals[p.name, default: 0] += p.counts.total } }
         let series = seriesTotals.sorted { $0.value > $1.value }.map(\.key)
         let colorMap = seriesColors(series, globalOrder: s.models.map(\.model))
-        let grandTotal = max(1, seriesTotals.values.reduce(0, +))
+        let totalTokens = seriesTotals.values.reduce(0, +)
+        let grandTotal = max(1, totalTokens)
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 sectionTitle(byModel ? "每日用量 · 按模型" : "每日用量 · 按工具")
                 Spacer()
+                Text("总计 \(Fmt.tokens(totalTokens))")
+                    .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
                 Picker("", selection: $trendStackMode) {
                     Text("工具").tag("tool")
                     Text("模型").tag("model")
