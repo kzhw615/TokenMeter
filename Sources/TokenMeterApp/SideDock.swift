@@ -29,44 +29,44 @@ struct BarFlareShape: Shape {
         let ob = h - bottomInset     // 舱体底
         let ixL = side == "right" ? ix : 0     // 内侧边 x
         let ixR = side == "right" ? w : w - ix
+        // fuse 0→1 的形变：外侧角和内侧角用同一半径，只在「凸/凹」之间插值
+        //   f=0 外凸圆角（浮块）   f=1 内凹喇叭口（融入屏边）
+        // 端点沿屏边移动 ±r，控制点移动 ±0.45r，全程切线保持水平/垂直，不会出现拐角或越界裁切
+        let d = (1 - 2 * fuse)               // 1 → -1
+        let k = 0.45 * r * d                 // 控制点偏移
         var p = Path()
 
-        // 四条边都用真圆弧（半径统一 = radius）：
-        // - 内侧（远离屏幕那一侧）：普通外凸圆角
-        // - 外侧（贴屏幕那一侧）：凹圆角（喇叭口），弧心在舱体外侧，
-        //   轮廓从顶边平滑地往屏幕方向「张开」再贴住边缘，看起来是融进屏幕而不是鼓出来
         if side == "right" {
             p.move(to: CGPoint(x: ixL + r, y: oy))
             p.addLine(to: CGPoint(x: w - r, y: oy))
-            // 上喇叭口：端点切线 水平 → 垂直，向内凹
-            p.addArc(center: CGPoint(x: w - r, y: oy - r), radius: r,
-                     startAngle: .degrees(90), endAngle: .degrees(0), clockwise: true)
-            p.addLine(to: CGPoint(x: w, y: ob + r))
-            // 下喇叭口
-            p.addArc(center: CGPoint(x: w - r, y: ob + r), radius: r,
-                     startAngle: .degrees(0), endAngle: .degrees(270), clockwise: true)
+            // 右上角
+            p.addCurve(to: CGPoint(x: w, y: oy + r * d),
+                       control1: CGPoint(x: w - 0.45 * r, y: oy),
+                       control2: CGPoint(x: w, y: oy + k))
+            // 右下角
+            p.addLine(to: CGPoint(x: w, y: ob - r * d))
+            p.addCurve(to: CGPoint(x: w - r, y: ob),
+                       control1: CGPoint(x: w, y: ob - k),
+                       control2: CGPoint(x: w - 0.45 * r, y: ob))
             p.addLine(to: CGPoint(x: ixL + r, y: ob))
-            // 左侧两角：普通圆角
-            p.addArc(center: CGPoint(x: ixL + r, y: ob - r), radius: r,
-                     startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+            p.addQuadCurve(to: CGPoint(x: ixL, y: ob - r), control: CGPoint(x: ixL, y: ob))
             p.addLine(to: CGPoint(x: ixL, y: oy + r))
-            p.addArc(center: CGPoint(x: ixL + r, y: oy + r), radius: r,
-                     startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+            p.addQuadCurve(to: CGPoint(x: ixL + r, y: oy), control: CGPoint(x: ixL, y: oy))
             p.closeSubpath()
         } else {
             p.move(to: CGPoint(x: ixR - r, y: oy))
             p.addLine(to: CGPoint(x: r, y: oy))
-            p.addArc(center: CGPoint(x: r, y: oy - r), radius: r,
-                     startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
-            p.addLine(to: CGPoint(x: 0, y: ob + r))
-            p.addArc(center: CGPoint(x: r, y: ob + r), radius: r,
-                     startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+            p.addCurve(to: CGPoint(x: 0, y: oy + r * d),
+                       control1: CGPoint(x: 0.45 * r, y: oy),
+                       control2: CGPoint(x: 0, y: oy + 0.45 * r * d))
+            p.addLine(to: CGPoint(x: 0, y: ob - r * d))
+            p.addCurve(to: CGPoint(x: r, y: ob),
+                       control1: CGPoint(x: 0, y: ob - 0.45 * r * d),
+                       control2: CGPoint(x: 0.45 * r, y: ob))
             p.addLine(to: CGPoint(x: ixR - r, y: ob))
-            p.addArc(center: CGPoint(x: ixR - r, y: ob - r), radius: r,
-                     startAngle: .degrees(90), endAngle: .degrees(0), clockwise: true)
+            p.addQuadCurve(to: CGPoint(x: ixR, y: ob - r), control: CGPoint(x: ixR, y: ob))
             p.addLine(to: CGPoint(x: ixR, y: oy + r))
-            p.addArc(center: CGPoint(x: ixR - r, y: oy + r), radius: r,
-                     startAngle: .degrees(0), endAngle: .degrees(270), clockwise: true)
+            p.addQuadCurve(to: CGPoint(x: ixR - r, y: oy), control: CGPoint(x: ixR, y: oy))
             p.closeSubpath()
         }
         return p
@@ -98,7 +98,7 @@ final class SideDockController: ObservableObject {
     var bottomInset: CGFloat { max(28, BarFlareShape.defaultRadius + 2) }
     var dockHeight: CGFloat { max(Self.barBlockHeight, 28 + 112 + (rowCount > 0 ? 10 + CGFloat(rowCount) * 34 : 0) + bottomInset) }
 
-    @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合
+    @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合（拖动/回弹时渐变）
     @Published var side: String = "right"
 
     private var panel: NSPanel?
