@@ -367,6 +367,7 @@ struct PanelView: View {
         return VStack(alignment: .leading, spacing: 8) {
             sectionTitle("按模型")
             if s.models.isEmpty { emptyNote }
+            let modelColors = seriesColors(s.models.map(\.model), globalOrder: s.models.map(\.model))
             ForEach(Array(s.models.prefix(10).enumerated()), id: \.element.model) { idx, m in
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
@@ -377,7 +378,7 @@ struct PanelView: View {
                         Text(Fmt.percent(dispShare(m.counts, total: totalDisp))).font(.caption).foregroundStyle(.secondary).monospacedDigit().frame(width: 46, alignment: .trailing)
                         Text(Fmt.cost(m.cost)).font(.callout).monospacedDigit().frame(width: 58, alignment: .trailing)
                     }
-                    bar(share: dispShare(m.counts, total: totalDisp), color: palette[idx % palette.count])
+                    bar(share: dispShare(m.counts, total: totalDisp), color: modelColors[m.model] ?? palette[0])
                         .frame(height: 3)
                     Text(m.tools.joined(separator: " · ")).font(.caption2).foregroundStyle(.tertiary)
                 }
@@ -393,11 +394,12 @@ struct PanelView: View {
         return VStack(alignment: .leading, spacing: 8) {
             sectionTitle("按项目")
             if list.isEmpty { emptyNote }
+            let projColors = seriesColors(list.map(\.project), globalOrder: list.map(\.project))
             ForEach(Array(list.enumerated()), id: \.element.project) { idx, p in
                 HStack(spacing: 10) {
                     Text(p.project == "-" ? "未归属" : p.project).font(.callout).frame(width: 110, alignment: .leading)
                         .lineLimit(1).truncationMode(.middle)
-                    bar(share: dispShare(p.counts, total: totalDisp), color: palette[idx % palette.count])
+                    bar(share: dispShare(p.counts, total: totalDisp), color: projColors[p.project] ?? palette[0])
                     Text(Fmt.tokens(disp(p.counts))).font(.callout).monospacedDigit()
                         .rolling(Fmt.tokens(disp(p.counts))).frame(width: 62, alignment: .trailing)
                     Text(Fmt.percent(dispShare(p.counts, total: totalDisp))).font(.caption)
@@ -422,6 +424,29 @@ struct PanelView: View {
         return min(width - halfWidth - gap, halfWidth + gap)
     }
 
+
+    /// 图表配色：同一模型在所有图表里颜色一致，且不同模型不会撞色。
+    /// - 顺序以「本次汇总的模型总排行」为准（同一屏里的两张图因此保持一致）
+    /// - 前 8 个用主题调色板，超出后用黄金角生成色相（0.618 间隔，任意数量都不重复）
+    private func seriesColors(_ names: [String], globalOrder: [String]) -> [String: Color] {
+        var ordered = globalOrder.filter { names.contains($0) }
+        ordered += names.filter { !ordered.contains($0) }.sorted()
+        var map: [String: Color] = [:]
+        // 数量不超过调色板时直接用主题色；超出则整体改用黄金角生成，
+        // 避免「主题色 + 生成色」之间再次撞色
+        let board = AppTheme.distinct
+        let usePalette = ordered.count <= board.count
+        for (i, name) in ordered.enumerated() {
+            if usePalette {
+                map[name] = board[i]
+            } else {
+                let hue = (Double(i) * 0.6180339887 + 0.13).truncatingRemainder(dividingBy: 1)
+                map[name] = Color(hue: hue, saturation: 0.72, brightness: 0.95)
+            }
+        }
+        return map
+    }
+
     private func hoursSection(_ s: Summary) -> some View {
         let stacks = s.hoursByModel ?? []
         let data: [HourStack] = stacks.isEmpty
@@ -431,8 +456,7 @@ struct PanelView: View {
         var seriesTotals: [String: Int64] = [:]
         for h in data { for p in h.parts { seriesTotals[p.name, default: 0] += p.counts.total } }
         let series = seriesTotals.sorted { $0.value > $1.value }.map(\.key)
-        let colorMap: [String: Color] = Dictionary(uniqueKeysWithValues:
-            series.enumerated().map { ($0.element, palette[$0.offset % palette.count]) })
+        let colorMap = seriesColors(series, globalOrder: s.models.map(\.model))
         let grandTotal = max(1, seriesTotals.values.reduce(0, +))
 
         return VStack(alignment: .leading, spacing: 8) {
@@ -561,8 +585,7 @@ struct PanelView: View {
         var seriesTotals: [String: Int64] = [:]
         for d in data { for p in d.parts { seriesTotals[p.name, default: 0] += p.counts.total } }
         let series = seriesTotals.sorted { $0.value > $1.value }.map(\.key)
-        let colorMap: [String: Color] = Dictionary(uniqueKeysWithValues:
-            series.enumerated().map { ($0.element, palette[$0.offset % palette.count]) })
+        let colorMap = seriesColors(series, globalOrder: s.models.map(\.model))
         let grandTotal = max(1, seriesTotals.values.reduce(0, +))
 
         return VStack(alignment: .leading, spacing: 8) {
