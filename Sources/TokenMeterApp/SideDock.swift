@@ -307,6 +307,11 @@ struct PulseDot: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {}
+
+    /// NSView 没有固有尺寸，不声明的话会被 SwiftUI 撑满整行（实测被拉成竖条）
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        CGSize(width: 7, height: 7)
+    }
 }
 
 struct SideDockView: View {
@@ -421,6 +426,7 @@ struct SideDockView: View {
                 HStack(spacing: 0) {
                     if state == 0 {
                         PulseDot()
+                            .frame(width: 7, height: 7)
                     } else {
                         Circle()
                             .fill(state == 1 ? Color.green : (isGlassDock ? Color.black.opacity(0.42) : Color.white.opacity(0.3)))
