@@ -58,6 +58,28 @@ struct SettingsView: View {
                 .controlSize(.small)
                 .labelsHidden()
             }
+            HStack(spacing: 9) {
+                Text("面板外观").font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+                Picker("面板外观", selection: Binding(get: { model.panelAppearance }, set: { model.panelAppearance = $0 })) {
+                    Text("跟随系统").tag("auto")
+                    Text("深色").tag("dark")
+                    Text("浅色").tag("light")
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+                .labelsHidden()
+            }
+            HStack(spacing: 9) {
+                Text("玻璃不透明度").font(.caption).foregroundStyle(.secondary)
+                    .frame(width: 78, alignment: .leading)
+                Slider(value: Binding(get: { model.glassOpacity },
+                                      set: { model.glassOpacity = $0 }), in: 0...1)
+                    .controlSize(.small)
+                Text("\(Int(model.glassOpacity * 100))%")
+                    .font(.caption2).monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 34, alignment: .trailing)
+            }
             Toggle("登录时自动启动", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
                 .toggleStyle(.switch)
                 .controlSize(.small)
@@ -129,6 +151,16 @@ struct SettingsView: View {
 
     private var dockSourcesCard: some View {
         card("悬浮坞显示的工具") {
+            HStack(spacing: 9) {
+                Text("材质").font(.caption).foregroundStyle(.secondary).frame(width: 56, alignment: .leading)
+                Picker("材质", selection: Binding(get: { model.dockStyle }, set: { model.dockStyle = $0 })) {
+                    Text("黑色").tag("ink")
+                    Text("液态玻璃").tag("glass")
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+                .labelsHidden()
+            }
             Toggle("显示工具状态", isOn: Binding(get: { model.dockShowHarness }, set: { model.dockShowHarness = $0 }))
                 .toggleStyle(.switch)
                 .controlSize(.small)

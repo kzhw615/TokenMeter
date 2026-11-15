@@ -210,6 +210,17 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertEqual(LineReader.lastCompleteLineBoundary(path: file.path), complete)
     }
 
+    /// 中转 API 的模型别名要按同族模型计价（auto-gpt-6-1-sol → gpt-6.1-sol）
+    func testPricingAlias() {
+        let table = PricingTable(prices: PricingTable.builtin)
+        let alias = table.price(for: "auto-gpt-6-1-sol")
+        let target = table.price(for: "gpt-6.1-sol")
+        XCTAssertNotNil(alias, "别名没有命中任何价格规则")
+        XCTAssertEqual(alias?.input, target?.input)
+        XCTAssertEqual(alias?.output, target?.output)
+        XCTAssertEqual(alias?.cacheRead, target?.cacheRead)
+    }
+
     // MARK: - 版本比较
 
     /// 版本比较要正确处理多位数字段（0.9.10 > 0.9.9，字符串比较会得出相反结果）

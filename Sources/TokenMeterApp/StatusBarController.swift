@@ -1,6 +1,7 @@
 #if os(macOS)
 import SwiftUI
 import AppKit
+import Darwin
 import Combine
 import TokenMeterCore
 
@@ -131,7 +132,21 @@ final class StatusBarController: NSObject {
         // 面板尺寸/主题变化时重绘
         model.objectWillChange
             .receive(on: RunLoop.main)
-            .sink { [weak self] in self?.refreshButton() }
+            .sink { [weak self] in
+                guard let self else { return }
+                self.refreshButton()
+            }
+            .store(in: &cancellables)
+        // 玻璃/外观切换：订阅具体字段（objectWillChange 在赋值前触发，读不到新值）
+        model.$glassOpacity
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.refreshPanelContent() }
+            .store(in: &cancellables)
+        model.$panelAppearance
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.refreshPanelContent() }
             .store(in: &cancellables)
         if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
@@ -192,6 +207,7 @@ final class StatusBarController: NSObject {
     }
 
     /// 上一次真正写入菜单栏的图标状态与标题，用于避免每帧重复设置
+    private var lastGlassStyle: String?
     private var lastIconKey: String?
     private var lastTitleKey: String?
 
@@ -248,18 +264,34 @@ final class StatusBarController: NSObject {
 
 // MARK: - 面板
 
+
+    /// 面板窗口外观：深色 + 圆角遮罩（contentView 每次重建后都要重设）
+    private func applyPanelChrome(_ panel: NSPanel) {
+        switch model.panelAppearance {
+        case "dark": panel.appearance = NSAppearance(named: .darkAqua)
+        case "light": panel.appearance = NSAppearance(named: .aqua)
+        default: panel.appearance = nil          // 跟随系统
+        }
+        panel.contentView?.wantsLayer = true
+        panel.contentView?.layer?.cornerRadius = 24
+        panel.contentView?.layer?.cornerCurve = .continuous
+        panel.contentView?.layer?.masksToBounds = true
+    }
+
     private func rebuildPanel() {
         panel?.orderOut(nil)
         let hosting = NSHostingView(rootView:
             PanelView()
                 .environmentObject(model)
                 .environmentObject(actions)
-                .glassBackground(cornerRadius: 20, tint: model.theme.primary))
+                .liquidGlass(cornerRadius: 24, tint: model.theme.primary, opacity: model.glassOpacity))
         let p = KeyablePanel(
             contentRect: NSRect(origin: .zero, size: Self.panelSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false)
+        // 强制深色：液态玻璃观感需要深色底；浅色模式下材质会发白，失去玻璃感
+        p.appearance = NSAppearance(named: .darkAqua)
         p.isFloatingPanel = true
         p.level = .floating
         p.collectionBehavior = [.canJoinAllSpaces]
@@ -271,7 +303,22 @@ final class StatusBarController: NSObject {
         p.isReleasedWhenClosed = false
         p.onEscape = { [weak self] in self?.hidePanel() }
         p.onRefresh = { [weak self] in self?.model.refresh() }
+        applyPanelChrome(p)
         panel = p
+    }
+
+    /// 玻璃风格 / 外观变化后重建已打开的面板内容，让改动立即生效
+    private func refreshPanelContent() {
+        guard let panel, panel.contentView != nil else { return }
+        if model.panelAppearance != "auto" || true {
+            applyPanelChrome(panel)
+        }
+        panel.contentView = NSHostingView(rootView:
+            PanelView()
+                .environmentObject(model)
+                .environmentObject(actions)
+                .liquidGlass(cornerRadius: 24, tint: model.theme.primary, opacity: model.glassOpacity))
+        applyPanelChrome(panel)
     }
 
     func showPanel() {
@@ -282,6 +329,14 @@ final class StatusBarController: NSObject {
         if let screen = window.screen ?? NSScreen.main {
             let vf = screen.visibleFrame
             x = min(max(x, vf.minX + 8), vf.maxX - Self.panelSize.width - 8)
+        }
+        if panel.contentView == nil {
+            panel.contentView = NSHostingView(rootView:
+                PanelView()
+                    .environmentObject(model)
+                    .environmentObject(actions)
+                    .liquidGlass(cornerRadius: 24, tint: model.theme.primary, opacity: model.glassOpacity))
+            applyPanelChrome(panel)
         }
         panel.setFrameOrigin(NSPoint(x: x, y: max(y, 8)))
         // 激活本应用后键盘事件才会送到面板（Esc / ⌘R）
@@ -304,6 +359,10 @@ final class StatusBarController: NSObject {
         model.panelOpen = false
         removeOutsideMonitor()
         removeKeyMonitor()
+        // 释放 SwiftUI 视图树：隐藏状态下若继续跟着 @Published 重算，
+        // 会白白吃掉十几% 的单核 CPU（Charts/表格布局都不便宜）。
+        panel?.contentView = nil
+        malloc_zone_pressure_relief(nil, 0)
     }
 
     func togglePanel() {

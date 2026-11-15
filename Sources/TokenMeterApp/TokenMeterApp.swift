@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import Darwin
 import AppKit
 import ServiceManagement
 @preconcurrency import TokenMeterCore
@@ -90,6 +91,8 @@ final class AppModel: ObservableObject {
     var summary: Summary? { summariesByRange[range] }
 
     @Published var range: RangeKind = .today
+    private var hasPublishedData = false
+    private var lastFullScanAt: Date?
     @Published var lastScan: Date?
     @Published var scanning = false
     @Published var scanStartedAt: Date?
@@ -184,6 +187,25 @@ final class AppModel: ObservableObject {
     /// 坞底 harness 三态：0 运行中 / 1 待阅读 / 2 空闲；仅含本机有日志的源
     @Published var sourceStates: [(String, Int)] = []
     @Published var dataIssues: [DataIssue] = []
+    /// 面板外观：auto（跟随系统）/ dark / light
+    @Published var panelAppearance: String = UserDefaults.standard.string(forKey: "panelAppearance") ?? "auto" {
+        didSet { UserDefaults.standard.set(panelAppearance, forKey: "panelAppearance") }
+    }
+    /// 悬浮坞材质：ink（纯黑）/ glass（液态玻璃）
+    @Published var dockStyle: String = UserDefaults.standard.string(forKey: "dockStyle") ?? "ink" {
+        didSet {
+            UserDefaults.standard.set(dockStyle, forKey: "dockStyle")
+            // 重建坞以应用新材质
+            dockController.apply(mode: sideDock, model: self, useSaved: true)
+        }
+    }
+    /// 玻璃不透明度：0 = 全透明，1 = 完全不透明。面板与悬浮坞共用
+    @Published var glassOpacity: Double = UserDefaults.standard.object(forKey: "glassOpacity") as? Double ?? 0.55 {
+        didSet {
+            UserDefaults.standard.set(glassOpacity, forKey: "glassOpacity")
+            dockController.apply(mode: sideDock, model: self, useSaved: true)
+        }
+    }
     /// 侧边坞隐藏名单（默认全展示已安装源）
     @Published var hiddenDockSources: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "dockHiddenSources") ?? []) {
         didSet {
@@ -358,6 +380,12 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
     private var activityTimer: Timer?
     private var flameTimer: Timer?
+    // 诊断计数（TOKENMETER_DEBUG 时每 10 秒输出一次）
+    private var dbgWatcherEvents = 0
+    private var dbgPollCount = 0
+    private var dbgPollSeconds = 0.0
+    private var dbgRefreshCount = 0
+    private var dbgTimer: Timer?
     private var updateTimer: Timer?
     private var watcher: FolderWatcher?
     private var debouncedRefresh: DispatchWorkItem?
@@ -375,6 +403,7 @@ final class AppModel: ObservableObject {
         pollActivity()
         Self.cleanupOldBackups()
         startWatcher()
+        startDebugMeter()
         dockController.apply(mode: sideDock, model: self, useSaved: true)
         updateTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.maybeDailyUpdateCheck() }
@@ -388,7 +417,7 @@ final class AppModel: ObservableObject {
                 // 面板打开时才需要 5s 级的新鲜度；收起时（含燃烧中）放宽到 10~15s。
                 // 单次活动检测约 0.11s CPU，5s 一次等于白白吃掉 2%+ 单核。
                 let now = Date()
-                let minGap: TimeInterval = self.panelOpen ? 0 : (self.isBurning ? 10 : 15)
+                let minGap: TimeInterval = self.panelOpen ? 0 : (self.isBurning ? 20 : 45)
                 if now.timeIntervalSince(self.lastPollAt) < minGap { return }
                 self.lastPollAt = now
                 self.pollActivity()
@@ -440,13 +469,31 @@ final class AppModel: ObservableObject {
     }
 
     /// 监听各 harness 日志目录：有写入 → 防抖 8 秒后刷新（日志静止即扫，比固定轮询更及时且省电）
+    private func startDebugMeter() {
+        guard ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil else { return }
+        dbgTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let line = String(format: "DBG 10s: watcher=%d refresh=%d poll=%d pollCPU=%.2fs\n",
+                                  self.dbgWatcherEvents, self.dbgRefreshCount,
+                                  self.dbgPollCount, self.dbgPollSeconds)
+                FileHandle.standardError.write(Data(line.utf8))
+                self.dbgWatcherEvents = 0; self.dbgRefreshCount = 0
+                self.dbgPollCount = 0; self.dbgPollSeconds = 0
+            }
+        }
+        dbgTimer.map { RunLoop.main.add($0, forMode: .common) }
+    }
+
     private func startWatcher() {
+        if ProcessInfo.processInfo.environment["TOKENMETER_NO_WATCH"] != nil { return }
         let roots = [
             "~/.claude/projects", "~/.codex/sessions", "~/.codex/archived_sessions",
             "~/.dsh/sessions", "~/.workbuddy/traces", "~/.local/share/opencode",
             "~/.hermes", "~/.zcode/cli/db",
         ].map { SourcePaths.expand($0) }
         watcher = FolderWatcher(paths: roots) { [weak self] in
+            self?.dbgWatcherEvents += 1
             self?.scheduleDebouncedRefresh()
         }
         watcher?.start()
@@ -454,8 +501,8 @@ final class AppModel: ObservableObject {
 
     /// 刷新最小间隔：面板打开 20s（看数据要新）；面板关闭 45s；完全空闲（无燃烧）120s
     private var refreshInterval: TimeInterval {
-        if panelOpen { return 20 }
-        return isBurning ? 45 : 120
+        if panelOpen { return 20 }          // 面板打开：数据要新
+        return isBurning ? 60 : 180         // 收起时放宽：一次扫描 1.2s，45s 一次太密
     }
 
     /// 节流式刷新：持续写入时也保证按间隔最多扫一次（旧防抖会无限推迟直到日志静止）
@@ -521,6 +568,9 @@ final class AppModel: ObservableObject {
     }
 
     func pollActivity() {
+        if ProcessInfo.processInfo.environment["TOKENMETER_NO_POLL"] != nil { return }
+        dbgPollCount += 1
+        let dbgT0 = Date()
         Task.detached(priority: .utility) { [weak self] in
             // 单次合并遍历：各源最后活动 + 顶层活动
             let snapshot = ActivityDetector.activitySnapshot()
@@ -532,6 +582,8 @@ final class AppModel: ObservableObject {
             let claudeHook = ActivityDetector.claudeHookState(now: now)
             let claudeRunning = ActivityDetector.claudeTaskRunning(now: now)
 
+            let dbgElapsed = Date().timeIntervalSince(dbgT0)
+            await MainActor.run { [weak self] in self?.dbgPollSeconds += dbgElapsed }
             let states: [(name: String, st: Int, done: Date?)] = snapshot.compactMap { item in
                 guard let last = item.lastActive else { return nil }   // 无日志 = 未安装
                 let top = item.topLevel ?? last
@@ -616,8 +668,19 @@ final class AppModel: ObservableObject {
                     }
                     return (item.name, item.st)
                 }
+                // 状态没变就不要赋值：@Published 每次赋值都会让坞整树重绘
+                var statesChanged = adjusted.count != self.sourceStates.count
+                if !statesChanged {
+                    for i in adjusted.indices {
+                        if adjusted[i].0 != self.sourceStates[i].0
+                            || adjusted[i].1 != self.sourceStates[i].1 {
+                            statesChanged = true
+                            break
+                        }
+                    }
+                }
                 let installedChanged = adjusted.map { $0.0 } != self.sourceStates.map { $0.0 }
-                self.sourceStates = adjusted
+                if statesChanged { self.sourceStates = adjusted }
                 if installedChanged {
                     self.dockController.apply(mode: self.sideDock, model: self, useSaved: true)
                 }
@@ -626,7 +689,9 @@ final class AppModel: ObservableObject {
     }
 
     func refresh() {
+        if ProcessInfo.processInfo.environment["TOKENMETER_NO_SCAN"] != nil { return }
         guard !scanning else { return }
+        dbgRefreshCount += 1
         scanning = true
         startHeartbeat()
         scanStartedAt = Date()
@@ -682,8 +747,30 @@ final class AppModel: ObservableObject {
             }
 
             // ── 阶段一：先扫最近 2 天改动过的文件，几秒内出「今天/昨天」────────────────
+            // cache.dirty 只在「真的解析/更新了某个文件」时被置位，
+            // 因此可以用它判断本次是否完全没有变化。
+            cache.dirty = false
             let recentCutoff = Calendar.current.date(byAdding: .day, value: -2, to: Date())
             let quick = Aggregator.scan(cache: &cache, progress: nil, recentOnlySince: recentCutoff)
+            let nothingChanged = !cache.dirty
+
+            // 没有任何文件变化 + 已经发布过数据 + 上次全量扫描在 10 分钟内
+            // → 直接沿用现有结果，跳过阶段二（每次省约 0.7s CPU，且不触发整树重绘）
+            if nothingChanged, await MainActor.run(body: { self.hasPublishedData }),
+               await MainActor.run(body: { self.lastFullScanAt.map { Date().timeIntervalSince($0) < 600 } ?? false }) {
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.scanning = false
+                    self.scanStartedAt = nil
+                    self.scanProgress = nil
+                    self.lastScan = Date()
+                }
+                if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
+                    FileHandle.standardError.write(Data("DBG skip: nothing changed\n".utf8))
+                }
+                return
+            }
+
             if !quick.buckets.isEmpty {
                 publish(quick.buckets, statuses: quick.statuses, partial: true)
             }
@@ -709,6 +796,9 @@ final class AppModel: ObservableObject {
                 Config.saveQueue.async { snapshot.save() }
             }
             CacheStore.lock.withLock { CacheStore.cache = nil }
+            // 扫描会把分桶缓存撑到上百 MB；释放后主动把空闲页还给系统，
+            // 否则 malloc 会留着一大块不交回（RSS 长期偏高）。
+            malloc_zone_pressure_relief(nil, 0)
             let todayTotal = all[.today]?.counts.total ?? 0
             let fileTotal = scanned.statuses.reduce(0) { $0 + $1.files }
             await MainActor.run { [weak self] in
@@ -722,6 +812,8 @@ final class AppModel: ObservableObject {
                 self.lastFileTotal = fileTotal
                 self.updateRate(todayTotal: todayTotal, at: Date())
                 self.evaluateBudget()
+                self.hasPublishedData = true
+                self.lastFullScanAt = Date()
                 self.dataIssues = DataCheck.run(buckets: scanned.buckets, statuses: scanned.statuses)
                     + DataCheck.pricingIssues(buckets: scanned.buckets, pricing: pricing)
             }

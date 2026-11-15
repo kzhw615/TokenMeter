@@ -122,6 +122,8 @@ final class SideDockController: ObservableObject {
             contentRect: NSRect(origin: originFor(side: side, vf: vf, saved: useSaved), size: NSSize(width: Self.barWidth, height: dockHeight)),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false)
+        // 黑色档配白字（深色外观）；玻璃档是浅色底，用浅色外观让材质与文字都跟着变
+        panel.appearance = NSAppearance(named: model.dockStyle == "glass" ? .aqua : .darkAqua)
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
@@ -283,19 +285,28 @@ final class SideDockController: ObservableObject {
 }
 
 /// 呼吸脉冲点：表达"AI 正在跑但暂无 token 落盘"
-struct PulseDot: View {
-    @State private var on = false
-    var body: some View {
-        Circle()
-            .fill(Color.orange)
-            .frame(width: 7, height: 7)
-            .opacity(on ? 0.3 : 1)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
-                    on = true
-                }
-            }
+/// 运行中的橙色脉冲点。
+/// 用 Core Animation 而不是 SwiftUI 的 repeatForever：后者会让 SwiftUI 以 60fps
+/// 持续重算这一小块（实测在有任务运行时白吃掉 10%+ 单核），CA 的动画在渲染进程跑，主线程零成本。
+struct PulseDot: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 7, height: 7))
+        view.wantsLayer = true
+        guard let layer = view.layer else { return view }
+        layer.backgroundColor = NSColor.systemOrange.cgColor
+        layer.cornerRadius = 3.5
+        let anim = CABasicAnimation(keyPath: "opacity")
+        anim.fromValue = 1.0
+        anim.toValue = 0.30
+        anim.duration = 0.7
+        anim.autoreverses = true
+        anim.repeatCount = .infinity
+        anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(anim, forKey: "pulse")
+        return view
     }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 struct SideDockView: View {
@@ -375,7 +386,7 @@ struct SideDockView: View {
         } else {
             Image(systemName: "circle.hexagongrid.fill")
                 .font(.system(size: 20))
-                .foregroundStyle(.white.opacity(0.75))
+                .foregroundStyle(textTertiary)
         }
     }
 
@@ -412,7 +423,7 @@ struct SideDockView: View {
                         PulseDot()
                     } else {
                         Circle()
-                            .fill(state == 1 ? Color.green : Color.white.opacity(0.3))
+                            .fill(state == 1 ? Color.green : (isGlassDock ? Color.black.opacity(0.42) : Color.white.opacity(0.3)))
                             .frame(width: 7, height: 7)
                     }
                     Spacer(minLength: 6)
@@ -421,16 +432,20 @@ struct SideDockView: View {
                             .resizable()
                             .scaledToFit()
                             .frame(width: 26, height: 26)
+                            // 浅色玻璃上白色 logo（如 Claude）会消失，加一层极淡描边阴影提对比
+                            .shadow(color: isGlassDock ? Color.black.opacity(0.35) : .clear,
+                                    radius: isGlassDock ? 1.2 : 0)
                     } else {
                         Text(monogram(name))
                             .font(.system(size: 13, weight: .heavy))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(textPrimary)
                             .frame(width: 26, height: 26)
                             .background(RoundedRectangle(cornerRadius: 6).fill(badgeColor(name)))
                     }
                 }
                 .padding(.trailing, 5)
-                .opacity(state == 2 ? 0.45 : 1)
+                // 黑色档靠透明度淡化"空闲"图标；玻璃档是浅底，半透明会看不清，保持不透明
+                .opacity(isGlassDock ? 1 : (state == 2 ? 0.45 : 1))
                 .frame(width: 44)
                 .frame(width: 56)
                 .onHover { inside in
@@ -443,23 +458,99 @@ struct SideDockView: View {
         .padding(.top, 8)
     }
 
+    /// 玻璃档是浅色底，文字要用深色；黑色档沿用白字
+    private var isGlassDock: Bool { model.dockStyle == "glass" }
+    private var textPrimary: Color { isGlassDock ? .black.opacity(0.86) : .white }
+    private var textSecondary: Color { isGlassDock ? .black.opacity(0.55) : .white.opacity(0.55) }
+    private var textTertiary: Color { isGlassDock ? .black.opacity(0.45) : .white.opacity(0.7) }
+    private var hairline: Color { isGlassDock ? .black.opacity(0.14) : .white.opacity(0.15) }
+
+    /// 坞外形：玻璃档用完整圆角浮块（不做贴边融合的内凹角），黑色档保留融合凹角
+    private var dockShape: AnyShape {
+        if model.dockStyle == "glass" {
+            // 玻璃档：正圆角胶囊，四角半径完全一致（BarFlareShape 的融合曲线各角不一致）
+            return AnyShape(UnevenRoundedRectangle(
+                topLeadingRadius: 30, bottomLeadingRadius: 30,
+                bottomTrailingRadius: 30, topTrailingRadius: 30,
+                style: .continuous)
+                .inset(by: 4))
+        }
+        return AnyShape(BarFlareShape(side: controller.side,
+                                      fuse: controller.fuse,
+                                      bottomInset: controller.bottomInset,
+                                      radius: 26))
+    }
+
+    /// 悬浮坞底色：纯黑 / 液态玻璃（macOS 26+ 走系统 glassEffect，旧系统用材质）
+    @ViewBuilder
+    private func dockBackground(ink: Color) -> some View {
+        let shape = dockShape
+        if model.dockStyle == "glass" {
+            if #available(macOS 26.0, *) {
+                // 与面板共用同一个不透明度设置。
+                // 注意：系统玻璃即使 tint 为 0 也会带一层膜，所以 0% 时必须完全不叠玻璃层，
+                // 否则永远"不透"。
+                let v = min(max(model.glassOpacity, 0), 1)
+                if v < 0.04 {
+                    shape.fill(.clear)
+                } else {
+                    ZStack {
+                        // ① 系统玻璃：提供真实背景模糊 + 边缘折射
+                        shape.fill(.clear)
+                            .glassEffect(.regular, in: shape)
+                        // ② 主体薄雾：拉高滑块才明显
+                        shape.fill(Color.white.opacity(0.42 * v))
+                        // ③ 自绘反光：顶部高光带（玻璃最直观的特征）
+                        shape.fill(
+                            LinearGradient(
+                                colors: [.white.opacity(0.55 * v), .white.opacity(0.12 * v),
+                                         .clear, .white.opacity(0.10 * v)],
+                                startPoint: .top, endPoint: .bottom))
+                            .blendMode(.plusLighter)
+                        // ④ 斜面亮边 + 底部内阴影：立体感
+                        shape.stroke(
+                            LinearGradient(
+                                colors: [.white.opacity(0.95), .white.opacity(0.30), .clear],
+                                startPoint: .topLeading, endPoint: .center),
+                            lineWidth: 1.3)
+                        shape.fill(
+                            LinearGradient(
+                                colors: [.clear, .black.opacity(0.10)],
+                                startPoint: .center, endPoint: .bottom))
+                        shape.stroke(
+                            LinearGradient(
+                                colors: [.clear, .black.opacity(0.12)],
+                                startPoint: .center, endPoint: .bottomTrailing),
+                            lineWidth: 1)
+                    }
+                    .compositingGroup()
+                    .clipShape(shape)
+                }
+            } else {
+                shape.fill(.ultraThinMaterial)
+            }
+        } else {
+            shape.fill(ink)
+        }
+    }
+
     var body: some View {
         let ink = Color.black
         return VStack(spacing: 0) {
           VStack(spacing: 3) {
             iconView
-            Text("今天").font(.system(size: 9)).foregroundStyle(.white.opacity(0.55))
+            Text("今天").font(.system(size: 9)).foregroundStyle(textSecondary)
             Text(tokensText)
                 .font(.system(size: 12, weight: .bold))
                 .monospacedDigit()
-                .foregroundStyle(.white)
+                .foregroundStyle(textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(costText)
                 .font(.system(size: 8))
                 .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.7))
-            Rectangle().fill(.white.opacity(0.15)).frame(width: 20, height: 1)
+                .foregroundStyle(textTertiary)
+            Rectangle().fill(hairline).frame(width: 20, height: 1)
             if let hovered = hoveredSource {
                 VStack(spacing: 0) {
                     Text(stateText(model.sourceStates.first { $0.0 == hovered }?.1 ?? 2))
@@ -467,26 +558,29 @@ struct SideDockView: View {
                         .foregroundStyle(stateColor(model.sourceStates.first { $0.0 == hovered }?.1 ?? 2))
                     Text(ActivityDetector.shortBasis(for: hovered))
                         .font(.system(size: 6))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(textSecondary)
                 }
                 .lineLimit(1)
                 .frame(width: 56)
             } else {
                 Text(bottomText)
                     .font(.system(size: 7, weight: model.isBurning ? .semibold : .regular))
-                    .foregroundStyle(model.isBurning ? Color.orange : Color.white.opacity(0.55))
+                    .foregroundStyle(model.isBurning ? Color.orange : textSecondary)
             }
           }
           .frame(width: 44, height: 112)
           .frame(width: 56)
-          .padding(.top, 28)
+          .padding(.top, isGlassDock ? 14 : 28)
           harnessRows
           Spacer(minLength: 0)
         }
         .padding(.bottom, controller.bottomInset)
-        .frame(width: 64, height: controller.dockHeight, alignment: controller.side == "right" ? .topTrailing : .topLeading)
-        .background(BarFlareShape(side: controller.side, fuse: controller.fuse, bottomInset: controller.bottomInset).fill(ink))
-        .overlay(BarFlareShape(side: controller.side, fuse: controller.fuse, bottomInset: controller.bottomInset).stroke(Color.white.opacity(0.06), lineWidth: 0.5))
+        // 黑色档的可见区域贴着一侧（内缩 8pt），内容要跟着贴边；
+        // 玻璃档是四边内缩 4pt 的胶囊，内容必须居中，否则会偏右
+        .frame(width: 64, height: controller.dockHeight,
+               alignment: isGlassDock ? .top : (controller.side == "right" ? .topTrailing : .topLeading))
+        .background(dockBackground(ink: ink))
+        .overlay(dockShape.stroke(Color.white.opacity(model.dockStyle == "glass" ? 0.25 : 0.06), lineWidth: 0.7))
         .contentShape(Rectangle())
         .gesture(dragGesture)
         .onTapGesture(count: 2) { controller.resetPosition(mode: model.sideDock == "left" ? "left" : "right") }
