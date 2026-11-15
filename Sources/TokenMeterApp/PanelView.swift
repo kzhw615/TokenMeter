@@ -411,6 +411,64 @@ struct PanelView: View {
     }
 
     /// 逐小时用量：堆叠柱（每段一种模型），与每日图同一套配色规则
+
+    /// 悬浮框站位：始终放在鼠标对侧，避免挡住光标和被悬停的柱子。
+    /// - 鼠标在左半区 → 框贴右侧；在右半区 → 框贴左侧
+    /// - 垂直位置贴绘图区顶部，条形图再高也不会被压住
+    private func tooltipX(cursor: CGFloat, width: CGFloat, halfWidth: CGFloat) -> CGFloat {
+        let gap: CGFloat = 10
+        if cursor < width / 2 {
+            return max(halfWidth + gap, width - halfWidth - gap)
+        }
+        return min(width - halfWidth - gap, halfWidth + gap)
+    }
+
+
+    /// 悬浮摘要：固定显示在图上方一行，随鼠标更新。
+    /// 之前用浮动框盖在图上，会挡住光标和柱子。
+    @ViewBuilder
+    private func hoverSummary(hourly: Bool = false,
+                              hour: Int? = nil,
+                              data: [HourStack] = [],
+                              colorMap: [String: Color] = [:]) -> some View {
+        HStack(spacing: 8) {
+            if let h = hour, let stat = data.first(where: { $0.hour == h }) {
+                Text(String(format: "%02d:00", h))
+                    .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+                Text(Fmt.compactTokens(stat.parts.reduce(Int64(0)) { $0 + disp($1.counts) }))
+                    .font(.caption2.weight(.medium)).monospacedDigit()
+                ForEach(stat.parts.prefix(2), id: \.name) { part in
+                    HStack(spacing: 3) {
+                        Circle().fill(colorMap[part.name] ?? .gray).frame(width: 5, height: 5)
+                        Text(part.name).font(.system(size: 9)).lineLimit(1)
+                    }
+                }
+            }
+        }
+        .frame(height: 12, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func hoverSummary(day: String?,
+                              days: [DayStack],
+                              colorMap: [String: Color]) -> some View {
+        HStack(spacing: 8) {
+            if let d = day, let stat = days.first(where: { $0.day == d }) {
+                Text(String(d.dropFirst(5)))
+                    .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+                Text(Fmt.compactTokens(stat.parts.reduce(Int64(0)) { $0 + disp($1.counts) }))
+                    .font(.caption2.weight(.medium)).monospacedDigit()
+                ForEach(stat.parts.prefix(2), id: \.name) { part in
+                    HStack(spacing: 3) {
+                        Circle().fill(colorMap[part.name] ?? .gray).frame(width: 5, height: 5)
+                        Text(part.name).font(.system(size: 9)).lineLimit(1)
+                    }
+                }
+            }
+        }
+        .frame(height: 12, alignment: .leading)
+    }
+
     private func hoursSection(_ s: Summary) -> some View {
         let stacks = s.hoursByModel ?? []
         let data: [HourStack] = stacks.isEmpty
@@ -426,6 +484,7 @@ struct PanelView: View {
 
         return VStack(alignment: .leading, spacing: 8) {
             sectionTitle("逐小时用量 · \(s.hoursMode)")
+            hoverSummary(hourly: true, hour: hoveredHour, data: data, colorMap: colorMap)
             Chart {
                 // 每小时的零值占位柱：保证 24 个类别始终存在（没数据的钟点也不会被吞掉）
                 ForEach(data, id: \.hour) { h in
@@ -487,38 +546,7 @@ struct PanelView: View {
                                     hoveredHour = nil
                                 }
                             }
-                        if let hh = hoveredHour,
-                           let stat = data.first(where: { $0.hour == hh }),
-                           let plotAnchor = proxy.plotFrame,
-                           // x 轴是字符串分类（"00"…"23"），这里必须传同样的键：
-                           // 传 Int 会返回 nil，导致整块悬浮提示永远不显示
-                           let xPos = proxy.position(forX: Self.hourKey(hh)) {
-                            let frame = geo[plotAnchor]
-                            let total = stat.parts.reduce(Int64(0)) { $0 + $1.counts.total }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(String(format: "%02d:00 – %02d:59", hh, hh))
-                                    .font(.caption2).foregroundStyle(.secondary)
-                                HStack(spacing: 4) {
-                                    Text(Fmt.tokens(total)).font(.caption).bold().monospacedDigit()
-                                    Text("tokens").font(.caption2).foregroundStyle(.secondary)
-                                }
-                                ForEach(stat.parts.prefix(3), id: \.name) { part in
-                                    HStack(spacing: 4) {
-                                        Circle().fill(colorMap[part.name] ?? .gray).frame(width: 5, height: 5)
-                                        Text(part.name).font(.caption2).lineLimit(1)
-                                        Spacer(minLength: 6)
-                                        Text(Fmt.compactTokens(disp(part.counts)))
-                                            .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                            .padding(6)
-                            .frame(width: 165)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(.regularMaterial))
-                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
-                            .position(x: min(max(xPos + frame.origin.x, 90), geo.size.width - 90), y: 40)
-                            .allowsHitTesting(false)
-                        }
+                        EmptyView()
                     }
                 }
             }
@@ -567,6 +595,7 @@ struct PanelView: View {
                 .controlSize(.mini)
                 .frame(width: 96)
             }
+            hoverSummary(day: hoveredDay, days: data, colorMap: colorMap)
             if data.allSatisfy({ $0.parts.isEmpty }) {
                 emptyNote
             } else {
@@ -622,31 +651,7 @@ struct PanelView: View {
                                         hoveredDay = nil
                                     }
                                 }
-                            if let hd = hoveredDay,
-                               let d = data.first(where: { $0.day == hd }),
-                               let plotAnchor = proxy.plotFrame,
-                               let xPos = proxy.position(forX: hd) {
-                                let frame = geo[plotAnchor]
-                                let total = d.parts.reduce(Int64(0)) { $0 + $1.counts.total }
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("\(d.day.dropFirst(5)) · \(Fmt.tokens(total))")
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                    ForEach(d.parts.prefix(4), id: \.name) { part in
-                                        HStack(spacing: 4) {
-                                            Circle().fill(colorMap[part.name] ?? .gray).frame(width: 5, height: 5)
-                                            Text(part.name).font(.caption2).lineLimit(1)
-                                            Spacer(minLength: 6)
-                                            Text(Fmt.tokens(disp(part.counts))).font(.caption2).monospacedDigit()
-                                        }
-                                    }
-                                }
-                                .padding(6)
-                                .frame(width: 155)
-                                .background(RoundedRectangle(cornerRadius: 6).fill(.regularMaterial))
-                                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
-                                .position(x: min(max(xPos + frame.origin.x, 85), geo.size.width - 85), y: 42)
-                                .allowsHitTesting(false)
-                            }
+                            EmptyView()
                         }
                     }
                 }
