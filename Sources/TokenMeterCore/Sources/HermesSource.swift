@@ -47,13 +47,16 @@ public struct HermesSource: UsageSource {
     }
 
     private func parse(dbPath: String) -> [UsageBucket] {
-        let builder = BucketBuilder(tool: "Hermes")
+        var builders: [String: BucketBuilder] = [:]
         var db: OpaquePointer?
         guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { return [] }
         defer { sqlite3_close(db) }
+        // sessions 表里有 cwd / git_repo_root，用它把用量归到项目（取不到时退回 "-"）
         let sql = """
-        SELECT model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, last_seen
-        FROM session_model_usage
+        SELECT u.model, u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_write_tokens, u.last_seen,
+               coalesce(nullif(s.git_repo_root,''), nullif(s.cwd,''))
+        FROM session_model_usage u
+        LEFT JOIN sessions s ON s.id = u.session_id
         """
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
@@ -69,9 +72,13 @@ public struct HermesSource: UsageSource {
             guard counts.total > 0 else { continue }
             let ts = sqlite3_column_double(stmt, 5)
             let date = ts > 0 ? Date(timeIntervalSince1970: ts) : Date()
+            let project = sqlite3_column_text(stmt, 6).map { ProjectName.basename(String(cString: $0)) } ?? "-"
+            let builder = builders[project] ?? {
+                let b = BucketBuilder(tool: "Hermes"); b.project = project; builders[project] = b; return b
+            }()
             builder.add(date: date, model: model, counts: counts)
         }
-        return builder.buckets
+        return builders.values.flatMap(\.buckets)
     }
 }
 #endif

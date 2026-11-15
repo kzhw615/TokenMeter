@@ -22,14 +22,17 @@ public struct ZCodeSource: UsageSource {
     }
 
     private func parse(dbPath: String) -> [UsageBucket] {
-        let builder = BucketBuilder(tool: "ZCode")
+        var builders: [String: BucketBuilder] = [:]
         var db: OpaquePointer?
         guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { return [] }
         defer { sqlite3_close(db) }
+        // session.directory 是会话所在目录，用它归属项目；取不到时退回 "-"
         let sql = """
-        SELECT model_id, started_at, input_tokens, output_tokens, reasoning_tokens,
-               cache_creation_input_tokens, cache_read_input_tokens
-        FROM model_usage
+        SELECT m.model_id, m.started_at, m.input_tokens, m.output_tokens, m.reasoning_tokens,
+               m.cache_creation_input_tokens, m.cache_read_input_tokens,
+               coalesce(nullif(s.directory,''), nullif(s.path,''))
+        FROM model_usage m
+        LEFT JOIN session s ON s.id = m.session_id
         """
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
@@ -45,9 +48,13 @@ public struct ZCodeSource: UsageSource {
             )
             guard counts.total > 0 else { continue }
             let date = startedAt > 0 ? JSONUtil.dateFromMillis(startedAt) : Date()
+            let project = sqlite3_column_text(stmt, 7).map { ProjectName.basename(String(cString: $0)) } ?? "-"
+            let builder = builders[project] ?? {
+                let b = BucketBuilder(tool: "ZCode"); b.project = project; builders[project] = b; return b
+            }()
             builder.add(date: date, model: model, counts: counts)
         }
-        return builder.buckets
+        return builders.values.flatMap(\.buckets)
     }
 }
 #endif

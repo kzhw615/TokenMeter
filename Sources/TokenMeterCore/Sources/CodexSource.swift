@@ -46,8 +46,11 @@ public struct CodexSource: UsageSource {
         for (i, path) in files.enumerated() {
             guard let fp = prints[i] else { toParse.append(path); continue }
             if let cached = cache.cachedBuckets(path: path, size: fp.size, mtime: fp.mtime) {
-                // 迁移：旧缓存里带 unknown 的文件重解析一次（子会话可继承父线程模型）
-                if cached.contains(where: { $0.model == "unknown" && $0.counts.total > 0 }) {
+                // 迁移：旧缓存里带 unknown 的文件重解析一次（子会话可继承父线程模型）；
+                // 另外老版本没解析 project，缓存里是 "-"，也重解析一次补上项目归属
+                let needsModelFix = cached.contains { $0.model == "unknown" && $0.counts.total > 0 }
+                let needsProjectFix = cached.contains { $0.project == "-" && $0.counts.total > 0 }
+                if needsModelFix || needsProjectFix {
                     toParse.append(path)
                     continue
                 }
