@@ -481,9 +481,13 @@ struct SideDockView: View {
                 style: .continuous)
                 .inset(by: 4))
         }
+        // 黑色档：贴边融合的凹角要和左侧圆角视觉一致，否则一大一小很怪。
+        // flare/rise 是凹弧的水平外扩与爬升，都取 radius 后两个角大小就对得上了。
         return AnyShape(BarFlareShape(side: controller.side,
                                       fuse: controller.fuse,
                                       bottomInset: controller.bottomInset,
+                                      flare: 26,
+                                      rise: 26,
                                       radius: 26))
     }
 
