@@ -16,6 +16,8 @@ struct BarFlareShape: Shape {
     var rise: CGFloat = 7     // 凹弧沿屏边爬升高度
     static let defaultRadius: CGFloat = 26
     var radius: CGFloat = Self.defaultRadius
+    /// 外侧（贴屏幕）喇叭口的半径：比内侧圆角小，避免视觉上比另一侧更重
+    var flareRadius: CGFloat = 20
 
     var animatableData: CGFloat {
         get { fuse }
@@ -33,40 +35,47 @@ struct BarFlareShape: Shape {
         //   f=0 外凸圆角（浮块）   f=1 内凹喇叭口（融入屏边）
         // 端点沿屏边移动 ±r，控制点移动 ±0.45r，全程切线保持水平/垂直，不会出现拐角或越界裁切
         let d = (1 - 2 * fuse)               // 1 → -1
-        let k = 0.45 * r * d                 // 控制点偏移
+        // 外侧半径随 fuse 插值：脱边(fuse=0)时与内侧同半径 → 四角一致；
+        // 贴边(fuse=1)时用较小的喇叭口半径，避免视觉上比左侧更重
+        let fr = radius + (flareRadius - radius) * fuse
+        let k = 0.5523 * fr * d              // 0.5523 = 三次贝塞尔拟合圆的标准系数
         var p = Path()
 
         if side == "right" {
             p.move(to: CGPoint(x: ixL + r, y: oy))
-            p.addLine(to: CGPoint(x: w - r, y: oy))
+            p.addLine(to: CGPoint(x: w - fr, y: oy))
             // 右上角
-            p.addCurve(to: CGPoint(x: w, y: oy + r * d),
-                       control1: CGPoint(x: w - 0.45 * r, y: oy),
+            p.addCurve(to: CGPoint(x: w, y: oy + fr * d),
+                       control1: CGPoint(x: w - fr + 0.5523 * fr, y: oy),
                        control2: CGPoint(x: w, y: oy + k))
             // 右下角
-            p.addLine(to: CGPoint(x: w, y: ob - r * d))
-            p.addCurve(to: CGPoint(x: w - r, y: ob),
+            p.addLine(to: CGPoint(x: w, y: ob - fr * d))
+            p.addCurve(to: CGPoint(x: w - fr, y: ob),
                        control1: CGPoint(x: w, y: ob - k),
-                       control2: CGPoint(x: w - 0.45 * r, y: ob))
+                       control2: CGPoint(x: w - fr + 0.5523 * fr, y: ob))
             p.addLine(to: CGPoint(x: ixL + r, y: ob))
-            p.addQuadCurve(to: CGPoint(x: ixL, y: ob - r), control: CGPoint(x: ixL, y: ob))
+            p.addArc(center: CGPoint(x: ixL + r, y: ob - r), radius: r,
+                     startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
             p.addLine(to: CGPoint(x: ixL, y: oy + r))
-            p.addQuadCurve(to: CGPoint(x: ixL + r, y: oy), control: CGPoint(x: ixL, y: oy))
+            p.addArc(center: CGPoint(x: ixL + r, y: oy + r), radius: r,
+                     startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
             p.closeSubpath()
         } else {
             p.move(to: CGPoint(x: ixR - r, y: oy))
-            p.addLine(to: CGPoint(x: r, y: oy))
-            p.addCurve(to: CGPoint(x: 0, y: oy + r * d),
-                       control1: CGPoint(x: 0.45 * r, y: oy),
-                       control2: CGPoint(x: 0, y: oy + 0.45 * r * d))
-            p.addLine(to: CGPoint(x: 0, y: ob - r * d))
+            p.addLine(to: CGPoint(x: fr, y: oy))
+            p.addCurve(to: CGPoint(x: 0, y: oy + fr * d),
+                       control1: CGPoint(x: 0.5523 * fr, y: oy),
+                       control2: CGPoint(x: 0, y: oy + 0.5523 * r * d))
+            p.addLine(to: CGPoint(x: 0, y: ob - fr * d))
             p.addCurve(to: CGPoint(x: r, y: ob),
-                       control1: CGPoint(x: 0, y: ob - 0.45 * r * d),
-                       control2: CGPoint(x: 0.45 * r, y: ob))
+                       control1: CGPoint(x: 0, y: ob - 0.5523 * r * d),
+                       control2: CGPoint(x: 0.5523 * fr, y: ob))
             p.addLine(to: CGPoint(x: ixR - r, y: ob))
-            p.addQuadCurve(to: CGPoint(x: ixR, y: ob - r), control: CGPoint(x: ixR, y: ob))
+            p.addArc(center: CGPoint(x: ixR - r, y: ob - r), radius: r,
+                     startAngle: .degrees(90), endAngle: .degrees(0), clockwise: true)
             p.addLine(to: CGPoint(x: ixR, y: oy + r))
-            p.addQuadCurve(to: CGPoint(x: ixR - r, y: oy), control: CGPoint(x: ixR, y: oy))
+            p.addArc(center: CGPoint(x: ixR - r, y: oy + r), radius: r,
+                     startAngle: .degrees(0), endAngle: .degrees(270), clockwise: true)
             p.closeSubpath()
         }
         return p
