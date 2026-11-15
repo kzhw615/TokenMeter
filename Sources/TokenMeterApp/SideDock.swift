@@ -14,7 +14,8 @@ struct BarFlareShape: Shape {
     var bottomInset: CGFloat = 28  // 底部内缩（有 harness 行时收窄）
     var flare: CGFloat = 5    // 喇叭口水平外扩（凹弧大小）
     var rise: CGFloat = 7     // 凹弧沿屏边爬升高度
-    var radius: CGFloat = 14
+    static let defaultRadius: CGFloat = 26
+    var radius: CGFloat = Self.defaultRadius
 
     var animatableData: CGFloat {
         get { fuse }
@@ -93,7 +94,8 @@ final class SideDockController: ObservableObject {
     static let barWidth: CGFloat = 64
     static let barBlockHeight: CGFloat = 168   // 舱体块恒定（已知安全组合）；可见舱体由形状内缩参数控制
     var rowCount: Int = 0
-    var bottomInset: CGFloat { rowCount > 0 ? 10 : 28 }
+    // 必须 ≥ 喇叭口半径（26），否则下喇叭口会被窗口底边裁掉（右下角缺一块）
+    var bottomInset: CGFloat { max(28, BarFlareShape.defaultRadius + 2) }
     var dockHeight: CGFloat { max(Self.barBlockHeight, 28 + 112 + (rowCount > 0 ? 10 + CGFloat(rowCount) * 34 : 0) + bottomInset) }
 
     @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合
@@ -485,7 +487,7 @@ struct SideDockView: View {
         return AnyShape(BarFlareShape(side: controller.side,
                                       fuse: controller.fuse,
                                       bottomInset: controller.bottomInset,
-                                      radius: 26))
+                                      radius: BarFlareShape.defaultRadius))
     }
 
     /// 悬浮坞底色：纯黑 / 液态玻璃（macOS 26+ 走系统 glassEffect，旧系统用材质）
