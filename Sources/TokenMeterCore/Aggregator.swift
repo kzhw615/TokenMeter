@@ -51,7 +51,7 @@ public enum Aggregator {
     public static func allSources() -> [UsageSource] {
         var list: [UsageSource] = [ClaudeCodeSource(), CodexSource(), DshSource(), WorkBuddySource()]
         #if os(macOS)
-        list += [OpenCodeSource(), HermesSource(), ZCodeSource()]
+        list += [OpenCodeSource(), HermesSource(), ZCodeSource(), OpenMausBotSource()]
         #endif
         return list + ExtraSources.all()
     }

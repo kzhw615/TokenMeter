@@ -210,6 +210,19 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertEqual(LineReader.lastCompleteLineBoundary(path: file.path), complete)
     }
 
+    /// OpenMausBot 要出现在活动源列表里（悬浮坞据此展示它）
+    func testOpenMausBotInActivitySnapshot() {
+        let snap = ActivityDetector.activitySnapshot()
+        XCTAssertTrue(snap.contains { $0.name == "OpenMausBot" }, "活动快照缺少 OpenMausBot")
+    }
+
+    /// OpenMausBot 的模型名带驱动前缀：chatgpt-http::gpt-6.1-sol / auto/gpt-6.1-sol
+    func testOpenMausBotModelNormalization() {
+        XCTAssertEqual(OpenMausBotSource.normalizeModel("chatgpt-http::gpt-6.1-sol"), "gpt-6.1-sol")
+        XCTAssertEqual(OpenMausBotSource.normalizeModel("auto/gpt-6.1-sol"), "gpt-6.1-sol")
+        XCTAssertEqual(OpenMausBotSource.normalizeModel("gpt-6.1-sol"), "gpt-6.1-sol")
+    }
+
     /// 工具自带的 provider 前缀要去掉（WorkBuddy 把本地 provider 写成 custom-local:xxx）
     func testModelPrefixNormalization() {
         XCTAssertEqual(Aggregator.normalizedModel("custom-local:deepseek-flash"), "deepseek-flash")
