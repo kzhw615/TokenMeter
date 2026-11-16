@@ -232,6 +232,7 @@ final class AppModel: ObservableObject {
         "Copilot CLI": "copilot",      // GitHub Copilot 官方 mark（反白）
         "MiniMax Code": "minimax",     // minimax.io favicon
         "Qoder": "qoder",              // Qoder 官方 avatar
+        "OpenMausBot": "openmausbot",  // 用户提供：黑白幽灵标
     ]
     private var harnessIconsLoaded = false
     func loadHarnessIcons() {
