@@ -580,6 +580,7 @@ final class AppModel: ObservableObject {
             let dshRunning = DshSource.isTaskRunning()
             let codexTurn = ActivityDetector.codexTurnState(now: now)
             let wbState = ActivityDetector.workBuddyState(now: now)
+            let ombState = ActivityDetector.openMausBotState(now: now)
             let claudeHook = ActivityDetector.claudeHookState(now: now)
             let claudeRunning = ActivityDetector.claudeTaskRunning(now: now)
 
@@ -621,6 +622,9 @@ final class AppModel: ObservableObject {
                     }
                 case "WorkBuddy":
                     if let wb = wbState { st = wb }
+                case "OpenMausBot":
+                    // 有真实已读回执，别用 mtime 推断（否则读完还要绿 3 分钟）
+                    if let omb = ombState { st = omb }
                 default:
                     break
                 }

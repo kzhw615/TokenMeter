@@ -157,6 +157,29 @@ public enum ActivityDetector {
         ]
     }
 
+
+    /// OpenMausBot 三态：用 bots.json 里的 unread 回执，而不是靠日志 mtime 猜。
+    /// - 0 运行中：30 秒内有新的用量写入
+    /// - 1 待阅读：任一 bot 标记 unread = true（用户读过之后它会立刻变 false）
+    /// - 2 空闲：其余
+    /// 返回 nil 表示没装或读不到 bots.json，调用方回退 mtime 启发式。
+    public static func openMausBotState(now: Date = Date()) -> Int? {
+        #if os(macOS)
+        let path = SourcePaths.expand("~/.openmausbot/bots.json")
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        else { return nil }
+        if let usage = latestMtime(under: "~/.openmausbot/usage", suffixes: [".jsonl"]),
+           now.timeIntervalSince(usage) <= 30 {
+            return 0
+        }
+        if list.contains(where: { ($0["unread"] as? Bool) == true }) { return 1 }
+        return 2
+        #else
+        return nil
+        #endif
+    }
+
     /// 兼容旧接口：是否正在燃烧
     public static func activeSources(now: Date = Date(), window: TimeInterval = defaultWindow) -> [String] {
         activitySnapshot(now: now).compactMap { item in
