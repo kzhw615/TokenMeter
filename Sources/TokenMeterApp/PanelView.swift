@@ -760,16 +760,9 @@ struct PanelView: View {
         let gridW = CGFloat(weekCount) * (cell + gap) - gap
         let gridH = 7 * (cell + gap) - gap
 
-        // 5 档热力色：直接用 sRGB 常量。
-        // 试过「主题色 + 透明度」和 NSColor 混色，在当前面板（玻璃底 + 浅色外观）里
-        // 都解析成近似透明，格子和图例方块全都看不见。
-        let tints: [Color] = [
-            Color(red: 0.86, green: 0.94, blue: 0.89),
-            Color(red: 0.66, green: 0.86, blue: 0.75),
-            Color(red: 0.44, green: 0.75, blue: 0.58),
-            Color(red: 0.24, green: 0.62, blue: 0.44),
-            Color(red: 0.11, green: 0.45, blue: 0.31),
-        ]
+        // 5 档热力色：跟随所选主题色，用透明度做深浅。
+        // 之前怀疑「主题色 + 透明度」不可见，实际是我截图裁错区域，主题色本身没问题。
+        let tints: [Color] = [0.20, 0.38, 0.58, 0.80, 1.0].map { tint.opacity($0) }
         let emptyColor = Color(nsColor: (NSColor.secondaryLabelColor).withAlphaComponent(0.12))
 
         return VStack(alignment: .leading, spacing: 6) {
