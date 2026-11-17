@@ -311,6 +311,10 @@ public struct Summary: Codable, Sendable {
     /// 本月预测（仅在 range == .month 时有效）
     public var forecastCost: Double?
     public var forecastCounts: TokenCounts?
+    /// 日历热力图用：全部历史（柱状趋势固定最近 30 天）
+    public var calendarDays: [DayStat]?
+    public var calendarByTool: [DayStack]?
+    public var calendarByModel: [DayStack]?
 }
 
 public struct SourceStatus: Codable, Sendable {

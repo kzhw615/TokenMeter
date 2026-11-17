@@ -215,10 +215,9 @@ public enum Aggregator {
             .sorted { $0.counts.total > $1.counts.total }
         let days = dayMap.map { DayStat(day: $0.key, counts: $0.value.counts, cost: $0.value.cost) }
             .sorted { $0.day < $1.day }
-        // 趋势窗口 = 所选范围本身（起止日都对齐范围）。
-        // 之前为了让日历热力图有历史，把近30天放大到 60 天、上月放大到 62 天，
-        // 结果图表「总计」超出所选范围，口径是错的。
-        // 单日范围（今天/昨天）例外：只画一根柱子没意义，给 30 天趋势上下文。
+        // 两套独立窗口：
+        // - 柱状「趋势」固定最近 30 天（与所选范围无关，纯看近期走势）
+        // - 日历热力图展示全部历史（铺满面板宽度，看得出长期密度）
         let cal = Calendar.current
         let startOfToday = cal.startOfDay(for: now)
         func dayKeys(from start: Date, to end: Date) -> [String] {
@@ -232,45 +231,32 @@ public enum Aggregator {
             }
             return out
         }
-        let thisMonthStart = cal.date(from: cal.dateComponents([.year, .month], from: now)) ?? startOfToday
-        let prevMonthStart = cal.date(byAdding: .month, value: -1, to: thisMonthStart) ?? thisMonthStart
-        let prevMonthEnd = cal.date(byAdding: .day, value: -1, to: thisMonthStart) ?? prevMonthStart
-        let trendKeys: [String] = {
-            switch range {
-            case .today, .yesterday:
-                return dayKeys(from: cal.date(byAdding: .day, value: -29, to: startOfToday) ?? startOfToday,
+        let barsKeys = dayKeys(from: cal.date(byAdding: .day, value: -29, to: startOfToday) ?? startOfToday,
                                to: startOfToday)
-            case .d7:
-                return dayKeys(from: cal.date(byAdding: .day, value: -6, to: startOfToday) ?? startOfToday,
-                               to: startOfToday)
-            case .d30:
-                return dayKeys(from: cal.date(byAdding: .day, value: -29, to: startOfToday) ?? startOfToday,
-                               to: startOfToday)
-            case .thisMonth:
-                return dayKeys(from: thisMonthStart, to: startOfToday)
-            case .lastMonth:
-                return dayKeys(from: prevMonthStart, to: prevMonthEnd)
-            case .all:
-                guard let earliest = dayMapAll.keys.min(), let d = DayKey.date(for: earliest) else {
-                    return dayKeys(from: startOfToday, to: startOfToday)
-                }
-                // 上限两年，避免图表无限长
-                let capped = max(d, cal.date(byAdding: .day, value: -729, to: startOfToday) ?? d)
-                return dayKeys(from: capped, to: startOfToday)
-            }
+        let calendarKeys: [String] = {
+            guard let earliest = dayMapAll.keys.min(), let d = DayKey.date(for: earliest) else { return barsKeys }
+            let capped = max(d, cal.date(byAdding: .day, value: -729, to: startOfToday) ?? d)
+            let keys = dayKeys(from: capped, to: startOfToday)
+            return keys.count > 1 ? keys : barsKeys
         }()
-        let trend: [DayStat] = trendKeys.map { key in
-            let e = dayMapAll[key]
-            return DayStat(day: key, counts: e?.counts ?? TokenCounts(), cost: e?.cost ?? 0)
-        }
         func stack(_ m: [String: [String: (TokenCounts, Double)]], day key: String) -> DayStack {
             let parts = (m[key] ?? [:])
                 .map { StackPart(name: $0.key, counts: $0.value.0, cost: $0.value.1) }
                 .sorted { $0.counts.total > $1.counts.total }
             return DayStack(day: key, parts: parts)
         }
+        func dayStats(_ keys: [String]) -> [DayStat] {
+            keys.map { key in
+                let e = dayMapAll[key]
+                return DayStat(day: key, counts: e?.counts ?? TokenCounts(), cost: e?.cost ?? 0)
+            }
+        }
+        let trend = dayStats(barsKeys)
         let trendByTool = trend.map { stack(dayToolMap, day: $0.day) }
         let trendByModel = trend.map { stack(dayModelMap, day: $0.day) }
+        let calendarDays = dayStats(calendarKeys)
+        let calendarByTool = calendarDays.map { stack(dayToolMap, day: $0.day) }
+        let calendarByModel = calendarDays.map { stack(dayModelMap, day: $0.day) }
         let denom = Double(counts.input + counts.cacheRead)
         let hit = denom > 0 ? Double(counts.cacheRead) / denom : 0
         let projects = projectMap.map { ProjectStat(project: $0.key, counts: $0.value.counts, cost: $0.value.cost, share: Double($0.value.counts.total) / Double(totalAll), tools: Array($0.value.tools).sorted()) }
@@ -320,7 +306,10 @@ public enum Aggregator {
                        comparableCost: comparableCost,
                        hoursByModel: hoursByModel,
                        trendByTool: trendByTool, trendByModel: trendByModel,
-                       forecastCost: forecastCost, forecastCounts: forecastCounts)
+                       forecastCost: forecastCost, forecastCounts: forecastCounts,
+                       calendarDays: calendarDays,
+                       calendarByTool: calendarByTool,
+                       calendarByModel: calendarByModel)
     }
 
     /// 热扫描：只解析最近活跃的文件，返回今日含缓存总量（用于燃烧速率）

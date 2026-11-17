@@ -13,6 +13,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        // 调试：启动即展开面板，避免自动化点击菜单栏图标带来的不稳定
+        if ProcessInfo.processInfo.environment["TOKENMETER_SHOW_PANEL"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+                self?.statusBar?.showPanel()
+            }
+        }
         // 一键更新后的重启：此时旧实例可能还没退干净，不能按「重复实例」处理
         let isPostUpdate = CommandLine.arguments.contains("--post-update")
         if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {

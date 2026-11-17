@@ -603,9 +603,11 @@ struct PanelView: View {
         let colorMap = seriesColors(series, globalOrder: s.models.map(\.model))
         let totalTokens = seriesTotals.values.reduce(0, +)
         let grandTotal = max(1, totalTokens)
-        // 日历热力图用：每天的合计
-        var dayTotals: [String: Int64] = [:]
-        for d in data { dayTotals[d.day] = d.parts.reduce(Int64(0)) { $0 + disp($1.counts) } }
+        // 日历热力图用：全部历史那套序列（柱状趋势固定最近 30 天）
+        let calStacks: [DayStack] = byModel ? (s.calendarByModel ?? []) : (s.calendarByTool ?? [])
+        let calendarStacks = calStacks.isEmpty ? data : calStacks
+        var calendarTotals: [String: Int64] = [:]
+        for d in calendarStacks { calendarTotals[d.day] = d.parts.reduce(Int64(0)) { $0 + disp($1.counts) } }
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -635,7 +637,7 @@ struct PanelView: View {
             if data.allSatisfy({ $0.parts.isEmpty }) {
                 emptyNote
             } else if trendViewMode == "calendar" {
-                trendCalendar(data: data, dayTotals: dayTotals, tint: model.theme.primary)
+                trendCalendar(data: calendarStacks, dayTotals: calendarTotals, tint: model.theme.primary)
             } else {
                 let labelDays = [0, 7, 14, 21, 29].compactMap { data.indices.contains($0) ? data[$0].day : nil }
                 Chart {
@@ -750,8 +752,11 @@ struct PanelView: View {
         let maxTokens = max(1, dayTotals.values.max() ?? 0)
         let levels: [Double] = [0.14, 0.32, 0.52, 0.76, 1.0]
         let firstWeekday = dates.first.map { cal.component(.weekday, from: $0.date) - 1 } ?? 0
-        let cell: CGFloat = 10, gap: CGFloat = 2
+        let gap: CGFloat = 2
         let weekCount = max(1, Int(ceil(Double(firstWeekday + dates.count) / 7.0)))
+        // 铺满内容宽度：格子大小由可用宽度反推，夹在 6–20pt 之间
+        let available: CGFloat = 352
+        let cell = min(20, max(6, (available - gap * CGFloat(weekCount - 1)) / CGFloat(weekCount)))
         let gridW = CGFloat(weekCount) * (cell + gap) - gap
         let gridH = 7 * (cell + gap) - gap
 
