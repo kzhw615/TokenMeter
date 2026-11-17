@@ -564,17 +564,24 @@ struct PanelView: View {
                 }
             }
             .frame(height: 96)
-            // 紧凑图例：取前 4 个模型
-            HStack(spacing: 10) {
+            // 图例：两列排布。原来一行塞 4 个，每个只有 ~90pt，
+            // 长模型名（deepseek-v4.1-flash）必然被截成 "deepsee…"
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
+                                GridItem(.flexible(), alignment: .leading)],
+                      alignment: .leading, spacing: 3) {
                 ForEach(series.prefix(4), id: \.self) { name in
-                    HStack(spacing: 3) {
+                    HStack(spacing: 4) {
                         Circle().fill(colorMap[name] ?? .gray).frame(width: 6, height: 6)
-                        Text(name).font(.system(size: 9)).lineLimit(1)
+                        Text(name)
+                            .font(.system(size: 10))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .minimumScaleFactor(0.85)
                         Text(Fmt.percent(Double(seriesTotals[name] ?? 0) / Double(grandTotal)))
-                            .font(.system(size: 9)).monospacedDigit().foregroundStyle(.tertiary)
+                            .font(.system(size: 10)).monospacedDigit().foregroundStyle(.tertiary)
+                        Spacer(minLength: 0)
                     }
                 }
-                Spacer(minLength: 0)
             }
         }
     }
