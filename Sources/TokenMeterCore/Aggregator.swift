@@ -36,10 +36,19 @@ public enum Aggregator {
     /// 归一化模型名：去掉工具自己加的 provider 前缀。
     /// 例：WorkBuddy 把本地 provider 写成 `custom-local:deepseek-flash`，
     /// 直接展示会出现 "custom-local" 这个多余前缀，也会让价格表匹配不到。
+    /// 中转 API 的模型别名 → 官方模型名。
+    /// 例：Claude Code 日志里写的是 `group/auto-gpt-6-1-sol`（中转的自动路由分组，
+    /// 且用连字符写版本号），实际就是 gpt-6.1-sol，不映射会单独占一行而且价格对不上。
+    static let modelAliases: [String: String] = [
+        "auto-gpt-6-1-sol": "gpt-6.1-sol",
+        "gpt-6-1-sol": "gpt-6.1-sol",
+    ]
+
     static func normalizedModel(_ raw: String) -> String {
         for prefix in ["custom-local:", "custom-remote:"] where raw.lowercased().hasPrefix(prefix) {
             return String(raw.dropFirst(prefix.count))
         }
+        if let mapped = modelAliases[raw.lowercased()] { return mapped }
         return raw
     }
 

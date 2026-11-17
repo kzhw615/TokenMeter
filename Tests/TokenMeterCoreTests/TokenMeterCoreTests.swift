@@ -232,6 +232,9 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertEqual(Aggregator.normalizedModel("custom-local:deepseek/deepseek-flash"),
                        "deepseek/deepseek-flash")
         XCTAssertEqual(Aggregator.normalizedModel("gpt-6.1-sol"), "gpt-6.1-sol")
+        // 中转 API 的自动路由别名要并回官方模型名
+        XCTAssertEqual(Aggregator.normalizedModel("auto-gpt-6-1-sol"), "gpt-6.1-sol")
+        XCTAssertEqual(Aggregator.normalizedModel("gpt-6-1-sol"), "gpt-6.1-sol")
     }
 
     /// 中转 API 的模型别名要按同族模型计价（auto-gpt-6-1-sol → gpt-6.1-sol）
