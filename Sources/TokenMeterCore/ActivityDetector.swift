@@ -158,6 +158,33 @@ public enum ActivityDetector {
     }
 
 
+
+    /// OpenMausBot 最近一次「真的在干活」的写入时间。
+    /// 只看实时信号：事件流 ndjson、SQLite 的 -wal、每回合的 usage 行、决策流；
+    /// 刻意排除 engine-status.json / ai-checks.json 这类心跳，否则空闲也会被当成运行中。
+    public static func openMausBotLastTouch() -> Date? {
+        #if os(macOS)
+        let base = SourcePaths.expand("~/.openmausbot")
+        var candidates: [String] = []
+        for dir in ["native", "usage", "decisions"] {
+            candidates += SourcePaths.files(under: base + "/" + dir, suffix: ".ndjson")
+            candidates += SourcePaths.files(under: base + "/" + dir, suffix: ".jsonl")
+        }
+        candidates += [base + "/messages.db-wal", base + "/runtime.db-wal",
+                       base + "/messages.db", base + "/runtime.db"]
+        var newest: Date?
+        let fm = FileManager.default
+        for path in candidates {
+            guard let attrs = try? fm.attributesOfItem(atPath: path),
+                  let d = attrs[.modificationDate] as? Date else { continue }
+            if newest == nil || d > newest! { newest = d }
+        }
+        return newest
+        #else
+        return nil
+        #endif
+    }
+
     /// OpenMausBot 三态：用 bots.json 里的 unread 回执，而不是靠日志 mtime 猜。
     /// - 0 运行中：30 秒内有新的用量写入
     /// - 1 待阅读：任一 bot 标记 unread = true（用户读过之后它会立刻变 false）
@@ -169,8 +196,9 @@ public enum ActivityDetector {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
               let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         else { return nil }
-        if let usage = latestMtime(under: "~/.openmausbot/usage", suffixes: [".jsonl"]),
-           now.timeIntervalSince(usage) <= 30 {
+        // 运行中不能只看 usage/*.jsonl：那是【回合结束】才写的，跑长任务时中间几分钟没有新行。
+        // 真正的实时信号是 native/*.ndjson 事件流和 SQLite 的 WAL（每次写入都会更新 mtime）。
+        if let touched = openMausBotLastTouch(), now.timeIntervalSince(touched) <= 45 {
             return 0
         }
         if list.contains(where: { ($0["unread"] as? Bool) == true }) { return 1 }
