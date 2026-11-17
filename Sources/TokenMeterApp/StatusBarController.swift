@@ -261,7 +261,7 @@ final class StatusBarController: NSObject {
         button.attributedTitle = NSAttributedString(
             string: title,
             attributes: [.foregroundColor: red ? NSColor.systemRed : NSColor.labelColor,
-                         .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)])
+                         .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)])
     }
 
 // MARK: - 面板
