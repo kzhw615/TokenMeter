@@ -765,8 +765,10 @@ struct PanelView: View {
         // 用 opacity 的话，面板在「选中/未选中」两种外观下底色不同，同一格子会显示成不同颜色。
         let base = NSColor.white.usingColorSpace(.sRGB) ?? .white
         let solid = NSColor(tint).usingColorSpace(.sRGB) ?? .systemBlue
-        let tints: [Color] = [0.18, 0.36, 0.56, 0.78, 1.0].map { lv in
-            Color(nsColor: solid.blended(withFraction: CGFloat(lv), of: base) ?? solid)
+        // 注意 blended(withFraction:of:) 的 fraction 是「取 of 这个颜色的比例」，
+        // 所以要以白色为基底、把主题色按比例混进去；反过来会让用量越多越接近白色。
+        let tints: [Color] = [0.22, 0.42, 0.62, 0.82, 1.0].map { lv in
+            Color(nsColor: base.blended(withFraction: CGFloat(lv), of: solid) ?? solid)
         }
         let emptyColor = Color(nsColor: (NSColor.secondaryLabelColor).withAlphaComponent(0.12))
 
