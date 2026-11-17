@@ -76,7 +76,10 @@ enum HookEvent {
             "/usr/local/bin/tokenmeter",
             "/opt/homebrew/bin/tokenmeter",
         ]
-        let cmdBase = candidates.first { FileManager.default.isExecutableFile(atPath: $0) } ?? exe
+        let chosen = candidates.first { FileManager.default.isExecutableFile(atPath: $0) } ?? exe
+        // 路径里有空格（"Application Support"）时必须加引号：
+        // Claude Code 通过 shell 执行 hook，未加引号会被拆成多个参数，钩子静默失败。
+        let cmdBase = chosen.contains(" ") ? "\"\(chosen)\"" : chosen
         // PostToolUse 作为「心跳」：长任务期间每次工具返回都会刷新状态，避免 10 分钟无事件被误判失效。
         // 它只在工具调用结束时触发，开销可忽略。
         let events = ["SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "SessionEnd"]
@@ -112,9 +115,22 @@ enum HookEvent {
             // 已经有同类条目则跳过（避免重复安装）；否则追加，保留用户原有 hook
             let already = list.contains { item in
                 let cmds = (item["hooks"] as? [[String: Any]]) ?? []
-                return cmds.contains { (($0["command"] as? String) ?? "").contains("tokenmeter hook-event \(event)") }
+                return cmds.contains { raw in
+                    let c = ((raw["command"] as? String) ?? "").replacingOccurrences(of: "\"", with: "")
+                    return c.contains("tokenmeter hook-event \(event)")
+                }
             }
-            if !already { list.append(contentsOf: entry) }
+            if already {
+                // 已有条目：删掉重写，确保用的是当前（带引号）的命令
+                list.removeAll { item in
+                    let cmds = (item["hooks"] as? [[String: Any]]) ?? []
+                    return cmds.contains { raw in
+                        let c = ((raw["command"] as? String) ?? "").replacingOccurrences(of: "\"", with: "")
+                        return c.contains("tokenmeter hook-event \(event)")
+                    }
+                }
+            }
+            list.append(contentsOf: entry)
             merged[event] = list
         }
         root["hooks"] = merged

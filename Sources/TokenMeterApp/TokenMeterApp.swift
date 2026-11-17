@@ -42,6 +42,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+
+    /// 自愈 Claude Code 钩子：设置文件里的 tokenmeter 钩子路径失效（应用被移动/重装）
+    /// 或命令没加引号（旧版本的 bug，路径含空格会被 shell 拆断）时重新安装。
+fileprivate func ensureClaudeHooks() {
+        let settings = NSString(string: "~/.claude/settings.json").expandingTildeInPath
+        let bin = "/Applications/TokenMeter.app/Contents/Resources/tokenmeter"
+        guard FileManager.default.isExecutableFile(atPath: bin) else { return }
+        let text = (try? String(contentsOfFile: settings, encoding: .utf8)) ?? ""
+        let needsRepair = text.contains("tokenmeter hook-event")
+            && (!text.contains(bin) || text.contains("Application Support/TokenMeter/bin/tokenmeter"))
+        guard needsRepair else { return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: bin)
+        p.arguments = ["hook-install", "--apply"]
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        try? p.run()
+        p.waitUntilExit()
+    }
+
 /// 扫描缓存常驻内存（独立于 MainActor，供后台扫描任务读写）
 /// 缓存落盘串行队列：避免 App/CLI 并发写造成半成品覆盖
 enum Config {

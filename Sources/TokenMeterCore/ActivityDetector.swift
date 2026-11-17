@@ -267,8 +267,10 @@ public enum ActivityDetector {
             guard let e = value as? [String: Any],
                   let at = (e["at"] as? Double) ?? (e["at"] as? NSNumber)?.doubleValue else { continue }
             let date = Date(timeIntervalSince1970: at)
-            // 单会话超过 10 分钟没心跳视为已失效（避免崩溃/强退导致灯常亮）
-            guard now.timeIntervalSince(date) < 600 else { continue }
+            // 单会话超时视为已失效（崩溃/强退时不会再收到 Stop）。
+            // 取 30 分钟：用户提交后到 Stop 之间可能有大段「纯思考」没有工具事件，
+            // 窗口太短会在任务进行中误判成已结束。
+            guard now.timeIntervalSince(date) < 1800 else { continue }
             if (e["running"] as? Bool) == true { anyRunning = true }
             if newest == nil || date > newest! {
                 newest = date
