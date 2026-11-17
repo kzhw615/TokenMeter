@@ -215,27 +215,53 @@ public enum Aggregator {
             .sorted { $0.counts.total > $1.counts.total }
         let days = dayMap.map { DayStat(day: $0.key, counts: $0.value.counts, cost: $0.value.cost) }
             .sorted { $0.day < $1.day }
-        // 趋势窗口：按所选范围放宽，以便图表左右滑动回看历史（缺失日补零）
+        // 趋势窗口 = 所选范围本身（起止日都对齐范围）。
+        // 之前为了让日历热力图有历史，把近30天放大到 60 天、上月放大到 62 天，
+        // 结果图表「总计」超出所选范围，口径是错的。
+        // 单日范围（今天/昨天）例外：只画一根柱子没意义，给 30 天趋势上下文。
         let cal = Calendar.current
         let startOfToday = cal.startOfDay(for: now)
-        let trendWindow: Int = {
+        func dayKeys(from start: Date, to end: Date) -> [String] {
+            var out: [String] = []
+            var d = cal.startOfDay(for: start)
+            let last = cal.startOfDay(for: end)
+            while d <= last {
+                out.append(DayKey.key(for: d, calendar: cal))
+                guard let next = cal.date(byAdding: .day, value: 1, to: d) else { break }
+                d = next
+            }
+            return out
+        }
+        let thisMonthStart = cal.date(from: cal.dateComponents([.year, .month], from: now)) ?? startOfToday
+        let prevMonthStart = cal.date(byAdding: .month, value: -1, to: thisMonthStart) ?? thisMonthStart
+        let prevMonthEnd = cal.date(byAdding: .day, value: -1, to: thisMonthStart) ?? prevMonthStart
+        let trendKeys: [String] = {
             switch range {
-            case .today, .yesterday, .d7: return 30
-            case .d30, .thisMonth: return 60
-            case .lastMonth: return 62
+            case .today, .yesterday:
+                return dayKeys(from: cal.date(byAdding: .day, value: -29, to: startOfToday) ?? startOfToday,
+                               to: startOfToday)
+            case .d7:
+                return dayKeys(from: cal.date(byAdding: .day, value: -6, to: startOfToday) ?? startOfToday,
+                               to: startOfToday)
+            case .d30:
+                return dayKeys(from: cal.date(byAdding: .day, value: -29, to: startOfToday) ?? startOfToday,
+                               to: startOfToday)
+            case .thisMonth:
+                return dayKeys(from: thisMonthStart, to: startOfToday)
+            case .lastMonth:
+                return dayKeys(from: prevMonthStart, to: prevMonthEnd)
             case .all:
-                // 全部范围：覆盖到最早一天，最多两年，避免图表无限长
-                guard let earliest = dayMapAll.keys.min(), let d = DayKey.date(for: earliest) else { return 30 }
-                let span = cal.dateComponents([.day], from: cal.startOfDay(for: d), to: startOfToday).day ?? 29
-                return min(730, max(30, span + 1))
+                guard let earliest = dayMapAll.keys.min(), let d = DayKey.date(for: earliest) else {
+                    return dayKeys(from: startOfToday, to: startOfToday)
+                }
+                // 上限两年，避免图表无限长
+                let capped = max(d, cal.date(byAdding: .day, value: -729, to: startOfToday) ?? d)
+                return dayKeys(from: capped, to: startOfToday)
             }
         }()
-        var trend: [DayStat] = []
-        for i in stride(from: trendWindow - 1, through: 0, by: -1) {
-            let date = cal.date(byAdding: .day, value: -i, to: startOfToday)!
-            let key = DayKey.key(for: date, calendar: cal)
+        let trend: [DayStat] = trendKeys.map { key in
             let e = dayMapAll[key]
-            trend.append(DayStat(day: key, counts: e?.counts ?? TokenCounts(), cost: e?.cost ?? 0))
+            return DayStat(day: key, counts: e?.counts ?? TokenCounts(), cost: e?.cost ?? 0)
         }
         func stack(_ m: [String: [String: (TokenCounts, Double)]], day key: String) -> DayStack {
             let parts = (m[key] ?? [:])
