@@ -72,6 +72,8 @@ struct PanelView: View {
     @State private var hoveredRow: String?
 
 
+    @Environment(\.colorScheme) private var colorScheme
+
     private var palette: [Color] { model.theme.palette }
 
     var body: some View {
@@ -763,11 +765,12 @@ struct PanelView: View {
 
         // 5 档热力色：跟随主题色，但用【不透明混色】而不是透明度。
         // 用 opacity 的话，面板在「选中/未选中」两种外观下底色不同，同一格子会显示成不同颜色。
-        let base = NSColor.white.usingColorSpace(.sRGB) ?? .white
+        // 底色取「与空格子相近的中性灰」：浅色外观用亮灰、深色外观用暗灰。
+        // 之前以纯白为基底，用量最少的格子接近白色，和灰色空地格之间跳变太突兀。
+        let base = (colorScheme == .dark ? NSColor(white: 0.32, alpha: 1) : NSColor(white: 0.90, alpha: 1))
+            .usingColorSpace(.sRGB) ?? .gray
         let solid = NSColor(tint).usingColorSpace(.sRGB) ?? .systemBlue
-        // 注意 blended(withFraction:of:) 的 fraction 是「取 of 这个颜色的比例」，
-        // 所以要以白色为基底、把主题色按比例混进去；反过来会让用量越多越接近白色。
-        let tints: [Color] = [0.22, 0.42, 0.62, 0.82, 1.0].map { lv in
+        let tints: [Color] = [0.30, 0.48, 0.66, 0.84, 1.0].map { lv in
             Color(nsColor: base.blended(withFraction: CGFloat(lv), of: solid) ?? solid)
         }
         let emptyColor = Color(nsColor: (NSColor.secondaryLabelColor).withAlphaComponent(0.12))
