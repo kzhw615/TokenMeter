@@ -16,7 +16,10 @@ public struct OpenMausBotSource: UsageSource {
         let botProjects = Self.botProjectMap()
         var builders: [String: BucketBuilder] = [:]
         for path in files {
-            let buckets = cache.cachedBuckets(path: path) ?? {
+            var cached = cache.cachedBuckets(path: path)
+            // 迁移：早期版本没去掉 [1m] 后缀，缓存里还是旧名字，重解析一次
+            if let c = cached, c.contains(where: { $0.model.contains("[") }) { cached = nil }
+            let buckets = cached ?? {
                 let parsed = parse(path: path, botProjects: botProjects)
                 cache.store(path: path, buckets: parsed)
                 return parsed
@@ -46,11 +49,17 @@ public struct OpenMausBotSource: UsageSource {
         return out
     }
 
-    /// 模型名归一：chatgpt-http::gpt-6.1-sol / auto/gpt-6.1-sol 都是 gpt-6.1-sol
+    /// 模型名归一：
+    /// - 去掉驱动前缀：chatgpt-http::gpt-6.1-sol / auto/gpt-6.1-sol → gpt-6.1-sol
+    /// - 去掉上下文变体后缀：deepseek-flash[1m] → deepseek-flash
+    ///   （[1m] 是 OpenMausBot 标注的百万上下文版本，同一个模型，不拆成两行）
     static func normalizeModel(_ raw: String) -> String {
         var s = raw
         if let r = s.range(of: "::", options: .backwards) { s = String(s[r.upperBound...]) }
         if let r = s.range(of: "/", options: .backwards) { s = String(s[r.upperBound...]) }
+        if s.hasSuffix("]"), let r = s.range(of: "[", options: .backwards) {
+            s = String(s[..<r.lowerBound])
+        }
         return s.isEmpty ? "unknown" : s
     }
 

@@ -221,6 +221,9 @@ final class TokenMeterCoreTests: XCTestCase {
         XCTAssertEqual(OpenMausBotSource.normalizeModel("chatgpt-http::gpt-6.1-sol"), "gpt-6.1-sol")
         XCTAssertEqual(OpenMausBotSource.normalizeModel("auto/gpt-6.1-sol"), "gpt-6.1-sol")
         XCTAssertEqual(OpenMausBotSource.normalizeModel("gpt-6.1-sol"), "gpt-6.1-sol")
+        // [1m] 是上下文变体标记，不是另一个模型
+        XCTAssertEqual(OpenMausBotSource.normalizeModel("deepseek/deepseek-flash[1m]"), "deepseek-flash")
+        XCTAssertEqual(OpenMausBotSource.normalizeModel("opencode-go/deepseek-v4.1-flash[1m]"), "deepseek-v4.1-flash")
     }
 
     /// 工具自带的 provider 前缀要去掉（WorkBuddy 把本地 provider 写成 custom-local:xxx）
