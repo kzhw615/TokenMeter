@@ -180,19 +180,29 @@ public struct DshSource: UsageSource {
         guard let data = Zstd.decompressTailFrames(path: target.path) else { return nil }
         // 只看尾部事件：从后往前找第一条生命周期标记
         let lines = LineReader.split(data)
+        // 仍在跑的「后台作业」是唯一不受静默时长限制的信号：
+        // job/registered 之后没有对应的 job/settled，说明真的有进程在跑。
+        var jobSettled = false
         for line in lines.reversed() {
             guard let o = JSONUtil.object(line), let type = JSONUtil.string(o, "type") else { continue }
             switch type {
             case "turn/end":
-                return false         // 一轮对话确实结束
+                return false
+            case "job/settled":
+                jobSettled = true
+                continue
+            case "job/registered":
+                if !jobSettled { return true }
+                continue
             case "tool/call", "step/start":
-                return true          // 工具执行中 / 步骤进行中（长工具可达 990s，靠外层 1800s 兜底）
+                // 工具/步骤可能很久（长命令实测 990 秒），但不能无限等：
+                // 静默超过 5 分钟且没有未结束的作业，就认为这一轮已经停了。
+                return silent <= 300
             case "assistant/message":
-                // 助手消息是「一条产出结束」的标志。若之后长时间没有任何写入，
-                // 说明这一轮已被打断（Esc/崩溃）不会再写 turn/end，不能一直算运行中。
+                // 一条产出结束的标志；之后长时间没有写入说明被打断（不写 turn/end）
                 return silent <= 120
             default:
-                continue             // step/end、job/settled、tool/result 等是过程事件，继续往前找
+                continue
             }
         }
         return nil
