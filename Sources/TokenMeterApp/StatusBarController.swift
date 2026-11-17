@@ -207,6 +207,8 @@ final class StatusBarController: NSObject {
     }
 
     /// 上一次真正写入菜单栏的图标状态与标题，用于避免每帧重复设置
+    /// 最近一次隐藏面板的时间：用于抑制「点图标关闭后又被同一次点击重新打开」的竞态
+    private var lastHideAt: Date?
     private var lastGlassStyle: String?
     private var lastIconKey: String?
     private var lastTitleKey: String?
@@ -355,6 +357,7 @@ final class StatusBarController: NSObject {
     }
 
     func hidePanel() {
+        lastHideAt = Date()
         panel?.orderOut(nil)
         model.panelOpen = false
         removeOutsideMonitor()
@@ -366,7 +369,14 @@ final class StatusBarController: NSObject {
     }
 
     func togglePanel() {
-        if panel?.isVisible == true { hidePanel() } else { showPanel() }
+        if panel?.isVisible == true {
+            hidePanel()
+            return
+        }
+        // 全局点击监听在 mouseDown 就把面板收掉了，按钮的 mouseUp 还会再调一次；
+        // 若不拦住，用户看到的会是「点一下关掉又立刻打开」。0.4 秒内视为同一次点击。
+        if let t = lastHideAt, Date().timeIntervalSince(t) < 0.4 { return }
+        showPanel()
     }
 
     private func installOutsideMonitor() {
@@ -379,6 +389,7 @@ final class StatusBarController: NSObject {
                 // 点在菜单栏图标上时交给按钮自己处理（避免「关掉又立刻打开」）
                 if let btn = self.item.button, let win = btn.window {
                     let rect = win.convertToScreen(btn.convert(btn.bounds, to: nil))
+                        .insetBy(dx: -12, dy: -12)     // 点图标文字边缘也算，避免误判为「点外面」
                     if rect.contains(mouse) { return }
                 }
                 self.hidePanel()
