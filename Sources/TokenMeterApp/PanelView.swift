@@ -623,16 +623,17 @@ struct PanelView: View {
                 .labelsHidden()
                 .controlSize(.mini)
                 .frame(width: 84)
-                if trendViewMode == "bars" {
-                    Picker("", selection: $trendStackMode) {
-                        Text("工具").tag("tool")
-                        Text("模型").tag("model")
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .controlSize(.mini)
-                    .frame(width: 84)
+                // 常驻显示：日历模式下不参与（灰掉），但位置固定，避免切换时按钮跳来跳去
+                Picker("", selection: $trendStackMode) {
+                    Text("工具").tag("tool")
+                    Text("模型").tag("model")
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.mini)
+                .frame(width: 84)
+                .disabled(trendViewMode == "calendar")
+                .opacity(trendViewMode == "calendar" ? 0.4 : 1)
             }
             if data.allSatisfy({ $0.parts.isEmpty }) {
                 emptyNote
@@ -760,9 +761,13 @@ struct PanelView: View {
         let gridW = CGFloat(weekCount) * (cell + gap) - gap
         let gridH = 7 * (cell + gap) - gap
 
-        // 5 档热力色：跟随所选主题色，用透明度做深浅。
-        // 之前怀疑「主题色 + 透明度」不可见，实际是我截图裁错区域，主题色本身没问题。
-        let tints: [Color] = [0.20, 0.38, 0.58, 0.80, 1.0].map { tint.opacity($0) }
+        // 5 档热力色：跟随主题色，但用【不透明混色】而不是透明度。
+        // 用 opacity 的话，面板在「选中/未选中」两种外观下底色不同，同一格子会显示成不同颜色。
+        let base = NSColor.white.usingColorSpace(.sRGB) ?? .white
+        let solid = NSColor(tint).usingColorSpace(.sRGB) ?? .systemBlue
+        let tints: [Color] = [0.18, 0.36, 0.56, 0.78, 1.0].map { lv in
+            Color(nsColor: solid.blended(withFraction: CGFloat(lv), of: base) ?? solid)
+        }
         let emptyColor = Color(nsColor: (NSColor.secondaryLabelColor).withAlphaComponent(0.12))
 
         return VStack(alignment: .leading, spacing: 6) {
