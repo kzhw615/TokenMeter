@@ -185,8 +185,12 @@ public struct DshSource: UsageSource {
             switch type {
             case "turn/end":
                 return false         // 一轮对话确实结束
-            case "tool/call", "step/start", "assistant/message":
-                return true          // 工具执行中 / 步骤进行中 / 正在产出
+            case "tool/call", "step/start":
+                return true          // 工具执行中 / 步骤进行中（长工具可达 990s，靠外层 1800s 兜底）
+            case "assistant/message":
+                // 助手消息是「一条产出结束」的标志。若之后长时间没有任何写入，
+                // 说明这一轮已被打断（Esc/崩溃）不会再写 turn/end，不能一直算运行中。
+                return silent <= 120
             default:
                 continue             // step/end、job/settled、tool/result 等是过程事件，继续往前找
             }
