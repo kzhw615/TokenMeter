@@ -323,7 +323,13 @@ final class StatusBarController: NSObject {
         applyPanelChrome(panel)
     }
 
+    private func dbgLog(_ m: String) {
+        guard ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil else { return }
+        FileHandle.standardError.write(Data("DBG panel \(m)\n".utf8))
+    }
+
     func showPanel() {
+        dbgLog("show")
         guard let panel, let button = item.button, let window = button.window else { return }
         let buttonRect = window.convertToScreen(button.convert(button.bounds, to: nil))
         var x = buttonRect.midX - Self.panelSize.width / 2
@@ -357,6 +363,7 @@ final class StatusBarController: NSObject {
     }
 
     func hidePanel() {
+        dbgLog("hide")
         lastHideAt = Date()
         panel?.orderOut(nil)
         model.panelOpen = false

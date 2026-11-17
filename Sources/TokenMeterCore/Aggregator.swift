@@ -215,11 +215,23 @@ public enum Aggregator {
             .sorted { $0.counts.total > $1.counts.total }
         let days = dayMap.map { DayStat(day: $0.key, counts: $0.value.counts, cost: $0.value.cost) }
             .sorted { $0.day < $1.day }
-        // 近 30 天趋势（与所选范围无关，缺失日补零）
+        // 趋势窗口：按所选范围放宽，以便图表左右滑动回看历史（缺失日补零）
         let cal = Calendar.current
         let startOfToday = cal.startOfDay(for: now)
+        let trendWindow: Int = {
+            switch range {
+            case .today, .yesterday, .d7: return 30
+            case .d30, .thisMonth: return 60
+            case .lastMonth: return 62
+            case .all:
+                // 全部范围：覆盖到最早一天，最多两年，避免图表无限长
+                guard let earliest = dayMapAll.keys.min(), let d = DayKey.date(for: earliest) else { return 30 }
+                let span = cal.dateComponents([.day], from: cal.startOfDay(for: d), to: startOfToday).day ?? 29
+                return min(730, max(30, span + 1))
+            }
+        }()
         var trend: [DayStat] = []
-        for i in stride(from: 29, through: 0, by: -1) {
+        for i in stride(from: trendWindow - 1, through: 0, by: -1) {
             let date = cal.date(byAdding: .day, value: -i, to: startOfToday)!
             let key = DayKey.key(for: date, calendar: cal)
             let e = dayMapAll[key]

@@ -66,6 +66,8 @@ struct PanelView: View {
     @State private var hoveredDay: String?
     /// 每日用量图的堆叠维度：tool / model
     @AppStorage("trendStackMode") private var trendStackMode: String = "model"
+    /// 每日用量的展示形式：趋势柱状 / 日历热力图
+    @AppStorage("trendViewMode") private var trendViewMode: String = "bars"
     @State private var hoveredHour: Int?
     @State private var hoveredRow: String?
 
@@ -601,6 +603,9 @@ struct PanelView: View {
         let colorMap = seriesColors(series, globalOrder: s.models.map(\.model))
         let totalTokens = seriesTotals.values.reduce(0, +)
         let grandTotal = max(1, totalTokens)
+        // 日历热力图用：每天的合计
+        var dayTotals: [String: Int64] = [:]
+        for d in data { dayTotals[d.day] = d.parts.reduce(Int64(0)) { $0 + disp($1.counts) } }
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -608,17 +613,29 @@ struct PanelView: View {
                 Spacer()
                 Text("总计 \(Fmt.tokens(totalTokens))")
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
-                Picker("", selection: $trendStackMode) {
-                    Text("工具").tag("tool")
-                    Text("模型").tag("model")
+                Picker("", selection: $trendViewMode) {
+                    Text("趋势").tag("bars")
+                    Text("日历").tag("calendar")
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .controlSize(.mini)
-                .frame(width: 96)
+                .frame(width: 84)
+                if trendViewMode == "bars" {
+                    Picker("", selection: $trendStackMode) {
+                        Text("工具").tag("tool")
+                        Text("模型").tag("model")
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.mini)
+                    .frame(width: 84)
+                }
             }
             if data.allSatisfy({ $0.parts.isEmpty }) {
                 emptyNote
+            } else if trendViewMode == "calendar" {
+                trendCalendar(data: data, dayTotals: dayTotals, tint: model.theme.primary)
             } else {
                 let labelDays = [0, 7, 14, 21, 29].compactMap { data.indices.contains($0) ? data[$0].day : nil }
                 Chart {
@@ -719,6 +736,86 @@ struct PanelView: View {
                     }
                 }
             }
+        }
+    }
+
+    /// 日历热力图：一列一周、一行一天，格子深浅表示当天用量。
+    /// 用 Canvas 绘制：嵌套 ForEach + 条件视图在 SwiftUI 里布局不稳（实测整块塌成 0 尺寸）。
+    @ViewBuilder
+    private func trendCalendar(data: [DayStack], dayTotals: [String: Int64], tint: Color) -> some View {
+        let cal = Calendar.current
+        let dates: [(day: String, date: Date)] = data.compactMap { d in
+            DayKey.date(for: d.day).map { (d.day, $0) }
+        }
+        let maxTokens = max(1, dayTotals.values.max() ?? 0)
+        let levels: [Double] = [0.14, 0.32, 0.52, 0.76, 1.0]
+        let firstWeekday = dates.first.map { cal.component(.weekday, from: $0.date) - 1 } ?? 0
+        let cell: CGFloat = 10, gap: CGFloat = 2
+        let weekCount = max(1, Int(ceil(Double(firstWeekday + dates.count) / 7.0)))
+        let gridW = CGFloat(weekCount) * (cell + gap) - gap
+        let gridH = 7 * (cell + gap) - gap
+
+        // 5 档热力色：直接用 sRGB 常量。
+        // 试过「主题色 + 透明度」和 NSColor 混色，在当前面板（玻璃底 + 浅色外观）里
+        // 都解析成近似透明，格子和图例方块全都看不见。
+        let tints: [Color] = [
+            Color(red: 0.86, green: 0.94, blue: 0.89),
+            Color(red: 0.66, green: 0.86, blue: 0.75),
+            Color(red: 0.44, green: 0.75, blue: 0.58),
+            Color(red: 0.24, green: 0.62, blue: 0.44),
+            Color(red: 0.11, green: 0.45, blue: 0.31),
+        ]
+        let emptyColor = Color(nsColor: (NSColor.secondaryLabelColor).withAlphaComponent(0.12))
+
+        return VStack(alignment: .leading, spacing: 6) {
+            Canvas { ctx, _ in
+                for (i, item) in dates.enumerated() {
+                    let col = (firstWeekday + i) / 7
+                    let row = (firstWeekday + i) % 7
+                    let rect = CGRect(x: CGFloat(col) * (cell + gap),
+                                      y: CGFloat(row) * (cell + gap),
+                                      width: cell, height: cell)
+                    let path = Path(roundedRect: rect, cornerRadius: 2.5)
+                    let tokens = dayTotals[item.day] ?? 0
+                    if tokens <= 0 {
+                        ctx.fill(path, with: .color(emptyColor))
+                    } else {
+                        let ratio = Double(tokens) / Double(maxTokens)
+                        let idx = levels.firstIndex(where: { ratio <= $0 }) ?? (levels.count - 1)
+                        ctx.fill(path, with: .color(tints[idx]))
+                    }
+                    if hoveredDay == item.day {
+                        ctx.stroke(path, with: .color(.primary.opacity(0.75)), lineWidth: 1)
+                    }
+                }
+            }
+            .frame(width: gridW, height: gridH)
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let p):
+                    let col = Int(p.x / (cell + gap))
+                    let row = Int(p.y / (cell + gap))
+                    let idx = col * 7 + row - firstWeekday
+                    hoveredDay = (idx >= 0 && idx < dates.count) ? dates[idx].day : nil
+                case .ended:
+                    hoveredDay = nil
+                }
+            }
+            HStack(spacing: 4) {
+                Text("少").font(.system(size: 9)).foregroundStyle(.tertiary)
+                ForEach(Array(tints.enumerated()), id: \.offset) { i, _ in
+                    RoundedRectangle(cornerRadius: 2).fill(tints[i]).frame(width: 9, height: 9)
+                }
+                Text("多").font(.system(size: 9)).foregroundStyle(.tertiary)
+                Spacer()
+                Text("\(dayTotals.values.filter { $0 > 0 }.count) 天有记录")
+                    .font(.system(size: 9)).foregroundStyle(.tertiary)
+            }
+            Text(hoveredDay.flatMap { d in dayTotals[d].map { "\(String(d.dropFirst(5))) · \(Fmt.tokens($0))" } }
+                 ?? "悬停格子查看每日用量")
+                .font(.system(size: 10))
+                .foregroundStyle(hoveredDay == nil ? .tertiary : .secondary)
         }
     }
 
