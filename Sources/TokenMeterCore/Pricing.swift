@@ -60,7 +60,7 @@ public struct PricingTable: Codable {
 
     /// 内置默认表 + 用户覆盖（~/Library/Application Support/TokenMeter/pricing.json）
     /// 内置价目版本号：更新内置表时递增，用于把旧的自动生成模板升级到新价目
-    public static let builtinVersion = 4   // v4: 新增 auto-gpt-6-1-sol 中转别名
+    public static let builtinVersion = 5   // v5: 补 GPT-6.2 Astra/Sol 官方定价
 
     public static func load() -> PricingTable {
         guard let data = try? Data(contentsOf: overrideURL) else {
@@ -137,6 +137,9 @@ public struct PricingTable: Codable {
         .init(pattern: "claude-3-5-haiku", input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1),
 
         // ── OpenAI ────────────────────────────────────────────────
+        // GPT-6.2 系列（OpenAI 标准价，短上下文 ≤272K）：astra 8/40、sol 2/10
+        .init(pattern: "gpt-6.2-astra", input: 8, output: 40, cacheRead: 0.4, cacheWrite: 10),
+        .init(pattern: "gpt-6.2-sol", input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5),
         .init(pattern: "gpt-6-astra", input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5),
         .init(pattern: "gpt-6.1-sol", input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5),
         // 第三方中转的模型别名：auto-gpt-6-1-sol 实际就是 gpt-6.1-sol，按同价计
