@@ -68,37 +68,66 @@ struct PanelView: View {
     @AppStorage("trendStackMode") private var trendStackMode: String = "model"
     /// 每日用量的展示形式：趋势柱状 / 日历热力图
     @AppStorage("trendViewMode") private var trendViewMode: String = "bars"
-    /// 各分区是否收起（逗号分隔的 key 列表）
-    @AppStorage("collapsedSections") private var collapsedSections: String = ""
+    /// 各分区是否收起（逗号分隔的 key 列表）。
+    /// 用 @State 而非 @AppStorage：@AppStorage 的写入不进入 withAnimation 事务，
+    /// 折叠/展开会瞬间完成、没有过渡（上一版就是这个原因）。
+    @State private var collapsedSections: String =
+        UserDefaults.standard.string(forKey: "collapsedSections") ?? ""
+    /// 鼠标悬停的分区（用来显示可点击的选中态）
+    @State private var hoveredSection: String?
+    /// 折叠动画时长
+    private let animDuration: Double = 0.22
 
     private var collapsedKeys: Set<String> {
         Set(collapsedSections.split(separator: ",").map(String.init))
     }
     private func isCollapsed(_ key: String) -> Bool { collapsedKeys.contains(key) }
     private func toggleSection(_ key: String) {
-        withAnimation(.easeInOut(duration: 0.22)) {
-            var keys = collapsedKeys
-            if keys.contains(key) { keys.remove(key) } else { keys.insert(key) }
-            collapsedSections = keys.sorted().joined(separator: ",")
-        }
+        var keys = collapsedKeys
+        if keys.contains(key) { keys.remove(key) } else { keys.insert(key) }
+        let next = keys.sorted().joined(separator: ",")
+        withAnimation(.easeInOut(duration: animDuration)) { collapsedSections = next }
+        UserDefaults.standard.set(next, forKey: "collapsedSections")
     }
 
     /// 可折叠标题：箭头 + 文字。
     /// 整行（含右侧空白）都能点：宽度撑满剩余空间再给 hit 区域，
     /// 右侧的切换器不属于这里，所以点「趋势/日历」不会误触折叠。
-    private func collapsibleTitle(_ title: String, key: String) -> some View {
+    private func collapsibleTitle(_ title: String, key: String, fill: Bool = true) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "chevron.down")
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(.secondary)
                 .frame(width: 8)
                 .rotationEffect(.degrees(isCollapsed(key) ? -90 : 0))
-            Text(title).font(.headline).padding(.top, 2).lineLimit(1)
+            Text(title).font(.headline).padding(.top, 2).fixedSize(horizontal: true, vertical: false)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: fill ? .infinity : nil, alignment: .leading)
+        .padding(.vertical, 3)
+        .padding(.horizontal, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(Color.primary.opacity(hoveredSection == key ? 0.13 : 0))
+        )
         .contentShape(Rectangle())
+        .onHover { inside in
+            if inside { hoveredSection = key } else if hoveredSection == key { hoveredSection = nil }
+        }
         .onTapGesture { toggleSection(key) }
+        .animation(.easeOut(duration: 0.12), value: hoveredSection)
         .help(isCollapsed(key) ? "展开" : "收起")
+    }
+
+    /// 图表行的点击层：铺在整行背景上，空白处点一下就能折叠，
+    /// 前面的切换器是独立控件，点击优先命中它们、不会误触。
+    private func rowTapLayer(_ key: String) -> some View {
+        Rectangle()
+            .fill(Color.primary.opacity(hoveredSection == key ? 0.09 : 0))
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { hoveredSection = key } else if hoveredSection == key { hoveredSection = nil }
+            }
+            .onTapGesture { toggleSection(key) }
     }
     @State private var hoveredHour: Int?
     @State private var hoveredRow: String?
@@ -504,11 +533,13 @@ struct PanelView: View {
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                collapsibleTitle("逐小时用量 · \(s.hoursMode)", key: "hours")
+                collapsibleTitle("逐小时用量 · \(s.hoursMode)", key: "hours", fill: false)
                 Spacer(minLength: 8)
                 Text("总计 \(Fmt.tokens(totalTokens))")
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+                    .lineLimit(1).fixedSize()
             }
+            .background(rowTapLayer("hours"))
             if !isCollapsed("hours") {
             Chart {
                 // 每小时的零值占位柱：保证 24 个类别始终存在（没数据的钟点也不会被吞掉）
@@ -653,10 +684,11 @@ struct PanelView: View {
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                collapsibleTitle(byModel ? "每日用量 · 按模型" : "每日用量 · 按工具", key: "trend")
+                collapsibleTitle(byModel ? "每日用量 · 按模型" : "每日用量 · 按工具", key: "trend", fill: false)
                 Spacer()
                 Text("总计 \(Fmt.tokens(totalTokens))")
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+                    .lineLimit(1).fixedSize()
                 Picker("", selection: $trendViewMode) {
                     Text("趋势").tag("bars")
                     Text("日历").tag("calendar")
@@ -677,6 +709,7 @@ struct PanelView: View {
                 .disabled(trendViewMode == "calendar")
                 .opacity(trendViewMode == "calendar" ? 0.4 : 1)
             }
+            .background(rowTapLayer("trend"))
             if !isCollapsed("trend") {
             if data.allSatisfy({ $0.parts.isEmpty }) {
                 emptyNote
