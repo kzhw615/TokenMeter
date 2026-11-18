@@ -114,6 +114,8 @@ final class FlameTicker: ObservableObject {
 final class AppModel: ObservableObject {
     /// 所有范围的预计算结果：切换范围 = 内存查表，瞬时响应
     @Published private(set) var summariesByRange: [RangeKind: Summary] = [:]
+    /// 上次把汇总结果写入缓存的时间（落盘节流用）
+    private var lastSummarySaveAt: Date?
     var summary: Summary? { summariesByRange[range] }
 
     @Published var range: RangeKind = .today
@@ -424,6 +426,12 @@ final class AppModel: ObservableObject {
 
     init() {
         loadHarnessIcons()   // 图标随包内置/系统图标，启动即可用，避免坞上出现字母占位
+        // 先把上次的汇总结果贴上去：面板立刻有数据，不必等本次扫描
+        if let cached = SummaryCache.load() {
+            summariesByRange = cached.summaries
+            hasPublishedData = true
+            lastScan = cached.savedAt
+        }
         refresh()
         checkForUpdates()
         maybeDailyUpdateCheck()
@@ -778,6 +786,17 @@ final class AppModel: ObservableObject {
                     self.summariesByRange = next
                     self.loadHarnessIcons()
                     self.lastScan = Date()
+                    // 只要这一轮数据是完整的就落盘：
+                    // 「数据无变化」走的是 partial 分支（跳过了阶段二），但内容其实完整，
+                    // 只在 !partial 时保存会导致缓存长期写不进去。
+                    // 落盘节流：完整结果体积约 1.3MB，每 60 秒刷一次没必要；
+                    // 首次（启动后第一轮）立即写，之后最多每 3 分钟写一次。
+                    let nowTs = Date()
+                    let dueForSave = self.lastSummarySaveAt.map { nowTs.timeIntervalSince($0) > 180 } ?? true
+                    if dueForSave, !partial || next.values.allSatisfy({ $0.calendarDays != nil }) {
+                        SummaryCache.save(next, at: nowTs)
+                        self.lastSummarySaveAt = nowTs
+                    }
                     if !partial {
                         self.lastFileTotal = fileTotal
                         self.updateRate(todayTotal: todayTotal, at: Date())
