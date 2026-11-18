@@ -235,6 +235,11 @@ final class TokenMeterCoreTests: XCTestCase {
         // 中转 API 的自动路由别名要并回官方模型名
         XCTAssertEqual(Aggregator.normalizedModel("auto-gpt-6-1-sol"), "gpt-6.1-sol")
         XCTAssertEqual(Aggregator.normalizedModel("gpt-6-1-sol"), "gpt-6.1-sol")
+        // auto- 别名通用规则：任意型号都要能还原
+        XCTAssertEqual(Aggregator.normalizedModel("auto-gpt-6-1-terra"), "gpt-6.1-terra")
+        XCTAssertEqual(Aggregator.normalizedModel("auto-gpt-6-2-sol"), "gpt-6.2-sol")
+        XCTAssertEqual(Aggregator.normalizedModel("auto-gpt-6-terra"), "gpt-6-terra")
+        XCTAssertEqual(Aggregator.normalizedModel("auto-qwen3.8-max"), "qwen3.8-max")
     }
 
     /// 中转 API 的模型别名要按同族模型计价（auto-gpt-6-1-sol → gpt-6.1-sol）

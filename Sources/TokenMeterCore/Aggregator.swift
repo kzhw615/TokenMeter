@@ -36,6 +36,21 @@ public enum Aggregator {
     /// 归一化模型名：去掉工具自己加的 provider 前缀。
     /// 例：WorkBuddy 把本地 provider 写成 `custom-local:deepseek-flash`，
     /// 直接展示会出现 "custom-local" 这个多余前缀，也会让价格表匹配不到。
+    /// 中转 API 的 `auto-` 别名归一。
+    /// 中转把「自动路由」写成 auto-<模型id>，且版本号用连字符：auto-gpt-6-1-terra。
+    /// 通用规则：去掉 auto-，再把 gpt-<主版本>-<次版本>-<名> 还原成 gpt-<主>.<次>-<名>。
+    /// 之前只硬编码了 auto-gpt-6-1-sol，一到 terra/astra 就又冒出来了。
+    static func normalizeAutoAlias(_ raw: String) -> String? {
+        guard raw.lowercased().hasPrefix("auto-") else { return nil }
+        var rest = String(raw.dropFirst("auto-".count))
+        let parts = rest.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
+        if parts.count >= 4, parts[0].lowercased() == "gpt",
+           Int(parts[1]) != nil, Int(parts[2]) != nil {
+            rest = "gpt-\(parts[1]).\(parts[2])-" + parts[3...].joined(separator: "-")
+        }
+        return rest
+    }
+
     /// 中转 API 的模型别名 → 官方模型名。
     /// 例：Claude Code 日志里写的是 `group/auto-gpt-6-1-sol`（中转的自动路由分组，
     /// 且用连字符写版本号），实际就是 gpt-6.1-sol，不映射会单独占一行而且价格对不上。
@@ -49,6 +64,7 @@ public enum Aggregator {
             return String(raw.dropFirst(prefix.count))
         }
         if let mapped = modelAliases[raw.lowercased()] { return mapped }
+        if let auto = normalizeAutoAlias(raw) { return auto }
         return raw
     }
 
