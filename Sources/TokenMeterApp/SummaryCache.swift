@@ -30,10 +30,14 @@ enum SummaryCache {
         var map: [String: Summary] = [:]
         for (k, v) in summaries { map[k.rawValue] = v }
         let payload = Payload(version: schemaVersion, savedAt: date, summaries: map)
-        let enc = JSONEncoder()
-        enc.dateEncodingStrategy = .iso8601
-        guard let data = try? enc.encode(payload) else { return }
-        try? data.write(to: url, options: .atomic)
+        // 编码 + 写盘放到后台：1.3MB 的 JSON 编码在主线程会造成可感知的卡顿
+        let target = url
+        DispatchQueue.global(qos: .utility).async {
+            let enc = JSONEncoder()
+            enc.dateEncodingStrategy = .iso8601
+            guard let data = try? enc.encode(payload) else { return }
+            try? data.write(to: target, options: .atomic)
+        }
     }
 
     static func load(now: Date = Date()) -> (summaries: [RangeKind: Summary], savedAt: Date)? {

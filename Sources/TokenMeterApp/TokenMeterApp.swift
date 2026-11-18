@@ -407,6 +407,8 @@ final class AppModel: ObservableObject {
     /// 火苗帧计数器独立成小对象：只让火苗图标重绘，避免 10fps 重绘整个面板树
     let flame = FlameTicker()
     private var flameTick = 0
+    /// 当前心跳间隔（秒）
+    private var heatInterval: Double = 0.1
 
     private var timer: Timer?
     private var activityTimer: Timer?
@@ -464,40 +466,52 @@ final class AppModel: ObservableObject {
         startHeartbeat()
     }
 
-    /// 按需启动心跳（有燃烧或扫描时才需要逐帧刷新）
+    /// 按需启动心跳（有燃烧或扫描时才需要逐帧刷新）。
+    ///
+    /// 性能注意：之前每 100ms 新建一个 Task 再跳回主线程，实测这一项就吃掉 ~6% CPU
+    /// （定时器本来就在主 RunLoop 上，Task 是多此一举的调度开销）。
+    /// 现在直接在主线程执行；并且只在「动画看得见」时才用 10Hz：
+    /// 面板打开或悬浮坞开着 → 0.1s；否则 → 0.25s（菜单栏火苗降到 4Hz，肉眼几乎无差）。
     func startHeartbeat() {
         guard flameTimer == nil else { return }
-        flameTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.flameTick += 1
-
-                if self.scanning, let p = self.scanProgress, self.flameTick % 3 == 0 {
-                    self.scanFraction = p.fraction
-                    self.scanDone = p.done
-                    self.scanTotal = p.total
-                }
-
-                if !self.isBurning && !self.scanning {
-                    self.stopHeartbeat()      // 空闲：停掉定时器，让系统可以休眠
-                    return
-                }
-                guard self.isBurning, !self.currentFlameFrames.isEmpty else { return }
-                // 档位越高帧率越高：爆燃最"急"
-                let fps: Int
-                switch self.flameTier {
-                case .blast: fps = 22
-                case .inferno: fps = 18
-                case .hot: fps = 15
-                default: fps = 12
-                }
-                let step = max(1, Int((10.0 / Double(fps)).rounded()))
-                guard self.flameTick % step == 0 else { return }
-                self.flame.advance(count: self.currentFlameFrames.count)
-            }
+        let animateFast = panelOpen || sideDock != "off"
+        let hbInterval = ProcessInfo.processInfo.environment["TOKENMETER_HEARTBEAT"].flatMap(Double.init)
+            ?? (animateFast ? 0.1 : 0.25)
+        heatInterval = hbInterval
+        let t = Timer(timeInterval: hbInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.heartbeatTick() }
         }
-        flameTimer?.tolerance = 0.02
-        if let t = flameTimer { RunLoop.main.add(t, forMode: .common) }
+        t.tolerance = hbInterval * 0.2
+        RunLoop.main.add(t, forMode: .common)
+        flameTimer = t
+    }
+
+    /// 心跳主体（主线程直调，不再每个 tick 新建 Task）
+    private func heartbeatTick() {
+        flameTick += 1
+
+        if scanning, let p = scanProgress, flameTick % 3 == 0 {
+            scanFraction = p.fraction
+            scanDone = p.done
+            scanTotal = p.total
+        }
+
+        if !isBurning && !scanning {
+            stopHeartbeat()          // 空闲：停掉定时器，让系统可以休眠
+            return
+        }
+        guard isBurning, !currentFlameFrames.isEmpty else { return }
+        // 档位越高帧率越高：爆燃最"急"
+        let fps: Int
+        switch flameTier {
+        case .blast: fps = 22
+        case .inferno: fps = 18
+        case .hot: fps = 15
+        default: fps = 12
+        }
+        let step = max(1, Int((1.0 / max(0.01, heatInterval) / Double(fps)).rounded()))
+        guard flameTick % step == 0 else { return }
+        flame.advance(count: currentFlameFrames.count)
     }
 
     func stopHeartbeat() {
@@ -511,9 +525,9 @@ final class AppModel: ObservableObject {
         dbgTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let line = String(format: "DBG 10s: watcher=%d refresh=%d poll=%d pollCPU=%.2fs\n",
+                let line = String(format: "DBG 10s: watcher=%d refresh=%d poll=%d pollCPU=%.2fs open=%d\n",
                                   self.dbgWatcherEvents, self.dbgRefreshCount,
-                                  self.dbgPollCount, self.dbgPollSeconds)
+                                  self.dbgPollCount, self.dbgPollSeconds, self.panelOpen ? 1 : 0)
                 FileHandle.standardError.write(Data(line.utf8))
                 self.dbgWatcherEvents = 0; self.dbgRefreshCount = 0
                 self.dbgPollCount = 0; self.dbgPollSeconds = 0
@@ -746,7 +760,14 @@ final class AppModel: ObservableObject {
         lastRefreshAt = Date()
         Task.detached(priority: .utility) {
             let pricing = PricingTable.load()
-            var cache = CacheStore.lock.withLock { CacheStore.cache } ?? ScanCache.load()
+            // 取走全局引用再改：ScanCache 是结构体（写时复制），
+            // 如果 CacheStore 里还留着同一份，扫描过程中任何一次写都会整份复制，
+            // 一次扫描的内存峰值直接翻倍（实测 RSS 从 ~110MB 冲到 200MB+）。
+            var cache = CacheStore.lock.withLock { () -> ScanCache? in
+                let c = CacheStore.cache
+                CacheStore.cache = nil
+                return c
+            } ?? ScanCache.load()
             let t0 = Date()
 
             /// 把一份 buckets 汇总成七个范围并推到 UI

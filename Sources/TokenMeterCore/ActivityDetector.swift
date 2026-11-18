@@ -103,57 +103,69 @@ public enum ActivityDetector {
         return out
     }
 
+    private static var snapshotCache: (at: Date, value: [SourceActivity])?
+    private static let snapshotLock = NSLock()
+
     public static func activitySnapshot(now: Date = Date()) -> [SourceActivity] {
+        snapshotLock.lock()
+        if let c = snapshotCache, now.timeIntervalSince(c.at) < 1.5 {
+            snapshotLock.unlock()
+            return c.value
+        }
+        snapshotLock.unlock()
+        let value = computeSnapshot(now: now)
+        snapshotLock.lock()
+        snapshotCache = (now, value)
+        snapshotLock.unlock()
+        return value
+    }
+
+    private static func computeSnapshot(now: Date) -> [SourceActivity] {
         let recentCutoff = now.addingTimeInterval(-600)
+        // 同一棵目录树只走一遍：latest 与 topLevel 一起算出来。
+        // 原来 latestMtime / latestTopLevelMtime 各遍历一次，等于每次轮询把上万文件 stat 两遍。
+        func walk(_ dir: String, _ suffixes: [String]) -> (Date?, Date?) {
+            let r = latestBoth(under: dir, suffixes: suffixes, recentCutoff: recentCutoff)
+            return (r.latest, r.top)
+        }
+
+        let claude = walk("~/.claude/projects", [".jsonl"])
+        let codexTurn = codexTurnState(now: now)
+        let codexLatest = codexMtime(now: now, topLevelOnly: false, recentCutoff: recentCutoff)
+        let codexTop = codexMtime(now: now, topLevelOnly: true, recentCutoff: recentCutoff)
+        let dsh = walk("~/.dsh/sessions", [".zstd", ".jsonl"])
+        let wb = walk("~/.workbuddy/traces", [".jsonl"])
+        let omb = walk("~/.openmausbot/usage", [".jsonl"])
+        let reasonix = walk("~/.reasonix", ["usage.jsonl"])
+        let droid = walk("~/.factory/sessions", [".jsonl", ".json"])
+
+        let openCode = openCodeLastActivity()
+        let hermes = hermesMtime()
+        let zcode = fileMtime("~/.zcode/cli/db/db.sqlite")
+        let kiro = fileMtime("~/Library/Application Support/KiroUser/globalStorage/kiro.kiroagent/dev_data/devdata.sqlite")
+        let copilot = newer(fileMtime("~/.copilot/cli/state.db"), fileMtime("~/.copilot/state.db"))
+        let minimax = fileMtime("~/.minimax/runtime-state.sqlite")
+        let qoder = newer(newer(fileMtime("~/.qoder/db.sqlite"), fileMtime("~/.qoder-cn/db.sqlite")),
+                          newer(fileMtime("~/Library/Application Support/Qoder/db.sqlite"),
+                                fileMtime("~/Library/Application Support/QoderCN/db.sqlite")))
+
         return [
-            SourceActivity(name: "Claude Code",
-                           lastActive: latestMtime(under: "~/.claude/projects", suffixes: [".jsonl"]),
-                           topLevel: latestTopLevelMtime(under: "~/.claude/projects", suffixes: [".jsonl"], recentCutoff: recentCutoff)),
+            SourceActivity(name: "Claude Code", lastActive: claude.0, topLevel: claude.1),
             SourceActivity(name: "Codex",
-                           lastActive: newer(codexMtime(now: now, topLevelOnly: false, recentCutoff: recentCutoff),
-                                             codexTurnState(now: now)?.lastActive),
-                           topLevel: newer(codexMtime(now: now, topLevelOnly: true, recentCutoff: recentCutoff),
-                                           codexTurnState(now: now)?.lastCompleted)),
-            SourceActivity(name: "DSH",
-                           lastActive: latestMtime(under: "~/.dsh/sessions", suffixes: [".zstd", ".jsonl"]),
-                           topLevel: latestTopLevelMtime(under: "~/.dsh/sessions", suffixes: [".zstd", ".jsonl"], recentCutoff: recentCutoff)),
-            SourceActivity(name: "WorkBuddy",
-                           lastActive: latestMtime(under: "~/.workbuddy/traces", suffixes: [".jsonl"]),
-                           topLevel: latestMtime(under: "~/.workbuddy/traces", suffixes: [".jsonl"])),
-            SourceActivity(name: "OpenCode",
-                           lastActive: openCodeLastActivity(),
-                           topLevel: openCodeLastActivity()),
-            SourceActivity(name: "Hermes",
-                           lastActive: hermesMtime(),
-                           topLevel: hermesMtime()),
-            SourceActivity(name: "ZCode",
-                           lastActive: fileMtime("~/.zcode/cli/db/db.sqlite"),
-                           topLevel: fileMtime("~/.zcode/cli/db/db.sqlite")),
-            SourceActivity(name: "OpenMausBot",
-                           lastActive: latestMtime(under: "~/.openmausbot/usage", suffixes: [".jsonl"]),
-                           topLevel: latestMtime(under: "~/.openmausbot/usage", suffixes: [".jsonl"])),
-            SourceActivity(name: "Reasonix",
-                           lastActive: latestMtime(under: "~/.reasonix", suffixes: ["usage.jsonl"]),
-                           topLevel: latestMtime(under: "~/.reasonix", suffixes: ["usage.jsonl"])),
-            SourceActivity(name: "Droid",
-                           lastActive: latestMtime(under: "~/.factory/sessions", suffixes: [".jsonl", ".json"]),
-                           topLevel: latestMtime(under: "~/.factory/sessions", suffixes: [".jsonl", ".json"])),
-            SourceActivity(name: "Kiro",
-                           lastActive: fileMtime("~/Library/Application Support/KiroUser/globalStorage/kiro.kiroagent/dev_data/devdata.sqlite"),
-                           topLevel: fileMtime("~/Library/Application Support/KiroUser/globalStorage/kiro.kiroagent/dev_data/devdata.sqlite")),
-            SourceActivity(name: "Copilot CLI",
-                           lastActive: newer(fileMtime("~/.copilot/cli/state.db"), fileMtime("~/.copilot/state.db")),
-                           topLevel: newer(fileMtime("~/.copilot/cli/state.db"), fileMtime("~/.copilot/state.db"))),
-            SourceActivity(name: "MiniMax Code",
-                           lastActive: fileMtime("~/.minimax/runtime-state.sqlite"),
-                           topLevel: fileMtime("~/.minimax/runtime-state.sqlite")),
-            SourceActivity(name: "Qoder",
-                           lastActive: newer(newer(fileMtime("~/.qoder/db.sqlite"), fileMtime("~/.qoder-cn/db.sqlite")),
-                                             newer(fileMtime("~/Library/Application Support/Qoder/db.sqlite"),
-                                                   fileMtime("~/Library/Application Support/QoderCN/db.sqlite"))),
-                           topLevel: newer(newer(fileMtime("~/.qoder/db.sqlite"), fileMtime("~/.qoder-cn/db.sqlite")),
-                                           newer(fileMtime("~/Library/Application Support/Qoder/db.sqlite"),
-                                                 fileMtime("~/Library/Application Support/QoderCN/db.sqlite")))),
+                           lastActive: newer(codexLatest, codexTurn?.lastActive),
+                           topLevel: newer(codexTop, codexTurn?.lastCompleted)),
+            SourceActivity(name: "DSH", lastActive: dsh.0, topLevel: dsh.1),
+            SourceActivity(name: "WorkBuddy", lastActive: wb.0, topLevel: wb.1),
+            SourceActivity(name: "OpenCode", lastActive: openCode, topLevel: openCode),
+            SourceActivity(name: "Hermes", lastActive: hermes, topLevel: hermes),
+            SourceActivity(name: "ZCode", lastActive: zcode, topLevel: zcode),
+            SourceActivity(name: "OpenMausBot", lastActive: omb.0, topLevel: omb.1),
+            SourceActivity(name: "Reasonix", lastActive: reasonix.0, topLevel: reasonix.1),
+            SourceActivity(name: "Droid", lastActive: droid.0, topLevel: droid.1),
+            SourceActivity(name: "Kiro", lastActive: kiro, topLevel: kiro),
+            SourceActivity(name: "Copilot CLI", lastActive: copilot, topLevel: copilot),
+            SourceActivity(name: "MiniMax Code", lastActive: minimax, topLevel: minimax),
+            SourceActivity(name: "Qoder", lastActive: qoder, topLevel: qoder),
         ]
     }
 
@@ -576,6 +588,43 @@ public enum ActivityDetector {
             if latest == nil || v > latest! { latest = v }
         }
         return latest
+    }
+
+    /// 一次遍历同时算出「最新活动时间」和「最新顶层时间」。
+    /// 原来 latestMtime / latestTopLevelMtime 各走一遍目录树，
+    /// 而 activitySnapshot 对每个源都两个都要 —— 等于每次轮询把上万个文件 stat 两遍。
+    private static func latestBoth(under dir: String, suffixes: [String],
+                                   recentCutoff: Date) -> (latest: Date?, top: Date?) {
+        let fm = FileManager.default
+        let path = SourcePaths.expand(dir)
+        guard fm.fileExists(atPath: path),
+              let enumerator = fm.enumerator(at: URL(fileURLWithPath: path),
+                                             includingPropertiesForKeys: [.contentModificationDateKey]) else {
+            return (nil, nil)
+        }
+        var latest: Date?
+        var olderMax: Date?
+        var recent: [(String, Date)] = []
+        for case let url as URL in enumerator {
+            let p = url.path
+            guard suffixes.contains(where: p.hasSuffix) else { continue }
+            guard let v = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+            else { continue }
+            if latest == nil || v > latest! { latest = v }
+            if v >= recentCutoff {
+                recent.append((p, v))
+            } else if olderMax == nil || v > olderMax! {
+                olderMax = v
+            }
+        }
+        var top = olderMax
+        if !recent.isEmpty {
+            for (p, v) in recent.sorted(by: { $0.1 > $1.1 }) {
+                if isSubagentFile(p) { continue }
+                if top == nil || v > top! { top = v }
+            }
+        }
+        return (latest, top)
     }
 
     private static func latestMtime(under dir: String, suffixes: [String]) -> Date? {

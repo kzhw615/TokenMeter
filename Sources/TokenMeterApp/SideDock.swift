@@ -1,4 +1,5 @@
 #if os(macOS)
+import Combine
 import SwiftUI
 import AppKit
 import TokenMeterCore
@@ -298,6 +299,48 @@ final class SideDockController: ObservableObject {
 /// 运行中的橙色脉冲点。
 /// 用 Core Animation 而不是 SwiftUI 的 repeatForever：后者会让 SwiftUI 以 60fps
 /// 持续重算这一小块（实测在有任务运行时白吃掉 10%+ 单核），CA 的动画在渲染进程跑，主线程零成本。
+/// 逐帧图片视图：订阅 FlameTicker，直接设置 NSImageView.image。
+/// 走 Combine 而不是 SwiftUI 状态，避免每帧触发布局/重绘。
+struct FrameSequenceView: NSViewRepresentable {
+    let frames: [NSImage]
+    let ticker: FlameTicker
+    let size: CGFloat
+
+    func makeNSView(context: Context) -> NSImageView {
+        let v = NSImageView()
+        v.imageScaling = .scaleProportionallyUpOrDown
+        v.wantsLayer = true
+        context.coordinator.observe(v, frames: frames, ticker: ticker)
+        return v
+    }
+
+    func updateNSView(_ v: NSImageView, context: Context) {
+        context.coordinator.observe(v, frames: frames, ticker: ticker)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    @MainActor
+    final class Coordinator {
+        private var cancellable: AnyCancellable?
+        private weak var view: NSImageView?
+        private var lastFrame = -1
+
+        func observe(_ v: NSImageView, frames: [NSImage], ticker: FlameTicker) {
+            view = v
+            if cancellable == nil {
+                cancellable = ticker.$frame.sink { [weak self] f in
+                    guard let self, let v = self.view, !frames.isEmpty else { return }
+                    let idx = f % frames.count
+                    guard idx != self.lastFrame else { return }
+                    self.lastFrame = idx
+                    v.image = frames[idx]
+                }
+            }
+        }
+    }
+}
+
 struct PulseDot: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: NSRect(x: 0, y: 0, width: 7, height: 7))
@@ -396,8 +439,10 @@ struct SideDockView: View {
     @ViewBuilder
     private var iconView: some View {
         if model.isBurning {
-            FlameIcon(ticker: model.flame, frames: model.currentFlameFrames,
-                      size: model.flameTier == .blast ? 30 : 26)
+            // 用 AppKit 直接换图：每帧只换 NSImage，
+            // 不再让整个坞参与 SwiftUI 布局（10Hz 布局是主要 CPU 开销之一）
+            FrameSequenceView(frames: model.currentFlameFrames, ticker: model.flame,
+                              size: model.flameTier == .blast ? 30 : 26)
         } else {
             Image(systemName: "circle.hexagongrid.fill")
                 .font(.system(size: 20))

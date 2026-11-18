@@ -209,8 +209,6 @@ struct PanelView: View {
         }
         .frame(width: 430, height: 560)
         .onExitCommand { actions.closePanel() }
-        .onAppear { model.panelOpen = true }
-        .onDisappear { model.panelOpen = false }
     }
 
     /// 扫描中的骨架屏：真实进度条 + 灰色占位块（减少「卡住」的错觉）

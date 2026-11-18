@@ -158,6 +158,11 @@ public struct DshSource: UsageSource {
     }
 
     /// - Parameter baseDir: 会话根目录（默认 ~/.dsh/sessions，测试时可注入临时目录）
+    /// 尾部判定结果缓存：解压 + 跑 zstd 进程要 ~180ms，
+    /// 而这只是给指示灯用的，同一份文件内容没必要反复算。
+    private static var tailCache: (path: String, mtime: Date, result: Bool?)?
+    private static let tailCacheLock = NSLock()
+
     public static func isTaskRunning(now: Date = Date(), baseDir: String? = nil) -> Bool? {
         let fm = FileManager.default
         let base = baseDir ?? SourcePaths.expand("~/.dsh/sessions")
@@ -173,11 +178,29 @@ public struct DshSource: UsageSource {
             }
         }
         guard let target = newest else { return nil }
+        tailCacheLock.lock()
+        if let c = tailCache, c.path == target.path, c.mtime == target.mtime {
+            let cached = c.result
+            tailCacheLock.unlock()
+            return cached
+        }
+        tailCacheLock.unlock()
+        var lastResult: Bool?
+        defer {
+            tailCacheLock.lock()
+            tailCache = (target.path, target.mtime, lastResult)
+            tailCacheLock.unlock()
+        }
         let silent = now.timeIntervalSince(target.mtime)
         let lockPath = (target.path as NSString).deletingLastPathComponent + "/session.lock"
         let lockHeld = isSessionLockHeld(lockPath: lockPath)
-        if let decided = resolveTaskRunning(silent: silent, lockHeld: lockHeld) { return decided }
-        guard let data = Zstd.decompressTailFrames(path: target.path) else { return nil }
+        if let decided = resolveTaskRunning(silent: silent, lockHeld: lockHeld) {
+            lastResult = decided
+            return decided
+        }
+        // 只读尾部 192KB：判定只需要最近几条生命周期事件，
+        // 原来固定 512KB，读 + 解压都是白的
+        guard let data = Zstd.decompressTailFrames(path: target.path, window: 192 * 1024) else { return nil }
         // 只看尾部事件：从后往前找第一条生命周期标记
         let lines = LineReader.split(data)
         // 仍在跑的「后台作业」是唯一不受静默时长限制的信号：
@@ -187,20 +210,23 @@ public struct DshSource: UsageSource {
             guard let o = JSONUtil.object(line), let type = JSONUtil.string(o, "type") else { continue }
             switch type {
             case "turn/end":
+                lastResult = false
                 return false
             case "job/settled":
                 jobSettled = true
                 continue
             case "job/registered":
-                if !jobSettled { return true }
+                if !jobSettled { lastResult = true; return true }
                 continue
             case "tool/call", "step/start":
                 // 工具/步骤可能很久（长命令实测 990 秒），但不能无限等：
                 // 静默超过 5 分钟且没有未结束的作业，就认为这一轮已经停了。
-                return silent <= 300
+                lastResult = silent <= 300
+                return lastResult
             case "assistant/message":
                 // 一条产出结束的标志；之后长时间没有写入说明被打断（不写 turn/end）
-                return silent <= 120
+                lastResult = silent <= 120
+                return lastResult
             default:
                 continue
             }
