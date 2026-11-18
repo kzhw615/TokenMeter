@@ -11,6 +11,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: StatusBarController?
     private var model: AppModel?
 
+    func applicationWillTerminate(_ notification: Notification) {
+        // 记录退出时间：下次启动时用它把「关机前就完成」的任务直接判为已读
+        model?.noteRunEnd()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         // 调试：启动即展开面板，避免自动化点击菜单栏图标带来的不稳定
@@ -116,6 +121,13 @@ final class AppModel: ObservableObject {
     @Published private(set) var summariesByRange: [RangeKind: Summary] = [:]
     /// 上次把汇总结果写入缓存的时间（落盘节流用）
     private var lastSummarySaveAt: Date?
+    /// 上一次运行结束的时间（启动时读取并冻结）。
+    /// 用途：重启电脑/重开 App 时，关机前就已完成的任务不该再亮「待阅读」——
+    /// 那些完成时间比上次退出还早，我们根本没机会「读」到它。
+    private let previousExitAt: Date? = {
+        guard let ts = UserDefaults.standard.object(forKey: "lastRunEndAt") as? Double, ts > 0 else { return nil }
+        return Date(timeIntervalSince1970: ts)
+    }()
     var summary: Summary? { summariesByRange[range] }
 
     @Published var range: RangeKind = .today
@@ -620,6 +632,8 @@ final class AppModel: ObservableObject {
 
     func pollActivity() {
         if ProcessInfo.processInfo.environment["TOKENMETER_NO_POLL"] != nil { return }
+        // 持续刷新「本次运行到过的时间」，供下次启动判断「关机前就已完成」的任务
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "lastRunEndAt")
         dbgPollCount += 1
         let dbgT0 = Date()
         Task.detached(priority: .utility) { [weak self] in
@@ -706,6 +720,10 @@ final class AppModel: ObservableObject {
                     frontName: frontApp?.localizedName, frontBundle: frontBundle)
                 let adjusted = states.map { item -> (String, Int) in
                     guard item.st == 1 else { return (item.name, item.st) }
+                    // 上次退出之前就完成的 → 直接视为已读（重启后不会再骗我们「刚完成」）
+                    if let prev = self.previousExitAt, let done = item.done, done <= prev {
+                        return (item.name, 2)
+                    }
                     // WorkBuddy 有自己的真实已读回执，不用我们猜
                     if item.name == "WorkBuddy" {
                         return (item.name, ActivityDetector.sourceBundleIDs[item.name] == frontBundle ? 2 : item.st)
@@ -741,6 +759,11 @@ final class AppModel: ObservableObject {
                 }
             }
         }
+    }
+
+    /// 退出时记录时间，供下次启动判断「关机前已完成」
+    func noteRunEnd() {
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "lastRunEndAt")
     }
 
     func refresh() {
