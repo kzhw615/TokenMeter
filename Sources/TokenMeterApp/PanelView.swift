@@ -76,20 +76,26 @@ struct PanelView: View {
     }
     private func isCollapsed(_ key: String) -> Bool { collapsedKeys.contains(key) }
     private func toggleSection(_ key: String) {
-        var keys = collapsedKeys
-        if keys.contains(key) { keys.remove(key) } else { keys.insert(key) }
-        collapsedSections = keys.sorted().joined(separator: ",")
+        withAnimation(.easeInOut(duration: 0.22)) {
+            var keys = collapsedKeys
+            if keys.contains(key) { keys.remove(key) } else { keys.insert(key) }
+            collapsedSections = keys.sorted().joined(separator: ",")
+        }
     }
 
-    /// 可折叠标题：箭头 + 文字，点一下收起/展开（右侧控件不受影响）
+    /// 可折叠标题：箭头 + 文字。
+    /// 整行（含右侧空白）都能点：宽度撑满剩余空间再给 hit 区域，
+    /// 右侧的切换器不属于这里，所以点「趋势/日历」不会误触折叠。
     private func collapsibleTitle(_ title: String, key: String) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: isCollapsed(key) ? "chevron.right" : "chevron.down")
+            Image(systemName: "chevron.down")
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(.secondary)
                 .frame(width: 8)
-            Text(title).font(.headline).padding(.top, 2)
+                .rotationEffect(.degrees(isCollapsed(key) ? -90 : 0))
+            Text(title).font(.headline).padding(.top, 2).lineLimit(1)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture { toggleSection(key) }
         .help(isCollapsed(key) ? "展开" : "收起")
