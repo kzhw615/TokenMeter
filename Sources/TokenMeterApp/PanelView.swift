@@ -68,6 +68,32 @@ struct PanelView: View {
     @AppStorage("trendStackMode") private var trendStackMode: String = "model"
     /// 每日用量的展示形式：趋势柱状 / 日历热力图
     @AppStorage("trendViewMode") private var trendViewMode: String = "bars"
+    /// 各分区是否收起（逗号分隔的 key 列表）
+    @AppStorage("collapsedSections") private var collapsedSections: String = ""
+
+    private var collapsedKeys: Set<String> {
+        Set(collapsedSections.split(separator: ",").map(String.init))
+    }
+    private func isCollapsed(_ key: String) -> Bool { collapsedKeys.contains(key) }
+    private func toggleSection(_ key: String) {
+        var keys = collapsedKeys
+        if keys.contains(key) { keys.remove(key) } else { keys.insert(key) }
+        collapsedSections = keys.sorted().joined(separator: ",")
+    }
+
+    /// 可折叠标题：箭头 + 文字，点一下收起/展开（右侧控件不受影响）
+    private func collapsibleTitle(_ title: String, key: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: isCollapsed(key) ? "chevron.right" : "chevron.down")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 8)
+            Text(title).font(.headline).padding(.top, 2)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { toggleSection(key) }
+        .help(isCollapsed(key) ? "展开" : "收起")
+    }
     @State private var hoveredHour: Int?
     @State private var hoveredRow: String?
 
@@ -348,7 +374,8 @@ struct PanelView: View {
     private func toolsSection(_ s: Summary) -> some View {
         let totalDisp = s.tools.reduce(Int64(0)) { $0 + disp($1.counts) }
         return VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("按工具")
+            collapsibleTitle("按工具", key: "tools")
+            if !isCollapsed("tools") {
             if s.tools.isEmpty { emptyNote }
             ForEach(Array(s.tools.enumerated()), id: \.element.tool) { idx, t in
                 HStack(spacing: 10) {
@@ -364,12 +391,14 @@ struct PanelView: View {
                 .onHover { hoveredRow = $0 ? "tool-\(t.tool)" : nil }
             }
         }
+            }
     }
 
     private func modelsSection(_ s: Summary) -> some View {
         let totalDisp = s.models.reduce(Int64(0)) { $0 + disp($1.counts) }
         return VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("按模型")
+            collapsibleTitle("按模型", key: "models")
+            if !isCollapsed("models") {
             if s.models.isEmpty { emptyNote }
             let modelColors = seriesColors(s.models.map(\.model), globalOrder: s.models.map(\.model))
             ForEach(Array(s.models.prefix(10).enumerated()), id: \.element.model) { idx, m in
@@ -390,13 +419,15 @@ struct PanelView: View {
                 .onHover { hoveredRow = $0 ? "model-\(m.model)" : nil }
             }
         }
+            }
     }
 
     private func projectsSection(_ s: Summary) -> some View {
         let totalDisp = s.projects.reduce(Int64(0)) { $0 + disp($1.counts) }
         let list = Array(s.projects.prefix(8))
         return VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("按项目")
+            collapsibleTitle("按项目", key: "projects")
+            if !isCollapsed("projects") {
             if list.isEmpty { emptyNote }
             let projColors = seriesColors(list.map(\.project), globalOrder: list.map(\.project))
             ForEach(Array(list.enumerated()), id: \.element.project) { idx, p in
@@ -414,6 +445,7 @@ struct PanelView: View {
                 .onHover { hoveredRow = $0 ? "proj-\(p.project)" : nil }
             }
         }
+            }
     }
 
     /// 逐小时用量：堆叠柱（每段一种模型），与每日图同一套配色规则
@@ -466,11 +498,12 @@ struct PanelView: View {
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                sectionTitle("逐小时用量 · \(s.hoursMode)")
+                collapsibleTitle("逐小时用量 · \(s.hoursMode)", key: "hours")
                 Spacer(minLength: 8)
                 Text("总计 \(Fmt.tokens(totalTokens))")
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
             }
+            if !isCollapsed("hours") {
             Chart {
                 // 每小时的零值占位柱：保证 24 个类别始终存在（没数据的钟点也不会被吞掉）
                 ForEach(data, id: \.hour) { h in
@@ -588,6 +621,7 @@ struct PanelView: View {
                 }
             }
         }
+            }
     }
 
     private func trendSection(_ s: Summary) -> some View {
@@ -613,7 +647,7 @@ struct PanelView: View {
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                sectionTitle(byModel ? "每日用量 · 按模型" : "每日用量 · 按工具")
+                collapsibleTitle(byModel ? "每日用量 · 按模型" : "每日用量 · 按工具", key: "trend")
                 Spacer()
                 Text("总计 \(Fmt.tokens(totalTokens))")
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
@@ -637,6 +671,7 @@ struct PanelView: View {
                 .disabled(trendViewMode == "calendar")
                 .opacity(trendViewMode == "calendar" ? 0.4 : 1)
             }
+            if !isCollapsed("trend") {
             if data.allSatisfy({ $0.parts.isEmpty }) {
                 emptyNote
             } else if trendViewMode == "calendar" {
@@ -742,6 +777,7 @@ struct PanelView: View {
                 }
             }
         }
+            }
     }
 
     /// 日历热力图：一列一周、一行一天，格子深浅表示当天用量。
