@@ -753,7 +753,17 @@ struct PanelView: View {
             DayKey.date(for: d.day).map { (d.day, $0) }
         }
         let maxTokens = max(1, dayTotals.values.max() ?? 0)
-        let levels: [Double] = [0.14, 0.32, 0.52, 0.76, 1.0]
+        // 8 档阈值：按「有用量日子的分位数」切分。
+        // 用量分布极不均匀（最近几天动辄上亿、早先只有几十万），等宽分档会把过去几个月
+        // 全塞进最低档，看起来一片同样的浅色。
+        let levelCount = 8
+        let sortedNonZero = dayTotals.values.filter { $0 > 0 }.sorted()
+        let thresholds: [Int64] = (1...levelCount).map { k in
+            guard !sortedNonZero.isEmpty else { return 0 }
+            let idx = min(sortedNonZero.count - 1,
+                          Int(Double(sortedNonZero.count) * Double(k) / Double(levelCount)))
+            return sortedNonZero[idx]
+        }
         let firstWeekday = dates.first.map { cal.component(.weekday, from: $0.date) - 1 } ?? 0
         let gap: CGFloat = 2
         let weekCount = max(1, Int(ceil(Double(firstWeekday + dates.count) / 7.0)))
@@ -770,8 +780,9 @@ struct PanelView: View {
         let base = (colorScheme == .dark ? NSColor(white: 0.32, alpha: 1) : NSColor(white: 0.90, alpha: 1))
             .usingColorSpace(.sRGB) ?? .gray
         let solid = NSColor(tint).usingColorSpace(.sRGB) ?? .systemBlue
-        let tints: [Color] = [0.30, 0.48, 0.66, 0.84, 1.0].map { lv in
-            Color(nsColor: base.blended(withFraction: CGFloat(lv), of: solid) ?? solid)
+        let tints: [Color] = (0..<levelCount).map { i in
+            let lv = 0.16 + 0.84 * Double(i) / Double(levelCount - 1)
+            return Color(nsColor: base.blended(withFraction: CGFloat(lv), of: solid) ?? solid)
         }
         let emptyColor = Color(nsColor: (NSColor.secondaryLabelColor).withAlphaComponent(0.12))
 
@@ -788,8 +799,7 @@ struct PanelView: View {
                     if tokens <= 0 {
                         ctx.fill(path, with: .color(emptyColor))
                     } else {
-                        let ratio = Double(tokens) / Double(maxTokens)
-                        let idx = levels.firstIndex(where: { ratio <= $0 }) ?? (levels.count - 1)
+                        let idx = thresholds.firstIndex(where: { tokens <= $0 }) ?? (thresholds.count - 1)
                         ctx.fill(path, with: .color(tints[idx]))
                     }
                     if hoveredDay == item.day {
