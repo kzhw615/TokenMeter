@@ -296,10 +296,12 @@ final class AppModel: ObservableObject {
         let shown = includeCache ? s.counts.total : s.counts.input + s.counts.output
         let rate = (isBurning && (burnRate ?? 0) > 0) ? "\(Fmt.compactTokens(burnRate ?? 0))/s · " : ""
         switch menuBarStyle {
-        case "tokens": return rate + Fmt.compactTokens(shown)
+        // 与面板、坞保持一致：用 Fmt.tokens（亿两位小数）。
+        // compactTokens 只保留一位小数，会把 6.99亿 显示成 7.0亿，和别处对不上。
+        case "tokens": return rate + Fmt.tokens(shown)
         case "cost": return rate + Fmt.cost(s.cost)
         case "icon": return ""
-        default: return rate + "\(Fmt.compactTokens(shown)) · \(Fmt.cost(s.cost))"
+        default: return rate + "\(Fmt.tokens(shown)) · \(Fmt.cost(s.cost))"
         }
     }
 
