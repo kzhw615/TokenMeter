@@ -440,9 +440,12 @@ struct SideDockView: View {
     private var iconView: some View {
         if model.isBurning {
             // 用 AppKit 直接换图：每帧只换 NSImage，
-            // 不再让整个坞参与 SwiftUI 布局（10Hz 布局是主要 CPU 开销之一）
-            FrameSequenceView(frames: model.currentFlameFrames, ticker: model.flame,
-                              size: model.flameTier == .blast ? 30 : 26)
+            // 不再让整个坞参与 SwiftUI 布局（10Hz 布局是主要 CPU 开销之一）。
+            // 必须显式给 frame：NSViewRepresentable 会按 NSImageView 的固有尺寸排版，
+            // 而固有尺寸是原始图片大小（上百像素），不约束就会显示成巨大火苗。
+            let sz: CGFloat = model.flameTier == .blast ? 30 : 26
+            FrameSequenceView(frames: model.currentFlameFrames, ticker: model.flame, size: sz)
+                .frame(width: sz, height: sz)
         } else {
             Image(systemName: "circle.hexagongrid.fill")
                 .font(.system(size: 20))
