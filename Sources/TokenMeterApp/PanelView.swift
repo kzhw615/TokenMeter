@@ -93,7 +93,10 @@ struct PanelView: View {
     /// 可折叠标题：箭头 + 文字。
     /// 整行（含右侧空白）都能点：宽度撑满剩余空间再给 hit 区域，
     /// 右侧的切换器不属于这里，所以点「趋势/日历」不会误触折叠。
-    private func collapsibleTitle(_ title: String, key: String, fill: Bool = true) -> some View {
+    /// selfHighlight: 标题自己是否画悬停底色。
+    /// 图表行整行已有 rowTapLayer 的底色，标题再画一层会出现「文字上又叠一个框」的双层效果。
+    private func collapsibleTitle(_ title: String, key: String, fill: Bool = true,
+                                  selfHighlight: Bool = true) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "chevron.down")
                 .font(.system(size: 9, weight: .bold))
@@ -107,7 +110,7 @@ struct PanelView: View {
         .padding(.horizontal, 5)
         .background(
             RoundedRectangle(cornerRadius: 5)
-                .fill(Color.primary.opacity(hoveredSection == key ? 0.13 : 0))
+                .fill(selfHighlight ? Color.primary.opacity(hoveredSection == key ? 0.13 : 0) : .clear)
         )
         .contentShape(Rectangle())
         .onHover { inside in
@@ -533,7 +536,7 @@ struct PanelView: View {
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                collapsibleTitle("逐小时用量 · \(s.hoursMode)", key: "hours", fill: false)
+                collapsibleTitle("逐小时用量 · \(s.hoursMode)", key: "hours", fill: false, selfHighlight: false)
                 Spacer(minLength: 8)
                 Text("总计 \(Fmt.tokens(totalTokens))")
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
@@ -684,7 +687,8 @@ struct PanelView: View {
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                collapsibleTitle(byModel ? "每日用量 · 按模型" : "每日用量 · 按工具", key: "trend", fill: false)
+                collapsibleTitle(byModel ? "每日用量 · 按模型" : "每日用量 · 按工具", key: "trend",
+                                 fill: false, selfHighlight: false)
                 Spacer()
                 Text("总计 \(Fmt.tokens(totalTokens))")
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
