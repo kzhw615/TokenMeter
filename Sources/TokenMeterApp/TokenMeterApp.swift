@@ -758,11 +758,19 @@ final class AppModel: ObservableObject {
                                 summary.trendByTool = prev.trendByTool
                                 summary.trendByModel = prev.trendByModel
                                 summary.hoursByModel = prev.hoursByModel
+                                // 日历热力图用的是「全部历史」序列，阶段一同样不完整，
+                                // 不沿用上一轮就会闪成「只有最近几十天有记录」
+                                summary.calendarDays = prev.calendarDays
+                                summary.calendarByTool = prev.calendarByTool
+                                summary.calendarByModel = prev.calendarByModel
                             } else {
                                 // 首启无上一轮：宁可空着（显示"暂无数据"）也不要画错的图
                                 summary.trendByTool = nil
                                 summary.trendByModel = nil
                                 summary.hoursByModel = nil
+                                summary.calendarDays = nil
+                                summary.calendarByTool = nil
+                                summary.calendarByModel = nil
                             }
                             next[r] = summary
                         }
