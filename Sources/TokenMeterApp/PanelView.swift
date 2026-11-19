@@ -266,7 +266,7 @@ struct PanelView: View {
             Text("TokenMeter").font(.title3.bold())
             if model.isBurning {
                 HStack(spacing: 3) {
-                    FlameIcon(ticker: model.flame, frames: model.currentFlameFrames, size: 12)
+                    FlameIcon(ticker: model.flame, frames: model.flameFrames(for: 12), size: 12)
                     Text("燃烧中 \(model.burningSources.joined(separator: ", "))")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }

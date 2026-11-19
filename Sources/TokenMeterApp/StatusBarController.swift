@@ -224,7 +224,7 @@ final class StatusBarController: NSObject {
         let menuFrame = rawFrame
         let frameIdx = model.isBurning ? menuFrame % max(1, model.currentFlameFrames.count) : -1
         let size = model.isBurning ? model.flamePointSize : 20
-        let iconKey = "\(model.isBurning)-\(frameIdx)-\(size)"
+        let iconKey = "\(model.isBurning)-\(model.flameTier)-\(frameIdx)-\(size)"
         if lastIconKey != iconKey {
             lastIconKey = iconKey
             if model.isBurning {

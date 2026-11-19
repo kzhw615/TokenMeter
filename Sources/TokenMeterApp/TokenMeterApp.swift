@@ -108,10 +108,14 @@ struct FlameIcon: View {
 /// 火苗逐帧计数器：独立 ObservableObject，避免整树重绘
 @MainActor
 final class FlameTicker: ObservableObject {
-    @Published var frame: Int = 0
-    func advance(count: Int) {
+    @Published private(set) var frame: Int = 0
+    private var phase: Double = 0
+
+    func advance(elapsed: TimeInterval, period: TimeInterval, count: Int) {
         guard count > 0 else { return }
-        frame = (frame + 1) % count
+        phase = (phase + elapsed / period).truncatingRemainder(dividingBy: 1)
+        let next = Int((phase * Double(count)).rounded()) % count
+        if frame != next { frame = next }
     }
 }
 
@@ -147,7 +151,9 @@ final class AppModel: ObservableObject {
     /// 最近一次检查失败的具体原因，用于拼提示文案
     var lastCheckError: String?
     /// 面板是否展开（用于降低后台轮询频率省电）
-    @Published var panelOpen = false
+    @Published var panelOpen = false {
+        didSet { if flameTimer != nil { startHeartbeat() } }
+    }
     /// 统计口径：true = 含缓存（input+output+cacheRead+cacheWrite），false = 不含缓存（input+output）
     @Published var includeCache: Bool = UserDefaults.standard.object(forKey: "includeCache") as? Bool ?? true {
         didSet { UserDefaults.standard.set(includeCache, forKey: "includeCache") }
@@ -168,6 +174,7 @@ final class AppModel: ObservableObject {
         didSet {
             UserDefaults.standard.set(sideDock, forKey: "sideDock")
             dockController.apply(mode: sideDock, model: self, useSaved: false)
+            if flameTimer != nil { startHeartbeat() }
         }
     }
     private let dockController = SideDockController()
@@ -322,7 +329,7 @@ final class AppModel: ObservableObject {
         range = r   //  summariesByRange 已预计算，直接查表，无需重扫
     }
 
-    /// 燃烧状态的彩色火苗帧，三档：平稳 / 微旺 / 旺盛
+    /// 每档用 24 帧覆盖一个完整周期，显示时按经过的时间取样。
     static let flameFrameCount = 24
 
     private static func loadFlameFrames(_ prefix: String, pointSize: CGFloat) -> [NSImage] {
@@ -350,7 +357,19 @@ final class AppModel: ObservableObject {
     static let infernoRateThreshold: Int64 = 30_000
     static let blastRateThreshold: Int64 = 50_000
 
-    enum FlameTier { case calm, warm, hot, inferno, blast }
+    enum FlameTier {
+        case calm, warm, hot, inferno, blast
+
+        func period(menuOnly: Bool) -> TimeInterval {
+            switch self {
+            case .calm: return 2.65
+            case .warm: return 1.72
+            case .hot: return 1.12
+            case .inferno: return menuOnly ? 1.30 : 1.08
+            case .blast: return menuOnly ? 1.95 : 1.48
+            }
+        }
+    }
 
     var flameTier: FlameTier {
         // 诊断：TOKENMETER_FLAME_TIER=calm|warm|hot|inferno|blast 强制档位
@@ -370,7 +389,7 @@ final class AppModel: ObservableObject {
         return .calm
     }
 
-    /// 火苗点尺寸随速率连续变化（12 → 22pt，对数压缩让低速也有变化）
+    /// 火苗点尺寸随速率连续变化（12 → 23pt，对数压缩让低速也有变化）
     var flamePointSize: CGFloat {
         if let forced = ProcessInfo.processInfo.environment["TOKENMETER_FLAME_TIER"] {
             switch forced {
@@ -396,17 +415,19 @@ final class AppModel: ObservableObject {
     }
 
     var currentFlameFrames: [NSImage] {
+        flameFrames(for: flamePointSize)
+    }
+
+    func flameFrames(for pointSize: CGFloat) -> [NSImage] {
+        let big = pointSize >= 18
         switch flameTier {
         case .blast:
-            let big = flamePointSize >= 18
             let set = big && !Self.flameFramesBlastBig.isEmpty ? Self.flameFramesBlastBig : Self.flameFramesBlast
             return set.isEmpty ? Self.flameFramesInferno : set
         case .inferno:
-            let big = flamePointSize >= 18
             let set = big && !Self.flameFramesInfernoBig.isEmpty ? Self.flameFramesInfernoBig : Self.flameFramesInferno
             return set.isEmpty ? Self.flameFramesIntense : set
         case .hot:
-            let big = flamePointSize >= 18
             let set = big && !Self.flameFramesIntenseBig.isEmpty ? Self.flameFramesIntenseBig : Self.flameFramesIntense
             return set.isEmpty ? Self.flameFrames : set
         case .warm:
@@ -419,8 +440,7 @@ final class AppModel: ObservableObject {
     /// 火苗帧计数器独立成小对象：只让火苗图标重绘，避免 10fps 重绘整个面板树
     let flame = FlameTicker()
     private var flameTick = 0
-    /// 当前心跳间隔（秒）
-    private var heatInterval: Double = 0.1
+    private var lastHeartbeat: TimeInterval = 0
 
     private var timer: Timer?
     private var activityTimer: Timer?
@@ -485,13 +505,14 @@ final class AppModel: ObservableObject {
     /// 现在直接在主线程执行；并且只在「动画看得见」时才用 10Hz：
     /// 面板打开或悬浮坞开着 → 0.1s；否则 → 0.25s（菜单栏火苗降到 4Hz，肉眼几乎无差）。
     func startHeartbeat() {
-        guard flameTimer == nil else { return }
         let animateFast = panelOpen || sideDock != "off"
         // 10fps：6fps 实测肉眼可见卡顿（火焰是逐帧位图，帧少了像掉帧）。
         // 两处共用同一帧号，帧率必须一致，否则节奏对不上。
-        let hbInterval = ProcessInfo.processInfo.environment["TOKENMETER_HEARTBEAT"].flatMap(Double.init)
-            ?? (animateFast ? 0.1 : 0.25)
-        heatInterval = hbInterval
+        let override = ProcessInfo.processInfo.environment["TOKENMETER_HEARTBEAT"].flatMap(Double.init)
+        let hbInterval = override.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? (animateFast ? 0.1 : 0.25)
+        if flameTimer?.timeInterval == hbInterval { return }
+        flameTimer?.invalidate()
+        lastHeartbeat = ProcessInfo.processInfo.systemUptime
         let t = Timer(timeInterval: hbInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.heartbeatTick() }
         }
@@ -502,6 +523,9 @@ final class AppModel: ObservableObject {
 
     /// 心跳主体（主线程直调，不再每个 tick 新建 Task）
     private func heartbeatTick() {
+        let now = ProcessInfo.processInfo.systemUptime
+        let elapsed = now - lastHeartbeat
+        lastHeartbeat = now
         flameTick += 1
 
         if scanning, let p = scanProgress, flameTick % 3 == 0 {
@@ -514,18 +538,9 @@ final class AppModel: ObservableObject {
             stopHeartbeat()          // 空闲：停掉定时器，让系统可以休眠
             return
         }
-        guard isBurning, !currentFlameFrames.isEmpty else { return }
-        // 档位越高帧率越高：爆燃最"急"
-        let fps: Int
-        switch flameTier {
-        case .blast: fps = 22
-        case .inferno: fps = 18
-        case .hot: fps = 15
-        default: fps = 12
-        }
-        let step = max(1, Int((1.0 / max(0.01, heatInterval) / Double(fps)).rounded()))
-        guard flameTick % step == 0 else { return }
-        flame.advance(count: currentFlameFrames.count)
+        guard isBurning else { return }
+        let period = flameTier.period(menuOnly: (flameTimer?.timeInterval ?? 0.1) >= 0.25)
+        flame.advance(elapsed: elapsed, period: period, count: currentFlameFrames.count)
     }
 
     func stopHeartbeat() {

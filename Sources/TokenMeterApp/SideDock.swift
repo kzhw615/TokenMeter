@@ -456,7 +456,7 @@ struct SideDockView: View {
             // 必须显式给 frame：NSViewRepresentable 会按 NSImageView 的固有尺寸排版，
             // 而固有尺寸是原始图片大小（上百像素），不约束就会显示成巨大火苗。
             let sz: CGFloat = model.flameTier == .blast ? 30 : 26
-            FrameSequenceView(frames: model.currentFlameFrames, ticker: model.flame, size: sz)
+            FrameSequenceView(frames: model.flameFrames(for: sz), ticker: model.flame, size: sz)
                 .frame(width: sz, height: sz)
         } else {
             Image(systemName: "circle.hexagongrid.fill")

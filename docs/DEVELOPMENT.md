@@ -35,6 +35,8 @@ open build/TokenMeter.app
 
 要求 macOS 14+ 与 Xcode Command Line Tools。
 
+火焰 PNG 已随仓库提交。修改火焰画稿时编辑 `Scripts/flame_frames.js`，用装有 Google Chrome 和 Python Playwright 的开发环境运行 `python3 Scripts/make_flames.py`。它会重新导出五档透明帧，保留原有的 App 图标。
+
 ## CLI
 
 ```bash
