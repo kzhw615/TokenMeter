@@ -29,6 +29,10 @@ public enum ScanProgressReporter {
 }
 
 public enum Aggregator {
+    /// 内部噪音模型：不展示在「按模型」和图表里，但 token 仍计入总量。
+    /// wb-lite = WorkBuddy 给会话自动起标题用的小模型（累计两千多 token）。
+    public static let ignoredModels: Set<String> = ["wb-lite"]
+
     /// 诊断开关：扫描时把每个数据源耗时打到 stderr
     public nonisolated(unsafe) static var timingEnabled = false
     /// 由 day key + hour 还原本地时间（用于时段敏感计价）
@@ -227,7 +231,7 @@ public enum Aggregator {
         let totalAll = max(1, counts.total)
         let tools = toolMap.map { ToolStat(tool: $0.key, counts: $0.value.counts, cost: $0.value.cost, requests: $0.value.requests, share: Double($0.value.counts.total) / Double(totalAll)) }
             .sorted { $0.counts.total > $1.counts.total }
-        let models = modelMap.map { ModelStat(model: $0.key, counts: $0.value.counts, cost: $0.value.cost, requests: $0.value.requests, share: Double($0.value.counts.total) / Double(totalAll), tools: Array($0.value.tools).sorted()) }
+        let models = modelMap.filter { !Self.ignoredModels.contains($0.key.lowercased()) }.map { ModelStat(model: $0.key, counts: $0.value.counts, cost: $0.value.cost, requests: $0.value.requests, share: Double($0.value.counts.total) / Double(totalAll), tools: Array($0.value.tools).sorted()) }
             .sorted { $0.counts.total > $1.counts.total }
         let days = dayMap.map { DayStat(day: $0.key, counts: $0.value.counts, cost: $0.value.cost) }
             .sorted { $0.day < $1.day }
@@ -257,6 +261,7 @@ public enum Aggregator {
         }()
         func stack(_ m: [String: [String: (TokenCounts, Double)]], day key: String) -> DayStack {
             let parts = (m[key] ?? [:])
+                .filter { !ignoredModels.contains($0.key.lowercased()) }
                 .map { StackPart(name: $0.key, counts: $0.value.0, cost: $0.value.1) }
                 .sorted { $0.counts.total > $1.counts.total }
             return DayStack(day: key, parts: parts)
@@ -285,6 +290,7 @@ public enum Aggregator {
         let hoursMode = singleDay ? (range == .today ? "今日逐小时" : "昨日逐小时") : "按钟点分布（范围内汇总）"
         let hoursByModel = (0..<24).map { h -> HourStack in
             let parts = (hourModelMap[h] ?? [:])
+                .filter { !ignoredModels.contains($0.key.lowercased()) }
                 .map { StackPart(name: $0.key, counts: $0.value.0, cost: $0.value.1) }
                 .sorted { $0.counts.total > $1.counts.total }
             return HourStack(hour: h, parts: parts)
