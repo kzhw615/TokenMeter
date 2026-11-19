@@ -217,11 +217,11 @@ final class StatusBarController: NSObject {
         guard let button = item.button else { return }
 
         // ── 图标（火焰动画）──────────────────────────────────────
-        // 菜单栏图标按 6fps 更新（每 2 帧取一帧）：NSStatusItem 每次换图都会触发
-        // 菜单栏重新合成，实测 10fps → 6fps 省约 5% 单核 CPU，而 20pt 的小图标
-        // 肉眼分辨不出差别；坞内仍按完整帧率播放。
+        // 与坞内用同一个帧号：之前为了省 CPU 让状态栏每 2 帧取 1 帧，
+        // 结果两处火焰的动画节奏对不上（一处快一处慢），观感很怪。
+        // 统一走 rawFrame，帧率由心跳统一控制。
         let rawFrame = model.flame.frame
-        let menuFrame = (rawFrame / 2) * 2
+        let menuFrame = rawFrame
         let frameIdx = model.isBurning ? menuFrame % max(1, model.currentFlameFrames.count) : -1
         let size = model.isBurning ? model.flamePointSize : 20
         let iconKey = "\(model.isBurning)-\(frameIdx)-\(size)"
