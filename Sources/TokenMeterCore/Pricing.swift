@@ -60,7 +60,7 @@ public struct PricingTable: Codable {
 
     /// 内置默认表 + 用户覆盖（~/Library/Application Support/TokenMeter/pricing.json）
     /// 内置价目版本号：更新内置表时递增，用于把旧的自动生成模板升级到新价目
-    public static let builtinVersion = 5   // v5: 补 GPT-6.2 Astra/Sol 官方定价
+    public static let builtinVersion = 6   // v6: 免费模型 hy4flash 记 0 价
 
     public static func load() -> PricingTable {
         guard let data = try? Data(contentsOf: overrideURL) else {
@@ -166,7 +166,12 @@ public struct PricingTable: Codable {
         .init(pattern: "gpt-reserve", input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5, note: "estimate"),
         .init(pattern: "codex-auto-review", input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, note: "estimate: Codex 内部审查模型，按 luna 档"),
         .init(pattern: "fast-model", input: 0.143, output: 0.571, cacheRead: 0.0029, cacheWrite: 0.179, note: "estimate: WorkBuddy 内部别名"),
-        .init(pattern: "wb-lite", input: 0.143, output: 0.571, cacheRead: 0.0029, cacheWrite: 0.179, note: "estimate: WorkBuddy 内部别名"),
+        // WorkBuddy 内部小模型，只用来给会话自动起标题（3~7 个词），量极小
+        .init(pattern: "wb-lite", input: 0.143, output: 0.571, cacheRead: 0.0029, cacheWrite: 0.179,
+              note: "WorkBuddy 会话标题生成用的小模型，估算价"),
+        // 免费模型：显式标 0，否则会落进「未定价模型」提示里
+        .init(pattern: "hy4flash-free", input: 0, output: 0, cacheRead: 0, cacheWrite: 0, note: "免费模型"),
+        .init(pattern: "hy4flash", input: 0, output: 0, cacheRead: 0, cacheWrite: 0, note: "免费模型"),
         .init(pattern: "o4-mini", input: 1.1, output: 4.4, cacheRead: 0.275),
         .init(pattern: "o3", input: 2, output: 8, cacheRead: 0.5),
 
