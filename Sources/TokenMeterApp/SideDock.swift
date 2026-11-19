@@ -325,17 +325,29 @@ struct FrameSequenceView: NSViewRepresentable {
         private var cancellable: AnyCancellable?
         private weak var view: NSImageView?
         private var lastFrame = -1
+        /// 当前档位对应的帧序列。必须随档位更新：
+        /// 之前闭包捕获的是首次传入的 frames，速率涨到爆燃档后坞里还用着旧的平淡帧，
+        /// 看上去就像「状态栏烧得旺、坞里不旺」。
+        private var frames: [NSImage] = []
 
         func observe(_ v: NSImageView, frames: [NSImage], ticker: FlameTicker) {
             view = v
+            self.frames = frames
+            // 档位切换会导致帧数变化，重置帧号避免越界/跳帧
+            if lastFrame >= frames.count { lastFrame = -1 }
             if cancellable == nil {
                 cancellable = ticker.$frame.sink { [weak self] f in
-                    guard let self, let v = self.view, !frames.isEmpty else { return }
-                    let idx = f % frames.count
+                    guard let self, let v = self.view, !self.frames.isEmpty else { return }
+                    let idx = f % self.frames.count
                     guard idx != self.lastFrame else { return }
                     self.lastFrame = idx
-                    v.image = frames[idx]
+                    v.image = self.frames[idx]
                 }
+            } else if !frames.isEmpty {
+                // 立刻切到新档位的当前帧，不必等下一次 tick
+                let idx = ticker.frame % frames.count
+                lastFrame = idx
+                v.image = frames[idx]
             }
         }
     }
