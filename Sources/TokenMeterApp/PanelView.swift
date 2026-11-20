@@ -526,7 +526,9 @@ struct PanelView: View {
                 ? [StackPart(name: "全部模型", counts: $0.counts, cost: $0.cost)] : []) }
             : stacks
         var seriesTotals: [String: Int64] = [:]
-        for h in data { for p in h.parts { seriesTotals[p.name, default: 0] += p.counts.total } }
+        // 合计必须和柱高同口径：柱高用 disp()（受「含缓存/不含缓存」影响），
+        // 这里若用 counts.total 就会永远是含缓存的值，切换后数字和图形对不上。
+        for h in data { for p in h.parts { seriesTotals[p.name, default: 0] += disp(p.counts) } }
         let series = seriesTotals.sorted { $0.value > $1.value }.map(\.key)
         let colorMap = seriesColors(series, globalOrder: s.models.map(\.model))
         let totalTokens = seriesTotals.values.reduce(0, +)
@@ -610,7 +612,7 @@ struct PanelView: View {
                            // 传 Int 会返回 nil，导致整块悬浮提示永远不显示
                            let xPos = proxy.position(forX: Self.hourKey(hh)) {
                             let frame = geo[plotAnchor]
-                            let total = stat.parts.reduce(Int64(0)) { $0 + $1.counts.total }
+                            let total = stat.parts.reduce(Int64(0)) { $0 + disp($1.counts) }
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(String(format: "%02d:00 – %02d:59", hh, hh))
                                     .font(.caption2).foregroundStyle(.secondary)
@@ -672,7 +674,7 @@ struct PanelView: View {
         let data = stacks.isEmpty ? fallback : stacks
         // 系列按总量降序，保证颜色稳定
         var seriesTotals: [String: Int64] = [:]
-        for d in data { for p in d.parts { seriesTotals[p.name, default: 0] += p.counts.total } }
+        for d in data { for p in d.parts { seriesTotals[p.name, default: 0] += disp(p.counts) } }
         let series = seriesTotals.sorted { $0.value > $1.value }.map(\.key)
         let colorMap = seriesColors(series, globalOrder: s.models.map(\.model))
         let totalTokens = seriesTotals.values.reduce(0, +)
@@ -775,7 +777,7 @@ struct PanelView: View {
                                let plotAnchor = proxy.plotFrame,
                                let xPos = proxy.position(forX: hd) {
                                 let frame = geo[plotAnchor]
-                                let total = d.parts.reduce(Int64(0)) { $0 + $1.counts.total }
+                                let total = d.parts.reduce(Int64(0)) { $0 + disp($1.counts) }
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("\(d.day.dropFirst(5)) · \(Fmt.tokens(total))")
                                         .font(.caption2).foregroundStyle(.secondary)
