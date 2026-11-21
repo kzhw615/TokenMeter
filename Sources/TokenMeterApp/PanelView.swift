@@ -65,9 +65,13 @@ struct PanelView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hoveredDay: String?
     /// 每日用量图的堆叠维度：tool / model
-    @AppStorage("trendStackMode") private var trendStackMode: String = "model"
+    // 注意：这两个用 @State 而不是 @AppStorage。@AppStorage 的写入不进入 withAnimation
+    // 事务，切换会变成瞬切（折叠分区踩过一次同样的坑）。持久化在 setter 里单独做。
+    @State private var trendStackMode: String =
+        UserDefaults.standard.string(forKey: "trendStackMode") ?? "model"
     /// 每日用量的展示形式：趋势柱状 / 日历热力图
-    @AppStorage("trendViewMode") private var trendViewMode: String = "bars"
+    @State private var trendViewMode: String =
+        UserDefaults.standard.string(forKey: "trendViewMode") ?? "bars"
     /// 各分区是否收起（逗号分隔的 key 列表）。
     /// 用 @State 而非 @AppStorage：@AppStorage 的写入不进入 withAnimation 事务，
     /// 折叠/展开会瞬间完成、没有过渡（上一版就是这个原因）。
@@ -780,7 +784,10 @@ struct PanelView: View {
                     .lineLimit(1).fixedSize()
                 Picker("", selection: Binding(
                     get: { trendViewMode },
-                    set: { v in withAnimation(.easeInOut(duration: 0.22)) { trendViewMode = v } }
+                    set: { v in
+                        withAnimation(.easeInOut(duration: animDuration)) { trendViewMode = v }
+                        UserDefaults.standard.set(v, forKey: "trendViewMode")
+                    }
                 )) {
                     Text("趋势").tag("bars")
                     Text("日历").tag("calendar")
@@ -792,7 +799,10 @@ struct PanelView: View {
                 // 常驻显示：日历模式下不参与（灰掉），但位置固定，避免切换时按钮跳来跳去
                 Picker("", selection: Binding(
                     get: { trendStackMode },
-                    set: { v in withAnimation(.easeInOut(duration: 0.22)) { trendStackMode = v } }
+                    set: { v in
+                        withAnimation(.easeInOut(duration: animDuration)) { trendStackMode = v }
+                        UserDefaults.standard.set(v, forKey: "trendStackMode")
+                    }
                 )) {
                     Text("工具").tag("tool")
                     Text("模型").tag("model")
@@ -805,6 +815,7 @@ struct PanelView: View {
             }
             .background(rowTapLayer("trend"))
             if !isCollapsed("trend") {
+            Group {
             if data.allSatisfy({ $0.parts.isEmpty }) {
                 emptyNote.transition(.opacity)
             } else if trendViewMode == "calendar" {
@@ -892,6 +903,7 @@ struct PanelView: View {
                     }
                 }
                 .frame(height: 96)
+                .transition(.opacity)
                 // 图例：色点 + 名称 + 总量 + 占比
                 VStack(alignment: .leading, spacing: 3) {
                     ForEach(series.prefix(6), id: \.self) { name in
@@ -910,6 +922,9 @@ struct PanelView: View {
                     }
                 }
             }
+            }
+            .animation(.easeInOut(duration: animDuration), value: trendStackMode)
+            .animation(.easeInOut(duration: animDuration), value: trendViewMode)
         }
             }
     }
