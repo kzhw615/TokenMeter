@@ -175,6 +175,7 @@ final class AppModel: ObservableObject {
         "MiniMax Code": "minimax",     // minimax.io favicon
         "Qoder": "qoder",              // Qoder 官方 avatar
         "OpenMausBot": "openmausbot",  // 用户提供：黑白幽灵标
+        "Antigravity": "antigravity",  // 官方 app 图标（/Applications/Antigravity.app icon.icns 提取）
     ]
     private var harnessIconsLoaded = false
     func loadHarnessIcons() {
