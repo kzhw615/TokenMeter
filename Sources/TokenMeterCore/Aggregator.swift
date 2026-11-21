@@ -5,6 +5,7 @@ public final class ScanProgress: @unchecked Sendable {
     private let lock = NSLock()
     private var doneCount = 0
     private var totalCount = 0
+    private var currentLabel = ""
 
     public init() {}
 
@@ -15,6 +16,9 @@ public final class ScanProgress: @unchecked Sendable {
         lock.lock(); doneCount += n; lock.unlock()
     }
     public var done: Int { lock.lock(); defer { lock.unlock() }; return doneCount }
+    /// 当前正在扫描的数据源（展示用，如 "Codex"）
+    public func setLabel(_ l: String) { lock.lock(); currentLabel = l; lock.unlock() }
+    public var label: String { lock.lock(); defer { lock.unlock() }; return currentLabel }
     public var total: Int { lock.lock(); defer { lock.unlock() }; return totalCount }
     public var fraction: Double {
         lock.lock(); defer { lock.unlock() }
@@ -107,6 +111,7 @@ public enum Aggregator {
                 continue
             }
             let t0 = Date()
+            ScanProgressReporter.current?.setLabel(source.displayName)
             let r = source.scan(cache: &cache)
             if Self.timingEnabled {
                 let ms = Date().timeIntervalSince(t0) * 1000

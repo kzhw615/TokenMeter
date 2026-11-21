@@ -170,6 +170,8 @@ final class AppModel: ObservableObject {
     @Published var scanFraction: Double = 0
     @Published var scanDone: Int = 0
     @Published var scanTotal: Int = 0
+    /// 当前正在扫描的数据源（骨架屏展示用）
+    @Published var scanLabel: String = ""
     private var scanProgress: ScanProgress?
     @Published var updateChecking = false
     /// 检查更新的结果提示（已是最新 / 失败原因 / 发现新版），面板头部展示

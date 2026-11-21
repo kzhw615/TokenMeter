@@ -75,6 +75,8 @@ struct PanelView: View {
         UserDefaults.standard.string(forKey: "collapsedSections") ?? ""
     /// 鼠标悬停的分区（用来显示可点击的选中态）
     @State private var hoveredSection: String?
+    /// 日历里点选的那一天（看当天明细）
+    @State private var selectedDay: String?
     /// 折叠动画时长
     private let animDuration: Double = 0.22
 
@@ -215,16 +217,82 @@ struct PanelView: View {
         .onExitCommand { actions.closePanel() }
     }
 
+    /// 日历点选后显示的当天明细：总量 + 按当前维度（模型/工具）的前 5 项
+    @ViewBuilder
+    private func dayDetail(day: String, stack: DayStack?) -> some View {
+        let parts = (stack?.parts ?? [])
+            .filter { disp($0.counts) > 0 }
+            .sorted { disp($0.counts) > disp($1.counts) }
+        let total = parts.reduce(Int64(0)) { $0 + disp($1.counts) }
+        let cost = parts.reduce(0.0) { $0 + $1.cost }
+        let weekday: String = {
+            guard let d = DayKey.date(for: day) else { return "" }
+            let names = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
+            let idx = Calendar.current.component(.weekday, from: d) - 1
+            return (0..<7).contains(idx) ? names[idx] : ""
+        }()
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text("\(String(day.dropFirst(5))) \(weekday)").font(.system(size: 11, weight: .medium))
+                Spacer()
+                Text(Fmt.tokens(total)).font(.system(size: 11, weight: .medium)).monospacedDigit()
+                Text(Fmt.cost(cost)).font(.system(size: 10)).monospacedDigit().foregroundStyle(.secondary)
+            }
+            if parts.isEmpty {
+                Text("当天没有用量记录").font(.system(size: 10)).foregroundStyle(.tertiary)
+            } else {
+                ForEach(Array(parts.prefix(5).enumerated()), id: \.offset) { i, p in
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(model.theme.palette[i % model.theme.palette.count])
+                            .frame(width: 5, height: 5)
+                        Text(p.name).font(.system(size: 10)).lineLimit(1)
+                        Spacer(minLength: 6)
+                        Text(Fmt.tokens(disp(p.counts))).font(.system(size: 10)).monospacedDigit()
+                        Text(Fmt.percent(total > 0 ? Double(disp(p.counts)) / Double(total) : 0))
+                            .font(.system(size: 10)).monospacedDigit().foregroundStyle(.tertiary)
+                            .frame(width: 42, alignment: .trailing)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.06)))
+        .transition(.opacity)
+    }
+
+    /// 剩余时间估算：按已用时间 / 已完成文件数推算（低于 2% 时不给，避免抖动）
+    private var scanETA: String? {
+        guard let start = model.scanStartedAt,
+              model.scanDone > 50, model.scanTotal > model.scanDone else { return nil }
+        let elapsed = Date().timeIntervalSince(start)
+        guard elapsed > 3 else { return nil }
+        let remaining = elapsed / Double(model.scanDone) * Double(model.scanTotal - model.scanDone)
+        if remaining < 5 { return nil }
+        if remaining < 60 { return "\(Int(remaining.rounded())) 秒" }
+        return "\(Int((remaining / 60).rounded())) 分钟"
+    }
+
     /// 扫描中的骨架屏：真实进度条 + 灰色占位块（减少「卡住」的错觉）
     private var skeletonView: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("正在统计历史用量…")
+                    // 显示当前扫到哪个源 + 剩余时间：首次全量要几分钟，
+                    // 只有「正在统计历史用量…」会让人以为卡死
+                    Text(model.scanLabel.isEmpty
+                         ? "正在统计历史用量…"
+                         : "正在统计历史用量 · \(model.scanLabel)")
                         .font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1)
                     Spacer()
                     if model.scanTotal > 0 {
+                        if let eta = scanETA {
+                            Text("剩约 \(eta)").font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
+                        }
                         Text("\(model.scanDone) / \(model.scanTotal)")
                             .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
                     } else if let t = model.scanStartedAt {
@@ -725,8 +793,7 @@ struct PanelView: View {
                 .labelsHidden()
                 .controlSize(.mini)
                 .frame(width: 84)
-                .disabled(trendViewMode == "calendar")
-                .opacity(trendViewMode == "calendar" ? 0.4 : 1)
+                // 日历模式下这个切换器现在也有用：控制「当天明细」按模型还是按工具拆分
             }
             .background(rowTapLayer("trend"))
             if !isCollapsed("trend") {
@@ -896,7 +963,9 @@ struct PanelView: View {
                         let idx = thresholds.firstIndex(where: { tokens <= $0 }) ?? (thresholds.count - 1)
                         ctx.fill(path, with: .color(tints[idx]))
                     }
-                    if hoveredDay == item.day {
+                    if selectedDay == item.day {
+                        ctx.stroke(path, with: .color(.primary), lineWidth: 1.5)
+                    } else if hoveredDay == item.day {
                         ctx.stroke(path, with: .color(.primary.opacity(0.75)), lineWidth: 1)
                     }
                 }
@@ -917,6 +986,23 @@ struct PanelView: View {
                     hoveredDay = nil
                 }
             }
+            .onAppear {
+                // 调试：TOKENMETER_SELECT_DAY=2026-11-15 预选某天，便于截图验证明细卡片
+                if selectedDay == nil,
+                   let d = ProcessInfo.processInfo.environment["TOKENMETER_SELECT_DAY"],
+                   dates.contains(where: { $0.day == d }) {
+                    selectedDay = d
+                }
+            }
+            .gesture(SpatialTapGesture().onEnded { v in
+                let col = Int(v.location.x / (cell + gap))
+                let row = Int(v.location.y / (cell + gap))
+                let idx = col * 7 + row - firstWeekday
+                guard idx >= 0, idx < dates.count else { selectedDay = nil; return }
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    selectedDay = (selectedDay == dates[idx].day) ? nil : dates[idx].day
+                }
+            })
             HStack(spacing: 4) {
                 Text("少").font(.system(size: 9)).foregroundStyle(.tertiary)
                 ForEach(Array(tints.enumerated()), id: \.offset) { i, _ in
@@ -927,10 +1013,14 @@ struct PanelView: View {
                 Text("\(dayTotals.values.filter { $0 > 0 }.count) 天有记录")
                     .font(.system(size: 9)).foregroundStyle(.tertiary)
             }
-            Text(hoveredDay.flatMap { d in dayTotals[d].map { "\(String(d.dropFirst(5))) · \(Fmt.tokens($0))" } }
-                 ?? "悬停格子查看每日用量")
-                .font(.system(size: 10))
-                .foregroundStyle(hoveredDay == nil ? .tertiary : .secondary)
+            if let sel = selectedDay {
+                dayDetail(day: sel, stack: data.first { $0.day == sel })
+            } else {
+                Text(hoveredDay.flatMap { d in dayTotals[d].map { "\(String(d.dropFirst(5))) · \(Fmt.tokens($0))" } }
+                     ?? "点按格子查看当天明细")
+                    .font(.system(size: 10))
+                    .foregroundStyle(hoveredDay == nil ? .tertiary : .secondary)
+            }
         }
     }
 

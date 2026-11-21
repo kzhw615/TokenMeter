@@ -28,6 +28,9 @@ public struct OpenCodeSource: UsageSource {
         return ScanResult(buckets: buckets, files: 1)
     }
 
+    /// 供单元测试直接喂一个构造好的数据文件（正式路径由 scan 调 private parse）
+    public func parseForTest(dbPath: String) -> [UsageBucket] { parse(dbPath: dbPath) }
+
     private func parse(dbPath: String) -> [UsageBucket] {
         let builder = BucketBuilder(tool: "OpenCode")
         var db: OpaquePointer?
