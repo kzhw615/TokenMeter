@@ -462,6 +462,25 @@ final class TokenMeterCoreTests: XCTestCase {
     }
 
     /// 体检：有日志但没用量应被报出（历史上出现过的"扫了但没数"）
+    /// 数据体检必须用归一后的模型名，否则「有价格的中转别名」会被误报成缺价格
+    func testDataCheckUsesNormalizedModelNames() {
+        let pricing = PricingTable.load()
+        let known = UsageBucket(day: "2026-11-09", hour: 1, tool: "Codex",
+                                model: "auto-gpt-6-1-terra", project: "-",
+                                counts: TokenCounts(input: 1000), requests: 1)
+        let issues = DataCheck.pricingIssues(buckets: [known], pricing: pricing)
+        XCTAssertTrue(issues.isEmpty, "auto- 别名归一后应能匹配到 gpt-6.1-terra 的价格")
+
+        let unknown = UsageBucket(day: "2026-11-09", hour: 1, tool: "Codex",
+                                  model: "auto-nonexistent-model", project: "-",
+                                  counts: TokenCounts(input: 1000), requests: 1)
+        let reported = DataCheck.pricingIssues(buckets: [unknown], pricing: pricing)
+        XCTAssertEqual(reported.count, 1)
+        // 提示里也应该显示归一后的名字（去掉 auto-）
+        XCTAssertTrue(reported[0].detail.contains("nonexistent-model"))
+        XCTAssertFalse(reported[0].detail.contains("auto-nonexistent-model"))
+    }
+
     func testDataCheckFlagsEmptySource() {
         let now = DayKey.date(from: "2026-11-11")!
         let st = SourceStatus(id: "x", name: "Codex", enabled: true, files: 100, note: nil)

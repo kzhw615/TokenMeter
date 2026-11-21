@@ -88,8 +88,13 @@ public enum DataCheck {
     /// 价格覆盖检查（需要 PricingTable，单独一步，避免和分桶检查耦合）
     public static func pricingIssues(buckets: [UsageBucket], pricing: PricingTable) -> [DataIssue] {
         var missing: [String: Int64] = [:]
-        for b in buckets where pricing.price(for: b.model) == nil && b.counts.total > 0 {
-            missing[b.model, default: 0] += b.counts.total
+        for b in buckets {
+            // 必须用归一后的模型名：中转的 auto-gpt-6-1-terra 实际就是 gpt-6.1-terra，
+            // 直接用原始名去查价格会误报「没有价格」（面板按模型列表里显示的是归一后的名字，
+            // 两处不一致就出现了「明明有价格却报警」）。
+            let model = Aggregator.normalizedModel(b.model)
+            guard b.counts.total > 0, pricing.price(for: model) == nil else { continue }
+            missing[model, default: 0] += b.counts.total
         }
         guard !missing.isEmpty else { return [] }
         let top = missing.sorted { $0.value > $1.value }.prefix(3)
