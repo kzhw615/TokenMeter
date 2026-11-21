@@ -77,8 +77,10 @@ struct PanelView: View {
     @State private var hoveredSection: String?
     /// 日历里点选的那一天（看当天明细）
     @State private var selectedDay: String?
-    /// 折叠动画时长
-    private let animDuration: Double = 0.22
+    /// 折叠/切换动画时长（可用 TOKENMETER_ANIM_DURATION 放大，便于逐帧验证）
+    private var animDuration: Double {
+        ProcessInfo.processInfo.environment["TOKENMETER_ANIM_DURATION"].flatMap(Double.init) ?? 0.22
+    }
 
     private var collapsedKeys: Set<String> {
         Set(collapsedSections.split(separator: ",").map(String.init))
@@ -776,7 +778,10 @@ struct PanelView: View {
                 Text("总计 \(Fmt.tokens(totalTokens))")
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
                     .lineLimit(1).fixedSize()
-                Picker("", selection: $trendViewMode) {
+                Picker("", selection: Binding(
+                    get: { trendViewMode },
+                    set: { v in withAnimation(.easeInOut(duration: 0.22)) { trendViewMode = v } }
+                )) {
                     Text("趋势").tag("bars")
                     Text("日历").tag("calendar")
                 }
@@ -785,7 +790,10 @@ struct PanelView: View {
                 .controlSize(.mini)
                 .frame(width: 84)
                 // 常驻显示：日历模式下不参与（灰掉），但位置固定，避免切换时按钮跳来跳去
-                Picker("", selection: $trendStackMode) {
+                Picker("", selection: Binding(
+                    get: { trendStackMode },
+                    set: { v in withAnimation(.easeInOut(duration: 0.22)) { trendStackMode = v } }
+                )) {
                     Text("工具").tag("tool")
                     Text("模型").tag("model")
                 }
@@ -798,9 +806,10 @@ struct PanelView: View {
             .background(rowTapLayer("trend"))
             if !isCollapsed("trend") {
             if data.allSatisfy({ $0.parts.isEmpty }) {
-                emptyNote
+                emptyNote.transition(.opacity)
             } else if trendViewMode == "calendar" {
                 trendCalendar(data: calendarStacks, dayTotals: calendarTotals, tint: model.theme.primary)
+                    .transition(.opacity)
             } else {
                 let labelDays = [0, 7, 14, 21, 29].compactMap { data.indices.contains($0) ? data[$0].day : nil }
                 Chart {
