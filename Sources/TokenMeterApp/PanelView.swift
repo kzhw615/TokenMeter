@@ -1011,9 +1011,17 @@ struct PanelView: View {
                 }
             }
             .onAppear {
-                // 调试：TOKENMETER_SELECT_DAY=2026-11-15 预选某天，便于截图验证明细卡片
-                if selectedDay == nil,
-                   let d = ProcessInfo.processInfo.environment["TOKENMETER_SELECT_DAY"],
+                guard selectedDay == nil else { return }
+                // 切到日历时默认选中今天（没有今天的数据就选最近一天），
+                // 一进来就能看到当天明细，不用先点一下
+                let todayKey = DayKey.key(for: Date())
+                if dates.contains(where: { $0.day == todayKey }) {
+                    selectedDay = todayKey
+                } else if let last = dates.last?.day {
+                    selectedDay = last
+                }
+                // 调试：TOKENMETER_SELECT_DAY=2026-11-15 可改成预选指定日期
+                if let d = ProcessInfo.processInfo.environment["TOKENMETER_SELECT_DAY"],
                    dates.contains(where: { $0.day == d }) {
                     selectedDay = d
                 }
