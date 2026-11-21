@@ -25,7 +25,6 @@ struct ScrollOffsetSaver: NSViewRepresentable {
     final class Coordinator {
         private weak var scrollView: NSScrollView?
         private var observer: NSObjectProtocol?
-        private var restored = false
         private var lastSaved: CGFloat = -1
 
         func attach(_ sv: NSScrollView) {
@@ -38,7 +37,7 @@ struct ScrollOffsetSaver: NSViewRepresentable {
             ) { [weak self] _ in
                 MainActor.assumeIsolated { self?.persist() }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.restore() }
+
         }
 
         private func persist() {
@@ -49,16 +48,6 @@ struct ScrollOffsetSaver: NSViewRepresentable {
             UserDefaults.standard.set(Double(y), forKey: "panelScrollY")
         }
 
-        private func restore() {
-            guard !restored, let sv = scrollView else { return }
-            restored = true
-            let saved = UserDefaults.standard.double(forKey: "panelScrollY")
-            guard saved > 20 else { return }
-            let maxY = max(0, (sv.documentView?.frame.height ?? 0) - sv.contentView.bounds.height)
-            guard maxY > 20 else { return }
-            sv.contentView.scroll(to: NSPoint(x: 0, y: min(saved, maxY)))
-            sv.reflectScrolledClipView(sv.contentView)
-        }
     }
 }
 

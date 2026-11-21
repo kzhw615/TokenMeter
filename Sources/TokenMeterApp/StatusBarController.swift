@@ -400,7 +400,19 @@ final class StatusBarController: NSObject {
         panel.setFrameOrigin(NSPoint(x: x, y: max(y, 8)))
         // 激活本应用后键盘事件才会送到面板（Esc / ⌘R）
         NSApp.activate(ignoringOtherApps: true)
+        // 先以透明显示：面板每次打开都会重建 SwiftUI 树（为了省 CPU），
+        // 滚动位置必须等布局完成才能设置，直接显示会先闪一下顶部再跳过去。
+        let needsRestore = (UserDefaults.standard.object(forKey: "panelScrollY") as? Double ?? 0) > 20
+        panel.alphaValue = needsRestore ? 0 : 1
         panel.makeKeyAndOrderFront(nil)
+        if needsRestore {
+            DispatchQueue.main.async { [weak panel] in
+                guard let panel else { return }
+                panel.contentView?.layoutSubtreeIfNeeded()
+                Self.restoreScroll(panel)
+                panel.alphaValue = 1
+            }
+        }
         model.panelOpen = true
         installOutsideMonitor()
         installKeyMonitor()
@@ -411,6 +423,25 @@ final class StatusBarController: NSObject {
                     Task { @MainActor [weak self] in self?.hidePanel() }
                 }
         }
+    }
+
+    /// 把面板里的 NSScrollView 恢复到上次的位置（重建视图树后调用）
+    static func restoreScroll(_ panel: NSPanel) {
+        guard let saved = UserDefaults.standard.object(forKey: "panelScrollY") as? Double, saved > 20,
+              let sv = findScrollView(in: panel.contentView) else { return }
+        let maxY = max(0, (sv.documentView?.frame.height ?? 0) - sv.contentView.bounds.height)
+        guard maxY > 20 else { return }
+        sv.contentView.scroll(to: NSPoint(x: 0, y: min(CGFloat(saved), maxY)))
+        sv.reflectScrolledClipView(sv.contentView)
+    }
+
+    private static func findScrollView(in view: NSView?) -> NSScrollView? {
+        guard let view else { return nil }
+        if let sv = view as? NSScrollView { return sv }
+        for sub in view.subviews {
+            if let found = findScrollView(in: sub) { return found }
+        }
+        return nil
     }
 
     func hidePanel() {
