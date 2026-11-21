@@ -120,7 +120,11 @@ final class AppModel: ObservableObject {
 
     /// 正在燃烧的 harness（日志近 2 分钟有写入）
     @Published var burningSources: [String] = []
-    var isBurning: Bool { !burningSources.isEmpty }
+    var isBurning: Bool {
+        // 调试：TOKENMETER_FORCE_BURN=1 强行进入「燃烧中」，方便验证菜单栏宽度变化
+        if ProcessInfo.processInfo.environment["TOKENMETER_FORCE_BURN"] != nil { return true }
+        return !burningSources.isEmpty
+    }
 
     /// 坞底 harness 三态：0 运行中 / 1 待阅读 / 2 空闲；仅含本机有日志的源
     @Published var sourceStates: [(String, Int)] = []
@@ -202,12 +206,25 @@ final class AppModel: ObservableObject {
         return sourceStates.filter { !hiddenDockSources.contains($0.0) }
     }
 
-    func menuBarText(_ s: Summary) -> String {
+    /// 菜单栏是否太挤（挤的时候只显示用量，不显示速度，见 menuBarRateMode）
+    @Published var menuBarCrowded = false
+    /// 速度显示策略：auto（默认，菜单栏挤时收起）/ always / never
+    var menuBarRateMode: String {
+        get { UserDefaults.standard.string(forKey: "menuBarRateMode") ?? "auto" }
+        set { UserDefaults.standard.set(newValue, forKey: "menuBarRateMode") }
+    }
+
+    func menuBarText(_ s: Summary, includeRate: Bool = true) -> String {
         let shown = includeCache ? s.counts.total : s.counts.input + s.counts.output
         // 速率段定宽（figure space 补位）：否则「29.5K/s · 7.09亿」↔「7.09亿」会让
         // 状态栏图标左右跳动，连带着面板位置也会晃。
-        let rateText = (isBurning && (burnRate ?? 0) > 0) ? "\(Fmt.compactTokens(burnRate ?? 0))/s · " : ""
-        let rate = rateText.padding(toLength: 10, withPad: "\u{2007}", startingAt: 0)
+        // 显示速度时把这一段补成定宽，避免数值位数变化让图标抖动；
+        // 不显示速度时不要留白，否则「收起速度」就白收了（宽度一点没省）。
+        let forced = ProcessInfo.processInfo.environment["TOKENMETER_FORCE_BURN"] != nil
+        let wantsRate = includeRate && isBurning && (forced || (burnRate ?? 0) > 0)
+        let rate = wantsRate
+            ? "\(Fmt.compactTokens(burnRate ?? 29_500))/s · ".padding(toLength: 10, withPad: "\u{2007}", startingAt: 0)
+            : ""
         switch menuBarStyle {
         // 与面板、坞保持一致：用 Fmt.tokens（亿两位小数）。
         // compactTokens 只保留一位小数，会把 6.99亿 显示成 7.0亿，和别处对不上。

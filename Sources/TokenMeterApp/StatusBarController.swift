@@ -251,8 +251,9 @@ final class StatusBarController: NSObject {
         if model.menuBarStyle == "icon" {
             title = ""
         } else if let s = model.summary, s.counts.total > 0 {
-            // menuBarText 内部已经带速率前缀（燃烧中才加），这里不要再加一遍
-            title = " " + model.menuBarText(s)
+            // menuBarText 内部已经带速率前缀（燃烧中才加），这里不要再加一遍。
+            // 菜单栏挤的时候不显示速度，只用用量（宽度能省约 60pt）。
+            title = " " + model.menuBarText(s, includeRate: !model.menuBarCrowded)
         } else {
             title = model.scanning ? " …" : " 0"
         }
@@ -264,6 +265,34 @@ final class StatusBarController: NSObject {
             string: title,
             attributes: [.foregroundColor: red ? NSColor.systemRed : NSColor.labelColor,
                          .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)])
+        // ── 自适应宽度：菜单栏拥挤时只显示用量 ────────────────
+        // macOS 不会压缩我们的标题（实测 465pt 的标题依然完整显示），挤不下时是直接
+        // 把项藏起来，所以「有没有被压缩」测不到。改用可测的几何：我们的项随着其他
+        // 项变多会一路左移，当它跑到屏幕左侧 48% 以内就认为很挤了。
+        DispatchQueue.main.async { [weak self, weak button] in
+            guard let self, let button, let win = button.window, let screen = win.screen,
+                  win.frame.minX > 1, win.frame.width > 1 else { return }   // 还没布局好，先不判断
+            // 调试：TOKENMETER_FORCE_RATIO=0.3 可模拟「菜单栏很挤」
+            // 刘海屏：状态项如果滑到刘海左侧区域就会被藏起来，所以「刘海右边界」是硬约束
+            let notchLeft = screen.auxiliaryTopRightArea.map(\.minX) ?? 0
+            let space = win.frame.minX - notchLeft
+            let ratio = ProcessInfo.processInfo.environment["TOKENMETER_FORCE_RATIO"].flatMap(Double.init)
+                ?? (space / max(1, screen.frame.width))
+            switch self.model.menuBarRateMode {
+            case "always": self.model.menuBarCrowded = false
+            case "never": self.model.menuBarCrowded = true
+            default:
+                // 迟滞：挤到 0.20 以下才收起，回到 0.30 以上才恢复，避免来回抖。
+                // 0.20 ≈ 刘海右侧只剩不到 300pt 可放状态项，此时也该让位了。
+                if self.model.menuBarCrowded ? ratio > 0.30 : ratio < 0.20 {
+                    self.model.menuBarCrowded.toggle()
+                }
+            }
+            if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
+                FileHandle.standardError.write(Data(String(format: "DBG itemX=%.0f ratio=%.2f crowded=%@ titleLen=%d\n",
+                    win.frame.minX, ratio, self.model.menuBarCrowded ? "是" : "否", title.count).utf8))
+            }
+        }
     }
 
 // MARK: - 面板

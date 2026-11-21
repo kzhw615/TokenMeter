@@ -58,6 +58,21 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .controlSize(.small)
                 .labelsHidden()
+
+                // 速度显示策略：菜单栏宽度不够时收起速度，只留用量
+                Text("消耗速度").font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+                Picker("消耗速度", selection: Binding(
+                    get: { model.menuBarRateMode },
+                    set: { model.menuBarRateMode = $0 }
+                )) {
+                    Text("自动").tag("auto")
+                    Text("总是显示").tag("always")
+                    Text("不显示").tag("never")
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+                .labelsHidden()
+                .help("自动：菜单栏拥挤时只显示用量，腾出宽度")
             }
             HStack(spacing: 9) {
                 Text("面板外观").font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
@@ -69,6 +84,21 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .controlSize(.small)
                 .labelsHidden()
+
+                // 速度显示策略：菜单栏宽度不够时收起速度，只留用量
+                Text("消耗速度").font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+                Picker("消耗速度", selection: Binding(
+                    get: { model.menuBarRateMode },
+                    set: { model.menuBarRateMode = $0 }
+                )) {
+                    Text("自动").tag("auto")
+                    Text("总是显示").tag("always")
+                    Text("不显示").tag("never")
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+                .labelsHidden()
+                .help("自动：菜单栏拥挤时只显示用量，腾出宽度")
             }
             HStack(spacing: 9) {
                 Text("玻璃不透明度").font(.caption).foregroundStyle(.secondary)
@@ -102,6 +132,21 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .controlSize(.small)
                 .labelsHidden()
+
+                // 速度显示策略：菜单栏宽度不够时收起速度，只留用量
+                Text("消耗速度").font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+                Picker("消耗速度", selection: Binding(
+                    get: { model.menuBarRateMode },
+                    set: { model.menuBarRateMode = $0 }
+                )) {
+                    Text("自动").tag("auto")
+                    Text("总是显示").tag("always")
+                    Text("不显示").tag("never")
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+                .labelsHidden()
+                .help("自动：菜单栏拥挤时只显示用量，腾出宽度")
                 .frame(width: 200)
                 Spacer()
             }
@@ -161,6 +206,21 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .controlSize(.small)
                 .labelsHidden()
+
+                // 速度显示策略：菜单栏宽度不够时收起速度，只留用量
+                Text("消耗速度").font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+                Picker("消耗速度", selection: Binding(
+                    get: { model.menuBarRateMode },
+                    set: { model.menuBarRateMode = $0 }
+                )) {
+                    Text("自动").tag("auto")
+                    Text("总是显示").tag("always")
+                    Text("不显示").tag("never")
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+                .labelsHidden()
+                .help("自动：菜单栏拥挤时只显示用量，腾出宽度")
             }
             Toggle("显示工具状态", isOn: Binding(get: { model.dockShowHarness }, set: { model.dockShowHarness = $0 }))
                 .toggleStyle(.switch)
