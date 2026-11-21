@@ -887,6 +887,9 @@ struct PanelView: View {
                 }
             }
             .frame(width: gridW, height: gridH)
+            // 数据指纹：Canvas 会复用上一次的 display list，数据更新后如果沿用旧阈值，
+            // 就会出现「表头数字已变、格子还是一帧前配色」的闪烁。指纹变了就重建画布。
+            .id("\(dates.count)-\(dayTotals.values.reduce(0, +))-\(model.includeCache)")
             .contentShape(Rectangle())
             .onContinuousHover { phase in
                 switch phase {
