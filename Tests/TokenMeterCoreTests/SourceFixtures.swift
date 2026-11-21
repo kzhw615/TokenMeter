@@ -95,6 +95,30 @@ final class SourceFixtures: XCTestCase {
         XCTAssertEqual(b[0].project, "notes-bot")
     }
 
+    // MARK: Qoder（Electron schema：主库 main.sqlite）
+
+    /// 新版 Qoder 把聊天记录存在 chat_session_messages.payload_json 里。
+    /// 目前它还不写 token 用量，所以这里的样本是「如果有 usage 就能读出来」的契约测试。
+    func testQoderElectronFixture() {
+        let withUsage = #"{"payloadJsonPlaceholder":1,"usage":{"input_tokens":900,"output_tokens":100,"cache_read_input_tokens":2500}}"#
+        let withoutUsage = #"{"parts":[{"type":"text","text":"只是文本，没有用量"}]}"#
+        let db = makeDB("qoder-main.sqlite", [
+            "CREATE TABLE chat_sessions (session_id TEXT PRIMARY KEY, cwd TEXT, model TEXT);",
+            "CREATE TABLE chat_session_messages (session_id TEXT, message_id TEXT, payload_json TEXT, role TEXT, created_at INTEGER);",
+            "INSERT INTO chat_sessions VALUES ('s1','/Users/x/Projects/qoder-demo','gpt-6.1-sol');",
+            "INSERT INTO chat_session_messages VALUES ('s1','m1','\(withUsage.replaceQuote)','assistant',1794156000000);",
+            "INSERT INTO chat_session_messages VALUES ('s1','m2','\(withoutUsage.replaceQuote)','assistant',1794156100000);",
+        ])
+        let b = QoderSource().parseForTest(dbPath: db)
+        XCTAssertEqual(b.count, 1, "只有含 usage 的消息会成桶")
+        XCTAssertEqual(b[0].tool, "Qoder")
+        XCTAssertEqual(b[0].counts.input, 900)
+        XCTAssertEqual(b[0].counts.output, 100)
+        XCTAssertEqual(b[0].counts.cacheRead, 2500)
+        XCTAssertEqual(b[0].model, "gpt-6.1-sol", "模型优先取 payload，没有就用会话的 model")
+        XCTAssertEqual(b[0].project, "qoder-demo")
+    }
+
     /// 空表不应该崩，也不该造出假数据
     func testEmptyDatabasesAreSafe() {
         let db = makeDB("empty.db", [

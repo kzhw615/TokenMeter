@@ -86,6 +86,87 @@ struct SqlUsageSource: UsageSource {
         }
         return builder.buckets
     }
+
+    /// 新版（Electron/macOS）schema：chat_session_messages.payload_json + chat_sessions.cwd。
+    /// 目前 Qoder 并不在本地记录 token 用量，这里按「有就取、没有就跳过」处理，
+    /// 这样将来它一旦开始写 usage，我们无需再改代码就能统计到。
+    private func parseElectron(db: OpaquePointer, builder: BucketBuilder) -> Bool {
+        // 表不存在就直接返回 false，回退到老 schema
+        var probe: OpaquePointer?
+        let probeSQL = "SELECT 1 FROM sqlite_master WHERE type='table' AND name='chat_session_messages' LIMIT 1"
+        guard sqlite3_prepare_v2(db, probeSQL, -1, &probe, nil) == SQLITE_OK, let probe else { return false }
+        let exists = sqlite3_step(probe) == SQLITE_ROW
+        sqlite3_finalize(probe)
+        guard exists else { return false }
+
+        let sql = """
+        SELECT m.payload_json, m.created_at, coalesce(nullif(s.cwd,''),''), coalesce(nullif(s.model,''),'')
+        FROM chat_session_messages m
+        LEFT JOIN chat_sessions s ON s.session_id = m.session_id
+        WHERE m.role = 'assistant'
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return false }
+        defer { sqlite3_finalize(stmt) }
+        var found = false
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let cstr = sqlite3_column_text(stmt, 0) else { continue }
+            let payload = String(cString: cstr)
+            guard payload.contains("token") else { continue }
+            guard let data = payload.data(using: .utf8),
+                  let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let counts = Self.electronUsage(root), counts.total > 0 else { continue }
+            found = true
+            let ts = sqlite3_column_int64(stmt, 1)
+            let date = ts > 100_000_000_000 ? JSONUtil.dateFromMillis(ts)
+                       : (ts > 0 ? Date(timeIntervalSince1970: Double(ts)) : Date())
+            let cwd = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
+            let sessionModel = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? ""
+            let model = Self.electronModel(root) ?? (sessionModel.isEmpty ? "unknown" : sessionModel)
+            if !cwd.isEmpty { builder.project = ProjectName.basename(cwd) }
+            builder.add(date: date, model: model, counts: counts)
+        }
+        return found
+    }
+
+    /// 在 payload 里找形如 usage 的字段（不同版本命名不一，尽量兼容）
+    static func electronUsage(_ root: [String: Any]) -> TokenCounts? {
+        func ints(_ d: [String: Any]) -> TokenCounts? {
+            func pick(_ keys: [String]) -> Int64 {
+                for k in keys { if let v = d[k] as? NSNumber { return v.int64Value }
+                    if let v = d[k] as? Int64 { return v } }
+                return 0
+            }
+            let c = TokenCounts(
+                input: pick(["input_tokens", "inputTokens", "prompt_tokens", "promptTokens"]),
+                output: pick(["output_tokens", "outputTokens", "completion_tokens", "completionTokens"]),
+                cacheRead: pick(["cache_read_input_tokens", "cacheReadInputTokens", "cacheRead", "cached_tokens"]),
+                cacheWrite: pick(["cache_creation_input_tokens", "cacheCreationInputTokens", "cacheWrite"])
+            )
+            return c.total > 0 ? c : nil
+        }
+        for key in ["usage", "tokenUsage", "token_usage", "usageInfo"] {
+            if let d = root[key] as? [String: Any], let c = ints(d) { return c }
+        }
+        if let meta = root["metadata"] as? [String: Any],
+           let d = meta["usage"] as? [String: Any], let c = ints(d) { return c }
+        // parts 里也可能挂 usage
+        if let parts = root["parts"] as? [[String: Any]] {
+            for p in parts {
+                if let d = p["usage"] as? [String: Any], let c = ints(d) { return c }
+            }
+        }
+        return nil
+    }
+
+    static func electronModel(_ root: [String: Any]) -> String? {
+        for key in ["model", "modelId", "model_id", "modelName"] {
+            if let s = root[key] as? String, !s.isEmpty { return s }
+        }
+        if let m = root["model"] as? [String: Any], let s = m["id"] as? String { return s }
+        if let meta = root["metadata"] as? [String: Any], let s = meta["model"] as? String { return s }
+        return nil
+    }
 }
 
 #endif
@@ -142,7 +223,11 @@ struct QoderSource: UsageSource {
     private var dbPaths: [String] {
         var out = ["~/.qoder/db.sqlite", "~/.qoder-cn/db.sqlite",
                    "~/Library/Application Support/Qoder/db.sqlite",
-                   "~/Library/Application Support/QoderCN/db.sqlite"]
+                   "~/Library/Application Support/QoderCN/db.sqlite",
+                   // macOS 版 Qoder 是 Electron 应用：聊天记录落在 main.sqlite 里，
+                   // 表结构也换成了 chat_session_messages(payload_json) + chat_sessions(cwd)
+                   "~/Library/Application Support/com.qodercn.app.stable/main.sqlite",
+                   "~/Library/Application Support/com.qoder.app.stable/main.sqlite"]
         if let env = ProcessInfo.processInfo.environment["QODER_BASE_PATH"] {
             out.append(env + "/db.sqlite")
         }
@@ -155,7 +240,20 @@ struct QoderSource: UsageSource {
         for raw in dbPaths {
             let dbPath = SourcePaths.expand(raw)
             guard FileManager.default.fileExists(atPath: dbPath) else { continue }
-            if let c = cache.cachedBuckets(path: dbPath) { return ScanResult(buckets: c, files: 1) }
+            if let c = cache.cachedBuckets(path: dbPath) {
+                let note: String? = (dbPath.hasSuffix("main.sqlite") && c.isEmpty)
+                    ? "该版本 Qoder 未在本地记录 token 用量" : nil
+                return ScanResult(buckets: c, files: 1, note: note)
+            }
+            // Electron 版主库是 400MB+ 的活跃库，指纹几乎每次刷新都变；
+            // 而当前 Qoder 根本不写 token 用量，解析一次要 2.3 秒纯属浪费。
+            // 用一个 6 小时的探测标记：库里确实没有 usage 就短期内不再全量解析。
+            let probeKey = "__probe:qoder-electron:\(dbPath)"
+            if dbPath.hasSuffix("main.sqlite"),
+               let stamp = cache.threadModels?[probeKey],
+               let at = Double(stamp), Date().timeIntervalSince1970 - at < 6 * 3600 {
+                return ScanResult(files: 1, note: "该版本 Qoder 未在本地记录 token 用量")
+            }
             let buckets = parse(dbPath: dbPath)
             cache.store(path: dbPath, buckets: buckets)
             return ScanResult(buckets: buckets, files: 1)
@@ -163,11 +261,15 @@ struct QoderSource: UsageSource {
         return ScanResult()
     }
 
+    /// 供单元测试直接喂构造好的数据库
+    public func parseForTest(dbPath: String) -> [UsageBucket] { parse(dbPath: dbPath) }
+
     private func parse(dbPath: String) -> [UsageBucket] {
         let builder = BucketBuilder(tool: "Qoder")
         var db: OpaquePointer?
         guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { return [] }
         defer { sqlite3_close(db) }
+        if parseElectron(db: db, builder: builder) { return builder.buckets }
         let sql = "SELECT COALESCE(model_info,''), COALESCE(token_info,''), gmt_create FROM chat_message WHERE token_info IS NOT NULL AND token_info != ''"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
@@ -188,6 +290,87 @@ struct QoderSource: UsageSource {
             builder.add(date: date, model: model, counts: counts)
         }
         return builder.buckets
+    }
+
+    /// 新版（Electron/macOS）schema：chat_session_messages.payload_json + chat_sessions.cwd。
+    /// 目前 Qoder 并不在本地记录 token 用量，这里按「有就取、没有就跳过」处理，
+    /// 这样将来它一旦开始写 usage，我们无需再改代码就能统计到。
+    private func parseElectron(db: OpaquePointer, builder: BucketBuilder) -> Bool {
+        // 表不存在就直接返回 false，回退到老 schema
+        var probe: OpaquePointer?
+        let probeSQL = "SELECT 1 FROM sqlite_master WHERE type='table' AND name='chat_session_messages' LIMIT 1"
+        guard sqlite3_prepare_v2(db, probeSQL, -1, &probe, nil) == SQLITE_OK, let probe else { return false }
+        let exists = sqlite3_step(probe) == SQLITE_ROW
+        sqlite3_finalize(probe)
+        guard exists else { return false }
+
+        let sql = """
+        SELECT m.payload_json, m.created_at, coalesce(nullif(s.cwd,''),''), coalesce(nullif(s.model,''),'')
+        FROM chat_session_messages m
+        LEFT JOIN chat_sessions s ON s.session_id = m.session_id
+        WHERE m.role = 'assistant'
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return false }
+        defer { sqlite3_finalize(stmt) }
+        var found = false
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let cstr = sqlite3_column_text(stmt, 0) else { continue }
+            let payload = String(cString: cstr)
+            guard payload.contains("token") else { continue }
+            guard let data = payload.data(using: .utf8),
+                  let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let counts = Self.electronUsage(root), counts.total > 0 else { continue }
+            found = true
+            let ts = sqlite3_column_int64(stmt, 1)
+            let date = ts > 100_000_000_000 ? JSONUtil.dateFromMillis(ts)
+                       : (ts > 0 ? Date(timeIntervalSince1970: Double(ts)) : Date())
+            let cwd = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
+            let sessionModel = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? ""
+            let model = Self.electronModel(root) ?? (sessionModel.isEmpty ? "unknown" : sessionModel)
+            if !cwd.isEmpty { builder.project = ProjectName.basename(cwd) }
+            builder.add(date: date, model: model, counts: counts)
+        }
+        return found
+    }
+
+    /// 在 payload 里找形如 usage 的字段（不同版本命名不一，尽量兼容）
+    static func electronUsage(_ root: [String: Any]) -> TokenCounts? {
+        func ints(_ d: [String: Any]) -> TokenCounts? {
+            func pick(_ keys: [String]) -> Int64 {
+                for k in keys { if let v = d[k] as? NSNumber { return v.int64Value }
+                    if let v = d[k] as? Int64 { return v } }
+                return 0
+            }
+            let c = TokenCounts(
+                input: pick(["input_tokens", "inputTokens", "prompt_tokens", "promptTokens"]),
+                output: pick(["output_tokens", "outputTokens", "completion_tokens", "completionTokens"]),
+                cacheRead: pick(["cache_read_input_tokens", "cacheReadInputTokens", "cacheRead", "cached_tokens"]),
+                cacheWrite: pick(["cache_creation_input_tokens", "cacheCreationInputTokens", "cacheWrite"])
+            )
+            return c.total > 0 ? c : nil
+        }
+        for key in ["usage", "tokenUsage", "token_usage", "usageInfo"] {
+            if let d = root[key] as? [String: Any], let c = ints(d) { return c }
+        }
+        if let meta = root["metadata"] as? [String: Any],
+           let d = meta["usage"] as? [String: Any], let c = ints(d) { return c }
+        // parts 里也可能挂 usage
+        if let parts = root["parts"] as? [[String: Any]] {
+            for p in parts {
+                if let d = p["usage"] as? [String: Any], let c = ints(d) { return c }
+            }
+        }
+        return nil
+    }
+
+    static func electronModel(_ root: [String: Any]) -> String? {
+        for key in ["model", "modelId", "model_id", "modelName"] {
+            if let s = root[key] as? String, !s.isEmpty { return s }
+        }
+        if let m = root["model"] as? [String: Any], let s = m["id"] as? String { return s }
+        if let meta = root["metadata"] as? [String: Any], let s = meta["model"] as? String { return s }
+        return nil
     }
 }
 

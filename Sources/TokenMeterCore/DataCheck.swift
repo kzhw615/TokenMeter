@@ -48,6 +48,13 @@ public enum DataCheck {
                                 detail: "\(badHours) 条分桶的小时不在 0–23，逐小时图会失真"))
         }
 
+        // ── 1b. 数据源自述的「无法统计」原因（如 Qoder 不在本地写 token）──────────
+        // 这类不是错误，但用户会在界面上找不到对应工具，需要明确告知为什么。
+        for st in statuses where st.enabled && (st.note?.isEmpty == false) {
+            issues.append(.init(level: .info, title: "\(st.name) 暂无可统计的用量",
+                                detail: st.note ?? ""))
+        }
+
         // ── 2. 异常大的单条分桶（解析错位时常见）──────────────────────────────
         let huge = buckets.filter { $0.counts.total > 5_000_000_000 }
         if !huge.isEmpty {
@@ -74,7 +81,9 @@ public enum DataCheck {
         }
 
         // ── 4. 扫描完整性（有数据源报了文件但没产出用量）────────────────────────
-        for st in statuses where st.enabled && st.files > 0 {
+        // 数据源自己能解释原因（如 Qoder 本地不写 token）时，改用上面的「提示」，
+        // 不再报「有日志但没有用量」这种会让人以为解析坏了的警告。
+        for st in statuses where st.enabled && st.files > 0 && st.note?.isEmpty != false {
             let has = buckets.contains { $0.tool == st.name }
             if !has {
                 issues.append(.init(level: .warning, title: "\(st.name) 有日志但没有用量",
