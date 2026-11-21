@@ -202,6 +202,10 @@ struct PanelView: View {
                 }
                 footer
             }
+            // 固定内容宽度：某些行（如「燃烧中 A, B, C」或数值更长的口径）
+            // 的最小宽度会超过可视宽度，VStack 随之变宽，而外层是居中对齐，
+            // 于是整页内容左右留白在两种口径下不一致。这里把宽度钉死。
+            .frame(width: 390, alignment: .leading)
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
             // 仅在「扫描中 ↔ 有数据」切换时淡入，不做整树动画
@@ -268,7 +272,10 @@ struct PanelView: View {
                 HStack(spacing: 3) {
                     FlameIcon(ticker: model.flame, frames: model.flameFrames(for: 12), size: 12)
                     Text("燃烧中 \(model.burningSources.joined(separator: ", "))")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(-1)
                 }
             }
             Spacer()
@@ -381,12 +388,19 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.caption).foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(value).font(.title2.bold()).monospacedDigit()
+                // 数值长度随口径变化（2.21亿 ↔ 1028.2万），如果让它撑宽卡片，
+                // 整行会超出可视宽度，导致左右留白在两种口径下不一致。
+                // 这里固定卡片等宽，超长时缩放而不是撑开。
+                Text(value).font(.title3.bold()).monospacedDigit()
                     .lineLimit(1)
-                    .minimumScaleFactor(0.55)
+                    .minimumScaleFactor(0.5)
+                    .allowsTightening(true)
                     .rolling(value)
+                    .layoutPriority(1)
                 if !unit.isEmpty {
-                    Text(unit).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(unit).font(.caption2).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .layoutPriority(0)
                 }
             }
             Text(sub).font(.caption2).foregroundStyle(.secondary)
@@ -396,6 +410,7 @@ struct PanelView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 6)
+        .clipped()
     }
 
     /// 行悬停高亮（轻微的底色，提示可交互）

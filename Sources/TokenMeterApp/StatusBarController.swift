@@ -194,6 +194,8 @@ final class StatusBarController: NSObject {
     /// 火苗缩放结果缓存：每帧都 copy + 设 size 会持续分配内存，
     /// 按「档位 + 帧号 + 0.5pt 尺寸」缓存后，同一尺寸只生成一次。
     private var flameCache: [String: NSImage] = [:]
+    /// 上次面板的 x（用于平滑定位，避免数值变化导致面板横移）
+    private var lastPanelX: CGFloat?
 
     private func scaledFlame(_ base: NSImage, tier: AppModel.FlameTier, frame: Int, size: CGFloat) -> NSImage? {
         let rounded = (size * 2).rounded() / 2
@@ -337,6 +339,26 @@ final class StatusBarController: NSObject {
         if let screen = window.screen ?? NSScreen.main {
             let vf = screen.visibleFrame
             x = min(max(x, vf.minX + 8), vf.maxX - Self.panelSize.width - 8)
+        }
+        // 状态栏文字宽度会随数值长短变化（如 1.76亿 ↔ 1028.2万，切换含/不含缓存时尤其明显），
+        // 而面板是按图标中心定位的，于是每次数值变化面板都会整体横移，
+        // 看起来就像「内容左右留白不同」。这里做位置平滑：
+        // 新位置与上次相差不大（< 40pt）就沿用上次的，只有明显移动时才重新定位。
+        // 跨启动也保持稳定：把上次的 x 存起来，本次计算值与之相差不大就直接沿用。
+        if let stored = UserDefaults.standard.object(forKey: "panelX") as? Double, stored != 0 {
+            lastPanelX = CGFloat(stored)
+        }
+        if let last = lastPanelX, abs(last - x) < 200 {
+            x = last
+        }
+        if let screen = window.screen ?? NSScreen.main {
+            let vf = screen.visibleFrame
+            x = min(max(x, vf.minX + 8), vf.maxX - Self.panelSize.width - 8)
+        }
+        lastPanelX = x
+        UserDefaults.standard.set(Double(x), forKey: "panelX")
+        if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
+            FileHandle.standardError.write(Data("DBG panel x=\(Int(x)) itemW=\(Int(buttonRect.width))\n".utf8))
         }
         if panel.contentView == nil {
             panel.contentView = NSHostingView(rootView:
