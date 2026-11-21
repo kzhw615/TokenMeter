@@ -396,6 +396,7 @@ enum ExtraSources {
                            dbPaths: ["~/.minimax/runtime-state.sqlite"],
                            sql: "SELECT COALESCE(model,'unknown'), input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, create_time FROM token_usage"),
             QoderSource(),
+            AntigravitySource(),
         ]
         #endif
         return out

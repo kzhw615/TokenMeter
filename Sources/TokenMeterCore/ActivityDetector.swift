@@ -57,6 +57,7 @@ public enum ActivityDetector {
         ("MiniMax Code", ["minimax"]),
         ("Reasonix", ["reasonix"]),
         ("Copilot CLI", ["copilot"]),
+        ("Antigravity", ["antigravity", "gemini"]),
     ]
 
     /// 该数据源是否有「可判断已读」的宿主 App 信号
@@ -148,6 +149,8 @@ public enum ActivityDetector {
         let qoder = newer(newer(fileMtime("~/.qoder/db.sqlite"), fileMtime("~/.qoder-cn/db.sqlite")),
                           newer(fileMtime("~/Library/Application Support/Qoder/db.sqlite"),
                                 fileMtime("~/Library/Application Support/QoderCN/db.sqlite")))
+        // Antigravity：看会话转录的最后写入时间（三种安装位置都要覆盖）
+        let antigravity = antigravityMtime()
 
         return [
             SourceActivity(name: "Claude Code", lastActive: claude.0, topLevel: claude.1),
@@ -166,10 +169,28 @@ public enum ActivityDetector {
             SourceActivity(name: "Copilot CLI", lastActive: copilot, topLevel: copilot),
             SourceActivity(name: "MiniMax Code", lastActive: minimax, topLevel: minimax),
             SourceActivity(name: "Qoder", lastActive: qoder, topLevel: qoder),
+            SourceActivity(name: "Antigravity", lastActive: antigravity, topLevel: antigravity),
         ]
     }
 
 
+
+    /// Antigravity 最近一次会话写入：取 brain 下各会话 transcript 的最新 mtime
+    private static func antigravityMtime() -> Date? {
+        var latest: Date?
+        for base in ["~/.gemini/antigravity", "~/.gemini/antigravity-ide", "~/.gemini/antigravity-cli"] {
+            let root = SourcePaths.expand(base) + "/brain"
+            guard let sessions = try? FileManager.default.contentsOfDirectory(atPath: root) else { continue }
+            for s in sessions {
+                for name in ["transcript_full.jsonl", "transcript.jsonl"] {
+                    if let d = fileMtime("\(root)/\(s)/.system_generated/logs/\(name)") {
+                        latest = newer(latest, d)
+                    }
+                }
+            }
+        }
+        return latest
+    }
 
     /// OpenMausBot 最近一次「真的在干活」的写入时间。
     /// 只看实时信号：事件流 ndjson、SQLite 的 -wal、每回合的 usage 行、决策流；

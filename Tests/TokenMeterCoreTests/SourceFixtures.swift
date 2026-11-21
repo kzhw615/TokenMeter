@@ -119,6 +119,46 @@ final class SourceFixtures: XCTestCase {
         XCTAssertEqual(b[0].project, "qoder-demo")
     }
 
+    // MARK: Antigravity（~/\.gemini/antigravity*/brain/*/.system_generated/logs/*.jsonl）
+
+    func testAntigravityTranscriptFixture() {
+        let conv = "11111111-2222-3333-4444-555555555555"
+        let logsDir = tmp + "/antigravity/brain/\(conv)/.system_generated/logs"
+        try! FileManager.default.createDirectory(atPath: logsDir, withIntermediateDirectories: true)
+        let ok = #"{"step_index":3,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-21T18:01:48Z","model":"gemini-4-neon-xhigh","input_tokens":23720,"cache_read_tokens":23117,"output_tokens":319}"#
+        let userLine = #"{"step_index":1,"source":"USER","type":"USER_INPUT","status":"DONE","created_at":"2026-11-21T18:00:00Z","content":"hi"}"#
+        // chunks/ 下是切片，不能被重复统计（本测试刻意放一份看解析器是否只读 transcript）
+        let chunks = tmp + "/antigravity/brain/\(conv)/.system_generated/logs/chunks/transcript/00000000.jsonl"
+        try! ok.write(toFile: logsDir + "/transcript_full.jsonl", atomically: true, encoding: .utf8)
+        try? FileManager.default.createDirectory(atPath: (chunks as NSString).deletingLastPathComponent,
+                                                withIntermediateDirectories: true)
+        try! ok.write(toFile: chunks, atomically: true, encoding: .utf8)
+        try! userLine.write(toFile: logsDir + "/transcript.jsonl", atomically: true, encoding: .utf8)
+
+        // 项目归属：conversation_summaries.workspace_uris
+        let dbPath = tmp + "/antigravity/conversation_summaries.db"
+        let db = makeDB("antigravity/conversation_summaries.db", [
+            "CREATE TABLE conversation_summaries (conversation_id TEXT, title TEXT, workspace_uris TEXT, step_count INTEGER);",
+            "INSERT INTO conversation_summaries VALUES ('\(conv)','t','[\"file:///Users/x/Projects/antigravity-demo\"]',0);",
+        ])
+        XCTAssertEqual(db, dbPath)
+
+        let files = AntigravitySource.transcriptFiles(base: tmp + "/antigravity")
+        XCTAssertEqual(files.count, 1, "每个会话只应取一个 transcript，不能把 chunks 也算进来")
+        let projects = AntigravitySource.projectMap(base: tmp + "/antigravity")
+        XCTAssertEqual(projects[conv], "antigravity-demo")
+
+        let b = AntigravitySource().parseForTest(path: files[0], projects: projects)
+        XCTAssertEqual(b.count, 1)
+        XCTAssertEqual(b[0].tool, "Antigravity")
+        XCTAssertEqual(b[0].model, "gemini-4-neon-xhigh")
+        XCTAssertEqual(b[0].counts.input, 23720)
+        XCTAssertEqual(b[0].counts.cacheRead, 23117)
+        XCTAssertEqual(b[0].counts.output, 319)
+        XCTAssertEqual(b[0].project, "antigravity-demo")
+        XCTAssertEqual(b[0].day, DayKey.key(for: AntigravitySource.parseISO("2026-11-21T18:01:48Z")!))
+    }
+
     /// 空表不应该崩，也不该造出假数据
     func testEmptyDatabasesAreSafe() {
         let db = makeDB("empty.db", [
