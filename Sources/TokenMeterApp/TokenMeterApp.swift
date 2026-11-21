@@ -61,8 +61,34 @@ fileprivate func ensureClaudeHooks() {
         let bin = "/Applications/TokenMeter.app/Contents/Resources/tokenmeter"
         guard FileManager.default.isExecutableFile(atPath: bin) else { return }
         let text = (try? String(contentsOfFile: settings, encoding: .utf8)) ?? ""
-        let needsRepair = text.contains("tokenmeter hook-event")
+        let hasHook = text.contains("tokenmeter hook-event")
+        let wrongPath = hasHook
             && (!text.contains(bin) || text.contains("Application Support/TokenMeter/bin/tokenmeter"))
+        // 钩子「配置了但从未生效」：Claude 日志最近还在写，而状态文件缺失或超过 2 天没更新。
+        // 这通常是会话在钩子装好之前就启动了（Claude Code 只在会话启动时读一次配置），
+        // 或者 settings.json 被别的工具覆盖过。静默重装一次，下次新会话即可生效。
+        let neverFired: Bool = {
+            guard hasHook else { return false }
+            let fm = FileManager.default
+            let statePath = (NSHomeDirectory() as NSString)
+                .appendingPathComponent("Library/Application Support/TokenMeter/claude-state.json")
+            let stateAge = (try? fm.attributesOfItem(atPath: statePath)[.modificationDate] as? Date) ?? nil
+            let stale: Bool
+            if let stateAge { stale = Date().timeIntervalSince(stateAge) > 2 * 86400 } else { stale = true }
+            guard stale else { return false }
+            // Claude 最近是否真的在用
+            let root = (NSHomeDirectory() as NSString).appendingPathComponent(".claude/projects")
+            guard let en = fm.enumerator(atPath: root) else { return false }
+            let cutoff = Date().addingTimeInterval(-2 * 86400)
+            for case let rel as String in en where rel.hasSuffix(".jsonl") {
+                let p = root + "/" + rel
+                if let m = (try? fm.attributesOfItem(atPath: p)[.modificationDate] as? Date) ?? nil, m > cutoff {
+                    return true
+                }
+            }
+            return false
+        }()
+        let needsRepair = wrongPath || neverFired || !hasHook
         guard needsRepair else { return }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)

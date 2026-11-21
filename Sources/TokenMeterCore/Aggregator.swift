@@ -149,11 +149,46 @@ public enum Aggregator {
         let nowHour = cal0.component(.hour, from: now)
         let sameTimeCutoff: Int? = (range == .today && nowHour > 0) ? nowHour : nil
         let todayKey = DayKey.key(for: cal0.startOfDay(for: now), calendar: cal0)
+        // 逐桶缓存：归档里有上万个 bucket，但只有几十个模型、几百天。
+        // 之前每个 bucket 都要：①DayKey 的 DateFormatter 解析（还要抢锁）
+        // ②价格表全表匹配（~100 条 pattern 的 contains，每桶两次）——实测占 summarize 的大头。
+        var modelCache: [String: String] = [:]
+        var priceCache: [String: ModelPrice?] = [:]
+        var dayDateCache: [String: Date] = [:]
+        func priceOf(_ m: String) -> ModelPrice? {
+            if let hit = priceCache[m] { return hit }
+            let v = pricing.price(for: m)
+            priceCache[m] = v
+            return v
+        }
+        func costOf(_ c: TokenCounts, _ m: String) -> Double {
+            guard let p = priceOf(m) else { return 0 }
+            var v = Double(c.input) / 1e6 * p.input
+            v += Double(c.output) / 1e6 * p.output
+            v += Double(c.cacheRead) / 1e6 * (p.cacheRead ?? p.input * 0.1)
+            v += Double(c.cacheWrite) / 1e6 * (p.cacheWrite ?? p.input * 1.25)
+            return v
+        }
         for b in buckets {
-            let model = Self.normalizedModel(b.model)
-            let bucketDate = Self.bucketDate(day: b.day, hour: b.hour, calendar: cal0)
-            let c = pricing.cost(for: b.counts, model: model, at: bucketDate)
-            if pricing.price(for: model) == nil { unpriced.insert(model) }
+            let model: String
+            if let hit = modelCache[b.model] {
+                model = hit
+            } else {
+                let m = Self.normalizedModel(b.model)
+                modelCache[b.model] = m
+                model = m
+            }
+            let bucketDate: Date?
+            if let base = dayDateCache[b.day] {
+                bucketDate = cal0.date(bySettingHour: b.hour, minute: 0, second: 0, of: base)
+            } else if let base = DayKey.date(for: b.day) {
+                dayDateCache[b.day] = base
+                bucketDate = cal0.date(bySettingHour: b.hour, minute: 0, second: 0, of: base)
+            } else {
+                bucketDate = nil
+            }
+            let c = costOf(b.counts, model)
+            if priceOf(model) == nil { unpriced.insert(model) }
             var da = dayMapAll[b.day] ?? (TokenCounts(), 0)
             da.counts += b.counts; da.cost += c
             dayMapAll[b.day] = da
