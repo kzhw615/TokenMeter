@@ -63,6 +63,42 @@ public enum DataCheck {
                                 detail: "\(huge.count) 条分桶单小时超过 50 亿 tokens（如 \(sample)），可能存在重复累积或解析错位"))
         }
 
+        // ── 2b. 离群日：某天用量突然是邻近几天的数倍或少算 ─────────────────────
+        // 历史事故里「Codex output 重复计量」「空桶缓存污染少算 6 倍」都表现为单日离群，
+        // 图上只是根柱子高点，没人天天盯着看，所以这里自动比一比。
+        var dayTotals: [String: Int64] = [:]
+        for b in buckets { dayTotals[b.day, default: 0] += b.counts.total }
+        let todayKey0 = DayKey.key(for: cal.startOfDay(for: now), calendar: cal)
+        let series = dayTotals.filter { $0.key != todayKey0 }.sorted { $0.key < $1.key }
+        if series.count >= 8 {
+            var outliers: [(day: String, ratio: Double)] = []
+            for i in 1..<(series.count - 1) {
+                let lo = max(0, i - 3), hi = min(series.count - 1, i + 3)
+                var neighbors = series[lo...hi].map { $0.value }
+                neighbors.remove(at: i - lo)
+                guard neighbors.count >= 3 else { continue }
+                let sortedN = neighbors.sorted()
+                let median = Double(sortedN[sortedN.count / 2])
+                guard median > 0 else { continue }
+                let ratio = Double(series[i].value) / median
+                // 只报「明显偏高」：偏低通常是那天真的没怎么用（周末、出差），
+                // 而偏高才是重复计量/重复累积这类错误的方向。
+                // 再要求绝对量级够大，避免几千 token 的小波动也报警。
+                if ratio >= 4, series[i].value >= 20_000_000, median >= 5_000_000 {
+                    outliers.append((series[i].key, ratio))
+                }
+            }
+            if !outliers.isEmpty {
+                let sample = outliers.prefix(3)
+                    .map { "\($0.day)（约 \(String(format: "%.1f", $0.ratio)) 倍）" }
+                    .joined(separator: "、")
+                // 定为「提示」而非「警告」：真实的高峰日也会满足条件，
+                // 这里只负责把可疑的日子指出来，让人自己去日历里核对。
+                issues.append(.init(level: .info, title: "\(outliers.count) 天用量明显高于邻近几天",
+                                    detail: "与前后各 3 天的中位数相比：\(sample)。可能是真实高峰，也可能是重复计量；可在日历里点选这几天核对"))
+            }
+        }
+
         // ── 3. 缓存读写比例异常（口径理解错误的信号）────────────────────────────
         var byTool: [String: (input: Int64, cacheRead: Int64, output: Int64)] = [:]
         for b in buckets {

@@ -16,6 +16,7 @@ struct SettingsView: View {
                 budgetCard
                 dockSourcesCard
                 pricingCard
+                sourcesCard
                 healthCard
                 aboutCard
             }
@@ -208,6 +209,67 @@ struct SettingsView: View {
         card("模型价格") {
             PriceEditorView()
         }
+    }
+
+    // MARK: - 数据来源健康度
+
+    /// 每行：数据源名、今日用量、扫描文件数、最后写入时间、备注
+    private var sourceRows: [(name: String, tokens: Int64, files: Int?, last: Date?, note: String?)] {
+        let today = model.summariesByRange[.today]
+        let statuses = today?.sourceStatuses ?? []
+        let toolTokens: [String: Int64] = Dictionary(
+            (today?.tools ?? []).map { ($0.tool, model.includeCache ? $0.counts.total : $0.counts.input + $0.counts.output) },
+            uniquingKeysWith: +)
+        let snap = ActivityDetector.activitySnapshot()
+        var rows: [(String, Int64, Int?, Date?, String?)] = []
+        for st in statuses where st.enabled {
+            rows.append((st.name,
+                         toolTokens[st.name] ?? 0,
+                         st.files,
+                         snap.first { $0.name == st.name }?.lastActive,
+                         st.note))
+        }
+        return rows.sorted { $0.1 > $1.1 }
+    }
+
+    private var sourcesCard: some View {
+        card("数据来源") {
+            let rows = sourceRows
+            if rows.isEmpty {
+                Text("还没有扫描结果").font(.caption2).foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 6) {
+                            Text(r.name).font(.caption2.weight(.medium))
+                                .frame(width: 92, alignment: .leading)
+                            Text(r.tokens > 0 ? Fmt.tokens(r.tokens) : "—")
+                                .font(.caption2).monospacedDigit()
+                                .frame(width: 70, alignment: .trailing)
+                            Text(r.files.map { "\($0) 文件" } ?? "")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                                .frame(width: 62, alignment: .trailing)
+                            Spacer()
+                            Text(r.last.map { lastSeenFormatter.string(from: $0) } ?? "无记录")
+                                .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                        }
+                        if let note = r.note, !note.isEmpty {
+                            Text(note).font(.caption2).foregroundStyle(.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                Text("用量为当前口径（\(model.includeCache ? "含缓存" : "不含缓存")）今日合计；时间是该工具日志最后写入时间")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var lastSeenFormatter: DateFormatter {
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm"
+        return f
     }
 
     // MARK: - 数据体检 + 状态判定说明

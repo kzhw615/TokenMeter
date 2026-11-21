@@ -67,7 +67,7 @@ public enum Aggregator {
         "gpt-6-1-sol": "gpt-6.1-sol",
     ]
 
-    static func normalizedModel(_ raw: String) -> String {
+    public static func normalizedModel(_ raw: String) -> String {
         for prefix in ["custom-local:", "custom-remote:"] where raw.lowercased().hasPrefix(prefix) {
             return String(raw.dropFirst(prefix.count))
         }

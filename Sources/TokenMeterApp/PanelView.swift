@@ -3,6 +3,65 @@ import SwiftUI
 import Charts
 import TokenMeterCore
 
+/// 记忆/恢复面板滚动位置：直接观察 NSScrollView 的 contentView bounds。
+/// 之前用 PreferenceKey 试过，在这个层级拿不到（onPreferenceChange 不触发），
+/// 改成 AppKit 观察更直接也更准。
+struct ScrollOffsetSaver: NSViewRepresentable {
+    /// 内容高度变化时用于判断「可滚动范围」
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async { [weak view] in
+            guard let view, let sv = view.enclosingScrollView else { return }
+            context.coordinator.attach(sv)
+        }
+        return view
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if let sv = nsView.enclosingScrollView { context.coordinator.attach(sv) }
+    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    @MainActor
+    final class Coordinator {
+        private weak var scrollView: NSScrollView?
+        private var observer: NSObjectProtocol?
+        private var restored = false
+        private var lastSaved: CGFloat = -1
+
+        func attach(_ sv: NSScrollView) {
+            guard scrollView !== sv else { return }
+            scrollView = sv
+            sv.contentView.postsBoundsChangedNotifications = true
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            observer = NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification, object: sv.contentView, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.persist() }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.restore() }
+        }
+
+        private func persist() {
+            guard let sv = scrollView else { return }
+            let y = sv.contentView.bounds.origin.y
+            guard abs(y - lastSaved) > 4 else { return }
+            lastSaved = y
+            UserDefaults.standard.set(Double(y), forKey: "panelScrollY")
+        }
+
+        private func restore() {
+            guard !restored, let sv = scrollView else { return }
+            restored = true
+            let saved = UserDefaults.standard.double(forKey: "panelScrollY")
+            guard saved > 20 else { return }
+            let maxY = max(0, (sv.documentView?.frame.height ?? 0) - sv.contentView.bounds.height)
+            guard maxY > 20 else { return }
+            sv.contentView.scroll(to: NSPoint(x: 0, y: min(saved, maxY)))
+            sv.reflectScrolledClipView(sv.contentView)
+        }
+    }
+}
+
 struct SlidingTabs<Option: Hashable>: View {
     let options: [(option: Option, label: String)]
     @Binding var selection: Option
@@ -216,6 +275,7 @@ struct PanelView: View {
             .frame(width: 390, alignment: .leading)
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
+            .background(ScrollOffsetSaver())
             // 仅在「扫描中 ↔ 有数据」切换时淡入，不做整树动画
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: model.summary == nil)
         }
@@ -477,7 +537,8 @@ struct PanelView: View {
                         .layoutPriority(0)
                 }
             }
-            Text(sub).font(.caption2).foregroundStyle(.secondary)
+            Text(sub).font(.caption2)
+                .foregroundStyle(colorScheme == .light ? Color.secondary : Color.secondary.opacity(0.92))
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -916,7 +977,8 @@ struct PanelView: View {
                             Text(Fmt.compactTokens(seriesTotals[name] ?? 0))
                                 .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
                             Text(Fmt.percent(Double(seriesTotals[name] ?? 0) / Double(grandTotal)))
-                                .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
+                                .font(.caption2).monospacedDigit()
+                                .foregroundStyle(colorScheme == .light ? Color.secondary : Color.secondary.opacity(0.45))
                                 .frame(width: 42, alignment: .trailing)
                         }
                     }
@@ -1111,6 +1173,9 @@ private var footer: some View {
             Button("刷新") { model.refresh() }
                 .buttonStyle(.borderless)
                 .keyboardShortcut("r", modifiers: .command)
+            Button("导出") { actions.exportCSV() }
+                .buttonStyle(.borderless)
+                .help("把当前范围的明细导出成 CSV")
             Button("设置") { actions.openSettings() }
                 .buttonStyle(.borderless)
         }

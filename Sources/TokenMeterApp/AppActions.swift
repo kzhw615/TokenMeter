@@ -12,6 +12,7 @@ final class AppActions: ObservableObject {
     var refresh: () -> Void = {}
     var checkUpdate: () -> Void = {}
     var markAllRead: () -> Void = {}
+    var exportCSV: () -> Void = {}
     var quit: () -> Void = {}
 
     static let shared = AppActions()

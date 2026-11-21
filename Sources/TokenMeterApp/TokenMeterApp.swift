@@ -42,6 +42,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let model = AppModel()
         self.model = model
         statusBar = StatusBarController(model: model, actions: AppActions.shared)
+        // 调试：TOKENMETER_DUMP_CSV=1 时把各范围导出到 /tmp，便于核对导出内容
+        if ProcessInfo.processInfo.environment["TOKENMETER_DUMP_CSV"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                for r in RangeKind.allCases {
+                    let csv = CSVExport.makeCSV(model: model, range: r)
+                    try? csv.write(toFile: "/tmp/tm-export-\(r.rawValue).csv", atomically: true, encoding: .utf8)
+                }
+            }
+        }
         if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
             let keys = model.harnessIcons.keys.sorted().joined(separator: ",")
             FileHandle.standardError.write(Data("DBG icons=\(keys)\n".utf8))
@@ -149,6 +158,9 @@ final class FlameTicker: ObservableObject {
 final class AppModel: ObservableObject {
     /// 所有范围的预计算结果：切换范围 = 内存查表，瞬时响应
     @Published private(set) var summariesByRange: [RangeKind: Summary] = [:]
+    /// 最近一次扫描的原始分桶与价目表：导出 CSV 用（不参与 UI 渲染）
+    private(set) var lastBuckets: [UsageBucket] = []
+    private(set) var lastPricing: PricingTable = .load()
     /// 上次把汇总结果写入缓存的时间（落盘节流用）
     private var lastSummarySaveAt: Date?
     /// 上一次运行结束的时间（启动时读取并冻结）。
@@ -341,7 +353,10 @@ final class AppModel: ObservableObject {
 
     func menuBarText(_ s: Summary) -> String {
         let shown = includeCache ? s.counts.total : s.counts.input + s.counts.output
-        let rate = (isBurning && (burnRate ?? 0) > 0) ? "\(Fmt.compactTokens(burnRate ?? 0))/s · " : ""
+        // 速率段定宽（figure space 补位）：否则「29.5K/s · 7.09亿」↔「7.09亿」会让
+        // 状态栏图标左右跳动，连带着面板位置也会晃。
+        let rateText = (isBurning && (burnRate ?? 0) > 0) ? "\(Fmt.compactTokens(burnRate ?? 0))/s · " : ""
+        let rate = rateText.padding(toLength: 10, withPad: "\u{2007}", startingAt: 0)
         switch menuBarStyle {
         // 与面板、坞保持一致：用 Fmt.tokens（亿两位小数）。
         // compactTokens 只保留一位小数，会把 6.99亿 显示成 7.0亿，和别处对不上。
@@ -953,6 +968,8 @@ final class AppModel: ObservableObject {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.summariesByRange = all
+                self.lastBuckets = scanned.buckets
+                self.lastPricing = pricing
                 self.loadHarnessIcons()
                 self.lastScan = Date()
                 self.scanning = false
