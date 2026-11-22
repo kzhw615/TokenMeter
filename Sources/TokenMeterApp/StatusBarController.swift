@@ -218,6 +218,9 @@ final class StatusBarController: NSObject {
             return
         }
         // ── CALayer 方案 ──────────────────────────────────
+        // 直接改 button.image 会让整条菜单栏重新合成（30fps 下 20%+ CPU）。
+        // 火苗画在状态按钮的 CALayer 上，只改 layer.contents。
+        // 注意：图层位置要等按钮完成布局（bounds 非零）后再设，否则 frame 是 0 会看不见。
         if model.isBurning {
             let size = model.flamePointSize
             let frames = model.flameFrames(for: size)
@@ -226,9 +229,16 @@ final class StatusBarController: NSObject {
             if flameLayerSize != size {
                 flameLayerSize = size
                 frameCache.removeAll(keepingCapacity: true)
-                // 用一个透明占位图占住布局宽度（尺寸变化时才重设，不是每帧）
-                button.image = Self.spacerImage(size: size)
-                layoutFlameLayer(button)
+                button.image = Self.spacerImage(size: size)   // 占位，只换尺寸时重设
+            }
+            if button.bounds.height > 0, let layer = flameLayer {
+                let want = CGRect(x: 2, y: (button.bounds.height - size) / 2, width: size, height: size)
+                if layer.frame != want {
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
+                    layer.frame = want
+                    CATransaction.commit()
+                }
             }
             let index = frame % frames.count
             let cg: CGImage? = frameCache[index] ?? {
@@ -241,12 +251,8 @@ final class StatusBarController: NSObject {
             flameLayer?.isHidden = false
         } else {
             flameLayer?.isHidden = true
-            if flameLayer != nil {
-                flameLayerSize = 0
-                button.image = Self.idleIcon
-            } else if button.image !== Self.idleIcon {
-                button.image = Self.idleIcon
-            }
+            flameLayerSize = 0
+            if button.image !== Self.idleIcon { button.image = Self.idleIcon }
         }
     }
 
@@ -267,18 +273,9 @@ final class StatusBarController: NSObject {
         layer.contentsGravity = .resizeAspect
         layer.magnificationFilter = .linear
         layer.isHidden = true
+        layer.zPosition = 100
         button.layer?.addSublayer(layer)
         flameLayer = layer
-    }
-
-    private func layoutFlameLayer(_ button: NSStatusBarButton) {
-        guard let layer = flameLayer else { return }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        let h = button.bounds.height
-        layer.frame = CGRect(x: 2, y: (h - flameLayerSize) / 2,
-                             width: flameLayerSize, height: flameLayerSize)
-        CATransaction.commit()
     }
 
     private func refreshIconLegacy(frame: Int, button: NSStatusBarButton) {
