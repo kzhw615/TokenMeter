@@ -43,6 +43,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let model = AppModel()
         self.model = model
         statusBar = StatusBarController(model: model, actions: AppActions.shared)
+        // 调试：TOKENMETER_FORCE_REFRESH=2 每 2 秒刷新一次，用于复现「刷新时日历闪」
+        if let v = ProcessInfo.processInfo.environment["TOKENMETER_FORCE_REFRESH"].flatMap(Double.init), v > 0 {
+            Timer.scheduledTimer(withTimeInterval: v, repeats: true) { _ in
+                Task { @MainActor in model.refresh() }
+            }
+        }
         // 调试：TOKENMETER_DUMP_CSV=1 时把各范围导出到 /tmp，便于核对导出内容
         if ProcessInfo.processInfo.environment["TOKENMETER_DUMP_CSV"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) {

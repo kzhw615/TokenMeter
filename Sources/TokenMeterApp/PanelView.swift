@@ -274,6 +274,19 @@ struct PanelView: View {
 
     /// 日历点选后显示的当天明细：总量 + 按当前维度（模型/工具）的前 5 项
     @ViewBuilder
+    /// 选中/悬停格子的描边（两层画布共用）
+    private func drawHighlight(_ ctx: inout GraphicsContext, i: Int, firstWeekday: Int,
+                               cell: CGFloat, gap: CGFloat) {
+        let col = (firstWeekday + i) / 7
+        let row = (firstWeekday + i) % 7
+        let rect = CGRect(x: CGFloat(col) * (cell + gap), y: CGFloat(row) * (cell + gap),
+                          width: cell, height: cell)
+        let path = Path(roundedRect: rect, cornerRadius: 2.5)
+        ctx.stroke(path, with: .color(.primary), lineWidth: 1.5)
+    }
+
+    /// 日历点选后显示的当天明细：总量 + 按当前维度（模型/工具）的前 5 项
+    @ViewBuilder
     private func dayDetail(day: String, stack: DayStack?) -> some View {
         let parts = (stack?.parts ?? [])
             .filter { disp($0.counts) > 0 }
@@ -1020,35 +1033,52 @@ struct PanelView: View {
             let lv = 0.16 + 0.84 * Double(i) / Double(levelCount - 1)
             return Color(nsColor: base.blended(withFraction: CGFloat(lv), of: solid) ?? solid)
         }
-        let emptyColor = Color(nsColor: (NSColor.secondaryLabelColor).withAlphaComponent(0.12))
+        // 空格子用实色而不是低透明度：浅色外观下面板底色本来就浅，
+        // 12% 的灰几乎与背景同色，重绘时看起来就像「格子没了」。
+        let emptyColor = Color(nsColor: colorScheme == .light
+            ? NSColor(white: 0.86, alpha: 1)
+            : NSColor(white: 0.30, alpha: 1))
 
         return VStack(alignment: .leading, spacing: 6) {
-            Canvas { ctx, _ in
-                for (i, item) in dates.enumerated() {
-                    let col = (firstWeekday + i) / 7
-                    let row = (firstWeekday + i) % 7
-                    let rect = CGRect(x: CGFloat(col) * (cell + gap),
-                                      y: CGFloat(row) * (cell + gap),
-                                      width: cell, height: cell)
-                    let path = Path(roundedRect: rect, cornerRadius: 2.5)
-                    let tokens = dayTotals[item.day] ?? 0
-                    if tokens <= 0 {
-                        ctx.fill(path, with: .color(emptyColor))
-                    } else {
+            // 分两层画：底层只画「所有格子的底座」（灰色空格），上层只画有数据的格子。
+            // 原因：之前单层 Canvas 会偶发整块重绘，浅色外观下空格子与面板底色接近，
+            // 重绘瞬间看起来就是「没有数据的格子被刷没了」。底座这层不依赖数据，
+            // 只要几何不变就不会被重建，从结构上消掉这个闪烁。
+            ZStack(alignment: .topLeading) {
+                Canvas { ctx, _ in
+                    for i in dates.indices {
+                        let col = (firstWeekday + i) / 7
+                        let row = (firstWeekday + i) % 7
+                        let rect = CGRect(x: CGFloat(col) * (cell + gap),
+                                          y: CGFloat(row) * (cell + gap),
+                                          width: cell, height: cell)
+                        ctx.fill(Path(roundedRect: rect, cornerRadius: 2.5), with: .color(emptyColor))
+                    }
+                }
+                Canvas { ctx, _ in
+                    for (i, item) in dates.enumerated() {
+                        let tokens = dayTotals[item.day] ?? 0
+                        guard tokens > 0 else {
+                            if selectedDay == item.day || hoveredDay == item.day {
+                                drawHighlight(&ctx, i: i, firstWeekday: firstWeekday, cell: cell, gap: gap)
+                            }
+                            continue
+                        }
+                        let col = (firstWeekday + i) / 7
+                        let row = (firstWeekday + i) % 7
+                        let rect = CGRect(x: CGFloat(col) * (cell + gap),
+                                          y: CGFloat(row) * (cell + gap),
+                                          width: cell, height: cell)
+                        let path = Path(roundedRect: rect, cornerRadius: 2.5)
                         let idx = thresholds.firstIndex(where: { tokens <= $0 }) ?? (thresholds.count - 1)
                         ctx.fill(path, with: .color(tints[idx]))
-                    }
-                    if selectedDay == item.day {
-                        ctx.stroke(path, with: .color(.primary), lineWidth: 1.5)
-                    } else if hoveredDay == item.day {
-                        ctx.stroke(path, with: .color(.primary.opacity(0.75)), lineWidth: 1)
+                        if selectedDay == item.day || hoveredDay == item.day {
+                            drawHighlight(&ctx, i: i, firstWeekday: firstWeekday, cell: cell, gap: gap)
+                        }
                     }
                 }
             }
             .frame(width: gridW, height: gridH)
-            // 数据指纹：Canvas 会复用上一次的 display list，数据更新后如果沿用旧阈值，
-            // 就会出现「表头数字已变、格子还是一帧前配色」的闪烁。指纹变了就重建画布。
-            .id("\(dates.count)-\(dayTotals.values.reduce(0, +))-\(model.includeCache)")
             .contentShape(Rectangle())
             .onContinuousHover { phase in
                 switch phase {
