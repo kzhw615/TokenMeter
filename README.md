@@ -2,7 +2,7 @@
 
 macOS 菜单栏 token 用量统计器，灵感来自 [CodeBurn](https://codeburn.app/zh-CN/docs/menubar)：
 常驻菜单栏显示**当日含缓存 token 总量 + 预估费用**，左键点开完整面板，右键出功能菜单。
-支持 **13 个 AI 编程工具**的用量统计与实时任务状态，**纯本地运行**：只读本机会话日志，不上传任何数据。
+支持 **15 个 AI 编程工具**（含 Google Antigravity）的用量统计与实时任务状态，**纯本地运行**：只读本机会话日志，不上传任何数据。
 
 ## 功能
 
@@ -10,7 +10,8 @@ macOS 菜单栏 token 用量统计器，灵感来自 [CodeBurn](https://codeburn
   - **左键**打开面板 / **右键**（或 Ctrl+点击）弹出菜单：打开面板、设置…、立即刷新统计（⌘R）、检查更新…、退出（⌘Q）
   - **燃烧动画**随实时速率分五档，菜单栏火焰从 12 pt 连续放大到 23 pt，面板和悬浮坞同步显示火势。
   - 平稳时焰尖轻摆，微旺（≥4K tokens/s）时向一侧卷起；旺盛（≥15K）时双焰交错。猛燃（≥30K）会随横甩迸出金色火星，爆燃（≥50K）时火舌沿焰身上卷，火星更密。
-  - 空闲时完全停止动画定时器，不占 CPU
+  - **宽度自适应**：菜单栏拥挤时自动收起速率、只留用量（147pt → 81pt）；设置里可选「自动 / 总是显示 / 不显示」
+  - 空闲时火苗停在静止档，不跑动画
 - **面板**（左键点击菜单栏图标）：
   - 范围切换：今天 / 昨天 / 近 7 天 / 近 30 天 / 本月 / 上月 / 全部（一行分段选择器，带弹性滑块，按系统本地时区）
   - 口径切换：含缓存 / 不含缓存（影响用量与占比；费用按分量计价不受影响），选择会记住
@@ -19,16 +20,20 @@ macOS 菜单栏 token 用量统计器，灵感来自 [CodeBurn](https://codeburn
   - 按模型榜：token 量、占比、费用、来源工具
   - 按项目榜：从日志 cwd / 项目目录解析仓库名（含 dsh 的 unicode 转义目录名解码），回答"哪个 repo 最烧钱"
   - **环比**：与上一个等长周期对比（近 7 天 vs 前 7 天），并给出本月按当前速度的**整月预测**
-  - 每日用量柱状图：固定近 30 天（缺失日补零），与所选范围无关
+  - 每日用量：**柱状图**（固定最近 30 天，缺失日补零）与 **GitHub 风格日历热力图**（全部历史、8 档配色）可切换，切换有淡入淡出
+  - 日历格子可点选：下方显示当天总量、费用，以及按模型/工具拆分的前 5 项；切到日历默认选中今天
   - 逐小时用量图：今天/昨天范围为当日 24 小时明细；其他范围为按钟点分布汇总
-  - 统计进行时显示**真实进度条**（已处理 / 总文件数）+ 灰色骨架屏占位，不再空白干等
+  - 统计进行时显示**真实进度条**（已处理 / 总文件数）+ 当前数据源 + 剩余时间估算 + 灰色骨架屏占位，不再空白干等
+  - **导出 CSV**：把当前范围的明细（日期×工具×模型×项目×各分项 tokens×费用）导出，方便自己对账
+  - 记住滚动位置：下次打开面板直接停在原处，不再先闪顶部
   - 键盘：`⌘R` 刷新、`Esc` 关闭、`⌘,` 打开设置；切换别的应用时自动收起
-  - 悬浮坞底部工具状态列：13 个 harness 全部配官方品牌图标，三态指示灯（运行/待阅读/空闲）
+  - 悬浮坞底部工具状态列：15 个 harness 全部配官方品牌图标，三态指示灯（运行/待阅读/空闲）
   - 侧边悬浮坞：贴边吸附在屏幕左/右边缘的**纯黑舱体**（凹弧喇叭口融进屏边、始终置顶、全空间可见、四角全透明），显示今日用量/费用/燃烧速率或命中率；按住拖拽脱离为圆角浮块，松手滑向较近一侧并形变融合；设置可切换左/右、位置记忆、双击回位；**点击弹出完整大面板窗口**，解决菜单栏空间被其他 App 挤压的问题
-  - 数据源诊断不在面板展示（避免干扰），需要时用 CLI `tokenmeter sources` 查看
+  - 数据源诊断放在设置窗口的「数据来源」卡片里（面板内不再占位），也可用 CLI `tokenmeter sources` 查看
 - **CLI**：`tokenmeter report [--range today|yesterday|7d|30d|month|lastmonth|all] [--json] [--exclude-cache]`、`sources`、`activity [--json]`（排查参数见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)）
 - **首屏秒级出数**：冷启动先扫最近 2 天改动过的日志，**约 20 秒**就能看到今天/昨天的真实数据，其余历史在后台补齐（旧版要空等 6–7 分钟）
-- **数据体检**：内置自检会主动发现"数字可能算错了"的情况——非法/未来日期、异常大的单条分桶、缓存命中率异常、有日志但没解析出用量、模型缺价格等，设置窗口里直接列出
+- **数据体检**：内置自检会主动发现「数字可能算错了」的情况——非法/未来日期、异常大的单条分桶、缓存命中率异常、有日志但没解析出用量、模型缺价格、**某天用量明显高于邻近几天**（重复计量信号）等，设置窗口里直接列出
+- **数据来源页**：每个源一行，显示今日用量、扫描文件数、最后写入时间，以及该源自述的说明（如「该版本 Qoder 未在本地记录 token 用量」）
 - **文件级扫描缓存 + 增量解析**：首次全量需要几分钟；之后日常刷新**零点几秒**完成
   - 压缩日志（DSH 的 zstd）按**帧边界增量解析**：只解压新追加的帧，几 MB 的活跃会话几乎零成本
   - 活跃文件的缓存判定允许「比上次更大」（append-only），不会因为文件一直在写就每次全量重解析
@@ -51,7 +56,9 @@ macOS 菜单栏 token 用量统计器，灵感来自 [CodeBurn](https://codeburn
 | Kiro | `~/Library/Application Support/KiroUser/globalStorage/kiro.kiroagent/dev_data/devdata.sqlite` | `tokens_generated` 表 |
 | Copilot CLI | `~/.copilot/cli/state.db` | `local_runtime_token_usage` 表 |
 | MiniMax Code | `~/.minimax/runtime-state.sqlite` | `token_usage` 表 |
-| Qoder | `~/.qoder*/db.sqlite`（或 `QODER_BASE_PATH`） | `chat_message.token_info/model_info` JSON 字段 |
+| Qoder | 旧版 `~/.qoder*/db.sqlite`；macOS Electron 版 `~/Library/Application Support/com.qoder{c,n}*.../main.sqlite` | 旧布局取 `chat_message.token_info/model_info`；Electron 布局取 `chat_session_messages.payload_json` 里的 usage（**实测该版本本地不写用量**，面板会提示） |
+| OpenMausBot | `~/.openmausbot/usage/*.jsonl` | 每行 usage 字段（模型名去掉 `chatgpt-http::` / `auto/` 等驱动前缀） |
+| Antigravity（Google） | `~/.gemini/{antigravity,antigravity-ide,antigravity-cli}/brain/*/.system_generated/logs/transcript_full.jsonl` | `PLANNER_RESPONSE` 事件的 `model` / `input_tokens` / `cache_read_tokens` / `output_tokens`；项目取 `conversation_summaries.workspace_uris`。只读 `transcript_full`，跳过 `chunks/` 切片避免重复计量 |
 | Reasonix | `~/.reasonix/usage.jsonl` | 每行 usage 字段 |
 | Droid | `~/.factory/sessions/**` | 会话 JSON 的 `tokenUsage` 字段 |
 
@@ -128,14 +135,36 @@ tokenmeter sources                # 查看数据源状态
 
 未命中任何规则的模型费用记 0，并在面板底部与 `tokenmeter verify` 中提示。
 
+## 性能
+
+数字都是本机实测（Apple Silicon，约 1.3 万条分桶 / 7600 个日志文件）：
+
+| 场景 | 数值 |
+| --- | --- |
+| 空闲常驻 CPU（含 30fps 火苗动画） | **约 8%** 单核 |
+| 内存 footprint | 约 **106 MB** |
+| 增量扫描（热缓存） | **约 140 ms** |
+| 冷启动首屏数据 | 约 **20 秒**（后台补齐历史） |
+| 冷启动首次全量 | 6~7 分钟（仅一次） |
+| 聚合汇总（七个范围） | 约 **0.28 秒** |
+
+做法上值得一提的几处：
+
+- 火焰动画走 `CALayer.contents` 而不是每帧重设 `NSImage`/`button.image`——后者会让整条菜单栏重新合成（实测 28% → 8%）
+- 目录只遍历一次、遍历时顺手取 `mtime/size`，指纹查询不再重复 `stat`（Codex 扫描 110ms → 59ms）
+- 逐桶缓存模型名/价格/日期，避免每个桶都做字符串归一和价格表线性匹配
+- 压缩日志按 zstd **帧边界增量解析**，只解压新追加的部分
+- 面板关闭时销毁 SwiftUI 视图树，不跟随数据重绘
+
 ## 已知限制
 
-- Cursor、Gemini CLI、CodeBuddy、Pi、Grok、OpenClaw、Kimi、Antigravity 无可解析的 token 级本地日志，未接入
+- Cursor、Gemini CLI、CodeBuddy、Pi、Grok、OpenClaw、Kimi 无可解析的 token 级本地日志，未接入
+- **Qoder 当前版本不在本地记录用量**：`logs/.../segments/*.jsonl` 里的 `turn.finished` 虽然有 token 字段但恒为 0，主库对应字段也缺失，真实用量在服务端。数据源已接好，哪天它开始写用量无需改代码即可统计
 - **Trae / Trae SOLO CN 无法支持**：`ModularData/ai-agent/database.db` 为加密库（文件头非 SQLite），其余仅 Electron 会话日志
 - 费用为**估算**：按官方公开单价 × 本地日志口径折算，不等于实际账单（折扣、Batch、区域加价、高峰时段等未计入）
 - Codex `token_count` 为会话内增量事件，极早期版本日志若无该事件则统计不到
 - 首次扫描大日志（数 GB + 数千个压缩会话）需要几分钟，面板显示真实进度与骨架屏；之后为秒级增量
-- **任务状态是估算**：13 个工具里只有 WorkBuddy 提供真实已读回执（`sessions.unread`）；DSH 用日志尾部事件（`turn/end` 表示结束）判定；其余数据源只能靠「日志新鲜度 + 最近 10 分钟」启发式，长工具执行期间可能提前判定为结束
+- **任务状态是估算**：15 个工具里只有 WorkBuddy 提供真实已读回执（`sessions.unread`）；DSH 用日志尾部事件（`turn/end` 表示结束）判定；其余数据源只能靠「日志新鲜度 + 最近 10 分钟」启发式，长工具执行期间可能提前判定为结束
 - `codex-auto-review`（Codex 内部自动审查模型）官方无公开单价，默认记 0，可在 pricing.json 补
 
 ## 跨平台状态
