@@ -91,6 +91,13 @@ public struct ScanCache: Codable, Sendable {
         dirty = true
     }
 
+    /// 丢掉某个文件的缓存条目，强制下次重新解析。
+    /// 用于「解析逻辑升级了，但文件本身没变」的情况——否则会一直用旧结果。
+    public mutating func dropEntry(path: String) {
+        guard entries.removeValue(forKey: path) != nil else { return }
+        dirty = true
+    }
+
     public func cachedEntry(path: String) -> Entry? {
         entries[path]
     }

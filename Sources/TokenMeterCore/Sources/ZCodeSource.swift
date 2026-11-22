@@ -14,7 +14,13 @@ public struct ZCodeSource: UsageSource {
         let dbPath = SourcePaths.expand("~/.zcode/cli/db/db.sqlite")
         guard FileManager.default.fileExists(atPath: dbPath) else { return ScanResult() }
         if let cached = cache.cachedBuckets(path: dbPath) {
-            return ScanResult(buckets: cached, files: 1)
+            // 旧版本还没有做项目归属，缓存里全是 "-"。数据库没变 → 指纹命中 → 永远读不到
+            // 项目名。这里检测到「全部未归属」就丢掉缓存重算一次（这个库很小，代价可忽略）。
+            let allUnassigned = !cached.isEmpty && cached.allSatisfy { $0.project == "-" }
+            if !allUnassigned {
+                return ScanResult(buckets: cached, files: 1)
+            }
+            cache.dropEntry(path: dbPath)
         }
         let buckets = parse(dbPath: dbPath)
         cache.store(path: dbPath, buckets: buckets)
