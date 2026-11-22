@@ -211,6 +211,23 @@ final class TokenMeterCoreTests: XCTestCase {
     }
 
     /// OpenMausBot 要出现在活动源列表里（悬浮坞据此展示它）
+    /// WorkBuddy 项目归属兜底：workSpace 匹配不上时，从 trace 里的绝对路径推断
+    func testWorkBuddyPathProjectInference() {
+        let home = NSHomeDirectory()
+        func roots(_ line: String) -> [String] { WorkBuddySource.pathCandidateRoots(in: line) }
+        XCTAssertEqual(roots("\(home)/Nutstore Files/我的笔记-obsidian/7、工作/a.md"), ["我的笔记-obsidian"])
+        XCTAssertEqual(roots("\(home)/Nutstore Files/我的笔记-obsidian/a.md"),
+                       ["我的笔记-obsidian"], "带空格的目录名要能取到项目名")
+        XCTAssertEqual(roots("\(home)/Documents/WorkBuddy/2026-11-09-10-54-29/x.md"), ["WorkBuddy"])
+        XCTAssertEqual(roots("\(home)/.workbuddy/binaries/node"), [], "工具自身目录不算项目")
+        XCTAssertEqual(roots("\(home)/Downloads/报告.pdf"), [], "下载目录不算项目")
+        XCTAssertEqual(roots("\(home)/Library/Application Support/x"), [], "系统目录不算项目")
+        XCTAssertEqual(roots("\(home)/my-project/src/a.swift"), ["my-project"])
+        XCTAssertEqual(roots("没有路径的一行文本"), [])
+        // 一行里出现多次也只算候选，不拼出一堆碎片
+        XCTAssertEqual(roots("\(home)/a/b/c \(home)/a/d/e"), ["a", "a"])
+    }
+
     func testOpenMausBotInActivitySnapshot() {
         let snap = ActivityDetector.activitySnapshot()
         XCTAssertTrue(snap.contains { $0.name == "OpenMausBot" }, "活动快照缺少 OpenMausBot")

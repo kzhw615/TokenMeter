@@ -23,6 +23,18 @@ public struct WorkBuddySource: UsageSource {
         let prints = SourcePaths.parallelFingerprints(files)
         for (i, path) in files.enumerated() {
             if let fp = prints[i], let cached = cache.cachedBuckets(path: path, size: fp.size, mtime: fp.mtime) {
+                // 旧版本的缓存里这些 trace 全是「未归属」。新版本会用路径前缀推断项目，
+                // 所以全未归属的条目要重算一次；用 marker 记住已重算，避免每轮都重解析。
+                let markKey = "__wbproj:\(path)"
+                let allUnassigned = !cached.isEmpty && cached.allSatisfy { $0.project == "-" }
+                if allUnassigned, cache.threadModels?[markKey] == nil {
+                    cache.dropEntry(path: path)
+                    var marks = cache.threadModels ?? [:]
+                    marks[markKey] = "1"
+                    cache.threadModels = marks
+                    toParse.append(path)
+                    continue
+                }
                 ScanProgressReporter.current?.bump()
                 builder.merge(cached)
             } else {
@@ -47,11 +59,15 @@ public struct WorkBuddySource: UsageSource {
         guard let reader = LineReader(path: path) else { return [] }
         var pending: [(date: Date, model: String, counts: TokenCounts)] = []
         var hits: [String: Int] = [:]
+        var candidates: [String: Int] = [:]
         reader.forEachLine { line in
             if !projects.isEmpty, line.contains("/Users/") {
                 for p in projects where line.contains(p.path) {
                     hits[p.path, default: 0] += 1
                 }
+            }
+            if line.contains("/Users/") {
+                for root in Self.pathCandidateRoots(in: line) { candidates[root, default: 0] += 1 }
             }
             guard line.contains("\"generation\""), line.contains("span_end") else { return }
             guard let o = JSONUtil.object(line),
@@ -81,11 +97,73 @@ public struct WorkBuddySource: UsageSource {
         if let best = hits.max(by: { $0.value < $1.value }), best.value > 0,
            let name = projects.first(where: { $0.path == best.key })?.name {
             builder.project = name
+        } else if let best = candidates.max(by: { $0.value < $1.value }), best.value >= 3 {
+            // 兜底：trace 里没有已知 workSpace，但从出现的绝对路径能看出工作目录
+            // （例：~/Nutstore Files/我的笔记-obsidian/…、~/Documents/WorkBuddy/…）
+            builder.project = best.key
         }
         for p in pending {
             builder.add(date: p.date, model: p.model, counts: p.counts)
         }
         return builder.buckets
+    }
+
+    /// 从一行文本里提取「看起来像项目根目录」的路径（workSpace 匹配不上时的兜底）
+    ///
+    /// 规则：
+    /// - 跳过工具自身目录（~/.workbuddy、任何隐藏目录）与系统目录（Library/Downloads/…）
+    /// - 归一层目录：~/Documents/<x>、~/Nutstore Files/<x>、~/Desktop/<x> 都取 <x>
+    /// - 只取第一个路径段的项目名，其余层级不要（否则同一个项目会碎成很多名字）
+    static func pathCandidateRoots(in line: String) -> [String] {
+        let home = NSHomeDirectory()
+        var out: [String] = []
+        // 带空格的目录名要单独处理（Nutstore Files），否则按空白切分只能拿到 "Nutstore"
+        var scan = Substring(line)
+        while let r = scan.range(of: home + "/Nutstore Files/") {
+            scan = scan[r.upperBound...]
+            let seg = scan.prefix { ch in
+                guard let u = ch.unicodeScalars.first else { return false }
+                return !CharacterSet(charactersIn: "\"\\'\n\r\t /<>|*?()[],;").contains(u)
+            }
+            if !seg.isEmpty { out.append(String(seg)) }
+            scan = seg.endIndex < scan.endIndex ? scan[seg.endIndex...] : Substring("")
+            if scan.isEmpty { break }
+        }
+        var rest = Substring(line)
+        while let r = rest.range(of: home + "/") {
+            rest = rest[r.upperBound...]
+            let stop = CharacterSet(charactersIn: "\"\\'\n\r\t <>|*?()[],;")
+            let tail = rest.prefix { ch in
+                guard let u = ch.unicodeScalars.first else { return false }
+                return !stop.contains(u) && !CharacterSet.whitespacesAndNewlines.contains(u)
+            }
+            let comps = tail.split(separator: "/").map(String.init)
+            if let root = projectRoot(fromHomeRelative: comps) { out.append(root) }
+            rest = tail.endIndex < rest.endIndex ? rest[tail.endIndex...] : Substring("")
+            if rest.isEmpty { break }
+        }
+        return out
+    }
+
+    /// 家目录后的路径组件 → 项目名（不是项目时返回 nil）
+    static func projectRoot(fromHomeRelative comps: [String]) -> String? {
+        guard let first = comps.first, !first.hasPrefix(".") else { return nil }
+        // 系统目录：里面的东西不是项目
+        let system: Set<String> = ["Library", "Downloads", "Applications", "Movies", "Music",
+                                   "Pictures", "Public", "bin", "node_modules"]
+        if system.contains(first) { return nil }
+        // 归档型目录：取下一级作为项目（Documents/x、Desktop/x、Nutstore Files/x）
+        let archiving: Set<String> = ["Documents", "Desktop", "Projects", "Code"]
+        if archiving.contains(first) {
+            guard comps.count >= 2 else { return nil }
+            let second = comps[1]
+            // Documents/WorkBuddy/2026-11-09-... 这种：第二级才是项目
+            guard !second.hasPrefix(".") else { return nil }
+            return second
+        }
+        // 根目录下直接就是项目：至少要有一段（~/my-project/...）
+        guard comps.count >= 2 else { return nil }   // ~/file.txt 这种不算
+        return first
     }
 
     private static func counts(from usage: [String: Any]) -> TokenCounts? {
