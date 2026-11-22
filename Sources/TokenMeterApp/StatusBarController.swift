@@ -217,10 +217,11 @@ final class StatusBarController: NSObject {
             refreshIconLegacy(frame: frame, button: button)
             return
         }
-        // ── CALayer 方案 ──────────────────────────────────
-        // 直接改 button.image 会让整条菜单栏重新合成（30fps 下 20%+ CPU）。
-        // 火苗画在状态按钮的 CALayer 上，只改 layer.contents。
-        // 注意：图层位置要等按钮完成布局（bounds 非零）后再设，否则 frame 是 0 会看不见。
+        // ── 菜单栏火苗：画在按钮的 CALayer 上 ─────────────────────
+        // 设 button.image 会让整条菜单栏重新合成（30fps 实测 20%+ 单核），
+        // 改 layer.contents 便宜得多（8%）。两个坑必须处理：
+        //   ① 图层位置要等按钮布局完成（bounds 非零）再设，否则零尺寸看不见
+        //   ② 状态项重建时 button 会换新对象，图层要重新挂上去
         if model.isBurning {
             let size = model.flamePointSize
             let frames = model.flameFrames(for: size)
@@ -267,6 +268,12 @@ final class StatusBarController: NSObject {
     }
 
     private func ensureFlameLayer(_ button: NSStatusBarButton) {
+        // 状态项被重建后 button 换了对象：旧图层还挂在旧按钮上，必须重挂
+        if let layer = flameLayer, layer.superlayer !== button.layer {
+            flameLayer = nil
+            flameLayerSize = 0
+            frameCache.removeAll(keepingCapacity: true)
+        }
         guard flameLayer == nil else { return }
         button.wantsLayer = true
         let layer = CALayer()
