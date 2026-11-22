@@ -176,6 +176,51 @@ public enum SourcePaths {
     /// 阶段一用它把「今天/昨天」的数据在几秒内算出来，阶段二再后台补齐历史。
     nonisolated(unsafe) public static var recentOnlyCutoff: Date?
 
+    /// 遍历时顺手记下的文件属性（路径 → size/mtime），供扫描阶段复用，
+    /// 免得紧接着又对 7000 多个文件 stat 一遍。
+    private static let attrCacheLock = NSLock()
+    private static var attrCache: [String: (size: Int64, mtime: Double)] = [:]
+
+    static func cachedAttr(_ path: String) -> (size: Int64, mtime: Double)? {
+        attrCacheLock.lock(); defer { attrCacheLock.unlock() }
+        return attrCache[path]
+    }
+
+    static func rememberAttr(_ path: String, size: Int64, mtime: Double) {
+        attrCacheLock.lock()
+        if attrCache.count > 40_000 { attrCache.removeAll(keepingCapacity: true) }
+        attrCache[path] = (size, mtime)
+        attrCacheLock.unlock()
+    }
+
+    /// 多个目录 × 多个后缀，只遍历一次。
+    /// 之前 Codex 为了匹配 4 种后缀把 7000 多个文件的目录树走了 4 遍（实测 110~150ms）。
+    static func files(under dirs: [String], suffixes: [String]) -> [String] {
+        let fm = FileManager.default
+        let cutoff = recentOnlyCutoff
+        var out: [String] = []
+        for dir in dirs {
+            let base = expand(dir)
+            guard fm.fileExists(atPath: base) else { continue }
+            // 用 URL 版 enumerator 并预取属性：需要 mtime 时不必再 stat 一次
+            guard let root = fm.enumerator(at: URL(fileURLWithPath: base),
+                                           includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey],
+                                           options: [], errorHandler: nil) else { continue }
+            for case let url as URL in root {
+                let name = url.lastPathComponent
+                guard suffixes.contains(where: { name.hasSuffix($0) }) else { continue }
+                let vals = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+                let mtime = vals?.contentModificationDate
+                if let cutoff, let mtime, mtime < cutoff { continue }
+                if let mtime, let size = vals?.fileSize {
+                    rememberAttr(url.path, size: Int64(size), mtime: mtime.timeIntervalSince1970)
+                }
+                out.append(url.path)
+            }
+        }
+        return out
+    }
+
     static func files(under dir: String, suffix: String) -> [String] {
         let fm = FileManager.default
         let base = expand(dir)

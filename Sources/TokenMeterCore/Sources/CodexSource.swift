@@ -19,11 +19,9 @@ public struct CodexSource: UsageSource {
     public func logFiles() -> [String] {
         // 允许改目录：便于测试，也方便把 Codex 装在自定义位置
         let base = ProcessInfo.processInfo.environment["TOKENMETER_CODEX_DIR"] ?? "~/.codex"
-        var files = SourcePaths.files(under: "\(base)/sessions", suffix: ".jsonl")
-        files += SourcePaths.files(under: "\(base)/sessions", suffix: ".jsonl.zst")
-        files += SourcePaths.files(under: "\(base)/archived_sessions", suffix: ".jsonl")
-        files += SourcePaths.files(under: "\(base)/archived_sessions", suffix: ".jsonl.zst")
-        return files
+        // 一次遍历同时匹配两种后缀 × 两个目录（原来是 4 次全树遍历）
+        return SourcePaths.files(under: ["\(base)/sessions", "\(base)/archived_sessions"],
+                                 suffixes: [".jsonl", ".jsonl.zst"])
     }
 
     /// 一次解析的结果（含线程归属，供子会话继承模型）

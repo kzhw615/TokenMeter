@@ -57,6 +57,8 @@ public struct ScanCache: Codable, Sendable {
     }
 
     public static func fingerprint(path: String) -> (size: Int64, mtime: Double)? {
+        // 目录遍历时已经拿到属性就直接用，省掉一次 stat（7000 文件能省 20~40ms）
+        if let cached = SourcePaths.cachedAttr(path) { return cached }
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
               let size = attrs[.size] as? Int64 ?? (attrs[.size] as? NSNumber)?.int64Value,
               let mtime = attrs[.modificationDate] as? Date else { return nil }
