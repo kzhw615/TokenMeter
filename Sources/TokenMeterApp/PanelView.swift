@@ -272,8 +272,6 @@ struct PanelView: View {
         .onExitCommand { actions.closePanel() }
     }
 
-    /// 日历点选后显示的当天明细：总量 + 按当前维度（模型/工具）的前 5 项
-    @ViewBuilder
     /// 选中/悬停格子的描边（两层画布共用）
     private func drawHighlight(_ ctx: inout GraphicsContext, i: Int, firstWeekday: Int,
                                cell: CGFloat, gap: CGFloat) {
@@ -995,13 +993,11 @@ struct PanelView: View {
 
     /// 日历热力图：一列一周、一行一天，格子深浅表示当天用量。
     /// 用 Canvas 绘制：嵌套 ForEach + 条件视图在 SwiftUI 里布局不稳（实测整块塌成 0 尺寸）。
-    @ViewBuilder
     private func trendCalendar(data: [DayStack], dayTotals: [String: Int64], tint: Color) -> some View {
         let cal = Calendar.current
         let dates: [(day: String, date: Date)] = data.compactMap { d in
             DayKey.date(for: d.day).map { (d.day, $0) }
         }
-        let maxTokens = max(1, dayTotals.values.max() ?? 0)
         // 8 档阈值：按「有用量日子的分位数」切分。
         // 用量分布极不均匀（最近几天动辄上亿、早先只有几十万），等宽分档会把过去几个月
         // 全塞进最低档，看起来一片同样的浅色。

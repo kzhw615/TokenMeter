@@ -159,7 +159,6 @@ public enum Aggregator {
         // ②价格表全表匹配（~100 条 pattern 的 contains，每桶两次）——实测占 summarize 的大头。
         var modelCache: [String: String] = [:]
         var priceCache: [String: ModelPrice?] = [:]
-        var dayDateCache: [String: Date] = [:]
         func priceOf(_ m: String) -> ModelPrice? {
             if let hit = priceCache[m] { return hit }
             let v = pricing.price(for: m)
@@ -182,15 +181,6 @@ public enum Aggregator {
                 let m = Self.normalizedModel(b.model)
                 modelCache[b.model] = m
                 model = m
-            }
-            let bucketDate: Date?
-            if let base = dayDateCache[b.day] {
-                bucketDate = cal0.date(bySettingHour: b.hour, minute: 0, second: 0, of: base)
-            } else if let base = DayKey.date(for: b.day) {
-                dayDateCache[b.day] = base
-                bucketDate = cal0.date(bySettingHour: b.hour, minute: 0, second: 0, of: base)
-            } else {
-                bucketDate = nil
             }
             let c = costOf(b.counts, model)
             if priceOf(model) == nil { unpriced.insert(model) }
