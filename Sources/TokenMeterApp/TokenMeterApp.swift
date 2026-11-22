@@ -258,8 +258,33 @@ final class AppModel: ObservableObject {
                   let img = NSImage(contentsOf: url) else { return nil }
             img.size = NSSize(width: 19, height: 19)
             img.isTemplate = false
-            return img
+            return predecoded(img)
         }
+    }
+
+    /// 把 PNG 帧预解码成位图。
+    /// 30fps 下每帧都要重新解码 PNG（采样里能看到 PNGReadPlugin::decodeImage 出现在
+    /// 每帧的绘制路径上），纯粹浪费 CPU。加载时解一次，之后直接贴位图。
+    private static func predecoded(_ img: NSImage, scale: CGFloat = 2) -> NSImage {
+        let pxW = Int((img.size.width * scale).rounded())
+        let pxH = Int((img.size.height * scale).rounded())
+        guard pxW > 0, pxH > 0,
+              let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pxW, pixelsHigh: pxH,
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                         isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { return img }
+        rep.size = img.size
+        NSGraphicsContext.saveGraphicsState()
+        if let ctx = NSGraphicsContext(bitmapImageRep: rep) {
+            NSGraphicsContext.current = ctx
+            img.draw(in: NSRect(x: 0, y: 0, width: img.size.width, height: img.size.height))
+            ctx.flushGraphics()
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        let out = NSImage(size: img.size)
+        out.addRepresentation(rep)
+        out.isTemplate = false
+        return out
     }
 
     static let flameFrames = loadFlameFrames("menubar_flame_", tier: .calm)
@@ -573,6 +598,7 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "lastRunEndAt")
         dbgPollCount += 1
         let dbgT0 = Date()
+        let pollWall = Date()
         Task.detached(priority: .utility) { [weak self] in
             // 单次合并遍历：各源最后活动 + 顶层活动
             let snapshot = ActivityDetector.activitySnapshot()
@@ -647,6 +673,7 @@ final class AppModel: ObservableObject {
                     self.updateRate(todayTotal: self.summariesByRange[.today]?.counts.total ?? 0, at: now)
                 }
                 if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
+                    FileHandle.standardError.write(Data(String(format: "DBG pollWall=%.2fs\n", Date().timeIntervalSince(pollWall)).utf8))
                     let desc = snapshot.map { "\($0.name):last=\($0.lastActive.map { String(format: "%.0fs", now.timeIntervalSince($0)) } ?? "-")" }.joined(separator: " ")
                     FileHandle.standardError.write(Data("DBG snapshot \(desc)\n".utf8))
                     FileHandle.standardError.write(Data("DBG active=\(active) states=\(states.map { "\($0.name)=\($0.st)" })\n".utf8))

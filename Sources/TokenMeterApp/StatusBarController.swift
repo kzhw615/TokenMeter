@@ -203,9 +203,85 @@ final class StatusBarController: NSObject {
     private var lastTitleKey: String?
     /// 「带速率」时标题需要的宽度（pt），用于判断菜单栏放不放得下
     private var lastWideWidth: CGFloat = 0
+    /// 火苗用 CALayer 绘制：每帧改 layer.contents 不会触发菜单栏重新度量，
+    /// 而 button.image = 每帧重设会整条菜单栏重新合成（实测 30fps 下吃掉 21% 单核）。
+    private var flameLayer: CALayer?
+    private var flameLayerSize: CGFloat = 0
+    private var frameCache: [Int: CGImage] = [:]
 
     private func refreshIcon(frame: Int) {
+        // 诊断：跳过菜单栏火苗刷新，用于确认这部分的开销
+        if ProcessInfo.processInfo.environment["TOKENMETER_NO_BARFLAME"] != nil { return }
         guard let button = item.button else { return }
+        if ProcessInfo.processInfo.environment["TOKENMETER_OLD_BARFLAME"] != nil {
+            refreshIconLegacy(frame: frame, button: button)
+            return
+        }
+        // ── CALayer 方案 ──────────────────────────────────
+        if model.isBurning {
+            let size = model.flamePointSize
+            let frames = model.flameFrames(for: size)
+            guard !frames.isEmpty else { return }
+            ensureFlameLayer(button)
+            if flameLayerSize != size {
+                flameLayerSize = size
+                frameCache.removeAll(keepingCapacity: true)
+                // 用一个透明占位图占住布局宽度（尺寸变化时才重设，不是每帧）
+                button.image = Self.spacerImage(size: size)
+                layoutFlameLayer(button)
+            }
+            let index = frame % frames.count
+            let cg: CGImage? = frameCache[index] ?? {
+                var rect = CGRect(origin: .zero, size: frames[index].size)
+                let image = frames[index].cgImage(forProposedRect: &rect, context: nil, hints: nil)
+                if let image { frameCache[index] = image }
+                return image
+            }()
+            if let cg { flameLayer?.contents = cg }
+            flameLayer?.isHidden = false
+        } else {
+            flameLayer?.isHidden = true
+            if flameLayer != nil {
+                flameLayerSize = 0
+                button.image = Self.idleIcon
+            } else if button.image !== Self.idleIcon {
+                button.image = Self.idleIcon
+            }
+        }
+    }
+
+    /// 透明占位图：只为了让状态项预留火苗的宽度
+    private static func spacerImage(size: CGFloat) -> NSImage {
+        let img = NSImage(size: NSSize(width: size, height: size))
+        img.lockFocus()
+        NSColor.clear.set()
+        NSRect(x: 0, y: 0, width: size, height: size).fill()
+        img.unlockFocus()
+        return img
+    }
+
+    private func ensureFlameLayer(_ button: NSStatusBarButton) {
+        guard flameLayer == nil else { return }
+        button.wantsLayer = true
+        let layer = CALayer()
+        layer.contentsGravity = .resizeAspect
+        layer.magnificationFilter = .linear
+        layer.isHidden = true
+        button.layer?.addSublayer(layer)
+        flameLayer = layer
+    }
+
+    private func layoutFlameLayer(_ button: NSStatusBarButton) {
+        guard let layer = flameLayer else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let h = button.bounds.height
+        layer.frame = CGRect(x: 2, y: (h - flameLayerSize) / 2,
+                             width: flameLayerSize, height: flameLayerSize)
+        CATransaction.commit()
+    }
+
+    private func refreshIconLegacy(frame: Int, button: NSStatusBarButton) {
         if model.isBurning {
             let size = model.flamePointSize
             let frames = model.flameFrames(for: size)

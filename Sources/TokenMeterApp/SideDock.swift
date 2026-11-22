@@ -306,15 +306,21 @@ struct FrameSequenceView: NSViewRepresentable {
     let ticker: FlameTicker
     let size: CGFloat
 
-    func makeNSView(context: Context) -> NSImageView {
-        let v = NSImageView()
-        v.imageScaling = .scaleProportionallyUpOrDown
+    func makeNSView(context: Context) -> NSView {
+        // 用 CALayer 贴图而不是 NSImageView.image：30fps 下每次设 image 都要
+        // 重新走视图绘制（实测坞里火苗单独就吃 5% 单核），改 layer.contents 便宜得多。
+        let v = NSView(frame: .zero)
         v.wantsLayer = true
+        let layer = CALayer()
+        layer.contentsGravity = .resizeAspect
+        layer.magnificationFilter = .linear
+        v.layer?.addSublayer(layer)
+        context.coordinator.flameLayer = layer
         context.coordinator.observe(v, frames: frames, ticker: ticker)
         return v
     }
 
-    func updateNSView(_ v: NSImageView, context: Context) {
+    func updateNSView(_ v: NSView, context: Context) {
         context.coordinator.observe(v, frames: frames, ticker: ticker)
     }
 
@@ -323,32 +329,53 @@ struct FrameSequenceView: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         private var cancellable: AnyCancellable?
-        private weak var view: NSImageView?
+        private weak var view: NSView?
+        var flameLayer: CALayer?
+        private var imageCache: [Int: CGImage] = [:]
+        private var cacheKey = 0
         private var lastFrame = -1
         /// 当前档位对应的帧序列。必须随档位更新：
         /// 之前闭包捕获的是首次传入的 frames，速率涨到爆燃档后坞里还用着旧的平淡帧，
         /// 看上去就像「状态栏烧得旺、坞里不旺」。
         private var frames: [NSImage] = []
 
-        func observe(_ v: NSImageView, frames: [NSImage], ticker: FlameTicker) {
+        func observe(_ v: NSView, frames: [NSImage], ticker: FlameTicker) {
             view = v
+            if self.frames.count != frames.count { imageCache.removeAll(keepingCapacity: true) }
             self.frames = frames
+            if let layer = flameLayer, layer.superlayer != nil {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                layer.frame = v.bounds
+                CATransaction.commit()
+            }
             // 档位切换会导致帧数变化，重置帧号避免越界/跳帧
             if lastFrame >= frames.count { lastFrame = -1 }
             if cancellable == nil {
                 cancellable = ticker.$frame.sink { [weak self] f in
-                    guard let self, let v = self.view, !self.frames.isEmpty else { return }
-                    let idx = f % self.frames.count
-                    guard idx != self.lastFrame else { return }
-                    self.lastFrame = idx
-                    v.image = self.frames[idx]
+                    MainActor.assumeIsolated { self?.show(frame: f) }
                 }
-            } else if !frames.isEmpty {
-                // 立刻切到新档位的当前帧，不必等下一次 tick
-                let idx = ticker.frame % frames.count
-                lastFrame = idx
-                v.image = frames[idx]
             }
+            show(frame: ticker.frame)
+        }
+        /// 把第 frame 帧贴到 layer 上（CGImage 缓存，避免每帧转换）
+        private func show(frame: Int) {
+            guard let layer = flameLayer, !frames.isEmpty else { return }
+            let idx = frame % frames.count
+            guard idx != lastFrame else { return }
+            lastFrame = idx
+            let cg: CGImage? = imageCache[idx] ?? {
+                let img = frames[idx]
+                var rect = CGRect(origin: .zero, size: img.size)
+                let cg = img.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+                if let cg { imageCache[idx] = cg }
+                return cg
+            }()
+            guard let cg else { return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.contents = cg
+            CATransaction.commit()
         }
     }
 }
