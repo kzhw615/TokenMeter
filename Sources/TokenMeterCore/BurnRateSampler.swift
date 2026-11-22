@@ -11,8 +11,8 @@ public struct BurnRateSampler: Sendable {
     /// 至少要跨这么久才认为速率可信，避免首轮抖动
     public let minSpan: TimeInterval
     private var samples: [(at: Date, total: Int64)] = []
-    /// 最近一次算出的速率（样本不足时为 nil）
-    public private(set) var rate: Int64?
+    /// 最近一次算出的速率；样本不足时保持 0（表示「暂时测不出来」）
+    public private(set) var rate: Int64 = 0
 
     public init(window: TimeInterval = 400, minSpan: TimeInterval = 8) {
         self.window = window
@@ -21,23 +21,25 @@ public struct BurnRateSampler: Sendable {
 
     /// 追加一次采样并重算速率
     @discardableResult
-    public mutating func push(total: Int64, at now: Date) -> Int64? {
+    public mutating func push(total: Int64, at now: Date) -> Int64 {
         samples.append((now, total))
         samples.removeAll { now.timeIntervalSince($0.at) > window }
         if samples.count > 40 { samples.removeFirst(samples.count - 40) }
-        if let first = samples.first, let last = samples.last,
-           first.at < last.at, now.timeIntervalSince(first.at) >= minSpan {
-            let dt = last.at.timeIntervalSince(first.at)
-            rate = max(0, Int64(Double(last.total - first.total) / dt))
-        } else if rate == nil {
-            rate = 0
+        guard let last = samples.last else { return 0 }
+        // 用「最近一次总量发生变化的那个采样点」做起点：
+        // 轮询频率可能比统计刷新快很多，中间会插入大量总量未变的采样，
+        // 拿最老的样本当起点会把速率稀释掉。
+        let prev = samples.dropLast().last(where: { $0.total != last.total })
+        if let prev, last.at.timeIntervalSince(prev.at) >= minSpan {
+            let dt = last.at.timeIntervalSince(prev.at)
+            rate = max(0, Int64(Double(last.total - prev.total) / dt))
         }
         return rate
     }
 
     public mutating func reset() {
         samples.removeAll()
-        rate = nil
+        rate = 0
     }
 
     public var sampleCount: Int { samples.count }

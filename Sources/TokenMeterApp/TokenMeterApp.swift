@@ -306,6 +306,9 @@ final class AppModel: ObservableObject {
         if rate >= Self.infernoRateThreshold { return .inferno }
         if rate >= Self.intenseRateThreshold { return .hot }
         if rate >= Self.warmRateThreshold { return .warm }
+        // 有 agent 在跑但速率还没算出来（首 10~30 秒）时，也要给个会动的档位，
+        // 否则火苗停在 calm 的慢速帧上，看起来像卡住了
+        if isBurning { return .warm }
         return .calm
     }
 
@@ -552,6 +555,7 @@ final class AppModel: ObservableObject {
     /// burnRate 永远是 0，菜单栏和坞里都看不到速度。
     func updateRate(todayTotal: Int64, at now: Date) {
         burnRate = rateSampler.push(total: todayTotal, at: now)
+        if burnRate == 0 && !isBurning { burnRate = nil }
         if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
             FileHandle.standardError.write(Data("DBG rate=\(burnRate ?? -1) samples=\(rateSampler.sampleCount) total=\(todayTotal) burning=\(isBurning)\n".utf8))
         }
@@ -636,6 +640,11 @@ final class AppModel: ObservableObject {
                 if active != self.burningSources {
                     self.burningSources = active
                     if active.isEmpty { self.clearRate() }
+                }
+                // 用轮询节奏（约 10–30s）采样一次，而不是只等统计刷新（60s/180s）。
+                // 这样 agent 一开跑，火苗档位和速率能在半分钟内动起来。
+                if !active.isEmpty {
+                    self.updateRate(todayTotal: self.summariesByRange[.today]?.counts.total ?? 0, at: now)
                 }
                 if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
                     let desc = snapshot.map { "\($0.name):last=\($0.lastActive.map { String(format: "%.0fs", now.timeIntervalSince($0)) } ?? "-")" }.joined(separator: " ")
