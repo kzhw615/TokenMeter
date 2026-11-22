@@ -192,6 +192,10 @@ final class AppModel: ObservableObject {
             let img = NSWorkspace.shared.icon(forFile: path)
             if img.size.width > 0 { icons[name] = img }
         }
+        // 调试：TOKENMETER_HIDE_ICON=Qoder 临时去掉某个图标，用来验证「缺图标」时的回退样式
+        if let hide = ProcessInfo.processInfo.environment["TOKENMETER_HIDE_ICON"] {
+            icons[hide] = nil
+        }
         harnessIcons = icons
     }
 

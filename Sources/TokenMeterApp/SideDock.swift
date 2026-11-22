@@ -465,30 +465,6 @@ struct SideDockView: View {
         }
     }
 
-    /// 品牌色字母徽章（无真 App 图标时）
-    private func badgeColor(_ name: String) -> Color {
-        switch name {
-        case "Claude Code": return Color(red: 0.85, green: 0.47, blue: 0.34)
-        case "Codex": return Color(red: 0.06, green: 0.64, blue: 0.50)
-        case "DSH": return Color(red: 0.30, green: 0.42, blue: 0.99)
-        case "OpenCode": return Color(red: 0.88, green: 0.64, blue: 0.35)
-        case "Hermes": return Color(red: 0.49, green: 0.36, blue: 1.0)
-        case "ZCode": return Color(red: 0.13, green: 0.77, blue: 0.37)
-        default: return Color.gray
-        }
-    }
-    private func monogram(_ name: String) -> String {
-        switch name {
-        case "Claude Code": return "C"
-        case "Codex": return "X"
-        case "DSH": return "D"
-        case "OpenCode": return "O"
-        case "Hermes": return "H"
-        case "ZCode": return "Z"
-        default: return String(name.prefix(1))
-        }
-    }
-
     /// 坞底 harness 三态行：橙脉冲=运行中 / 绿=待阅读 / 灰=空闲；居左 + 图标
     private var harnessRows: some View {
         VStack(spacing: 6) {
@@ -512,11 +488,12 @@ struct SideDockView: View {
                             .shadow(color: isGlassDock ? Color.black.opacity(0.35) : .clear,
                                     radius: isGlassDock ? 1.2 : 0)
                     } else {
-                        Text(monogram(name))
-                            .font(.system(size: 13, weight: .heavy))
-                            .foregroundStyle(textPrimary)
+                        // 没有官方图标时不要自己造字母徽章（看起来像另一个产品），
+                        // 统一退到 harness 中性图标
+                        Image(systemName: "square.grid.2x2.fill")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(textTertiary)
                             .frame(width: 26, height: 26)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(badgeColor(name)))
                     }
                 }
                 .padding(.trailing, 5)
