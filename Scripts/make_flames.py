@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Render the five approved flame loops into the PNG sequences used by AppKit."""
 import base64
+import math
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -8,8 +9,9 @@ from playwright.sync_api import sync_playwright
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FRAMES = 24
-TIERS = ("", "warm_", "hot_", "inferno_", "blast_")
+# One pose per preview tick, evenly spaced around each tier's full loop.
+TIERS = (("", 2.65), ("warm_", 1.72), ("hot_", 1.12),
+         ("inferno_", 1.08), ("blast_", 1.48))
 
 
 def main():
@@ -18,7 +20,8 @@ def main():
         browser = api.chromium.launch(channel="chrome")
         page = browser.new_page()
         page.add_script_tag(path=str(ROOT / "Scripts" / "flame_frames.js"))
-        for tier, name in enumerate(TIERS):
+        for tier, (name, period) in enumerate(TIERS):
+            frame_count = math.ceil(period * 30)
             # The panel draws at 12 pt. The larger version keeps the wider
             # spark fan shared by the menu bar and the dock.
             variants = [("", 88, 12)]
@@ -32,7 +35,7 @@ def main():
                         renderFlameFrame(canvas, tier, i / frames, size);
                         return canvas.toDataURL("image/png").split(",")[1];
                     });
-                }""", [tier, pixels, point_size, FRAMES])
+                }""", [tier, pixels, point_size, frame_count])
                 for index, image in enumerate(images):
                     path = Path(stage) / f"menubar_flame_{name}{variant}{index}@2x.png"
                     path.write_bytes(base64.b64decode(image, validate=True))

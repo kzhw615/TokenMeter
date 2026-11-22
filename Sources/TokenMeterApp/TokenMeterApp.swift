@@ -27,7 +27,9 @@ final class AppModel: ObservableObject {
     private var hasPublishedData = false
     private var lastFullScanAt: Date?
     @Published var lastScan: Date?
-    @Published var scanning = false
+    @Published var scanning = false {
+        didSet { updateScanProgressTimer() }
+    }
     @Published var scanStartedAt: Date?
     /// 扫描进度（0...1）与已处理/总文件数
     @Published var scanFraction: Double = 0
@@ -43,7 +45,7 @@ final class AppModel: ObservableObject {
     var lastCheckError: String?
     /// 面板是否展开（用于降低后台轮询频率省电）
     @Published var panelOpen = false {
-        didSet { if flameTimer != nil { startHeartbeat() } }
+        didSet { if scanning { updateScanProgressTimer() } }
     }
     /// 统计口径：true = 含缓存（input+output+cacheRead+cacheWrite），false = 不含缓存（input+output）
     @Published var includeCache: Bool = UserDefaults.standard.object(forKey: "includeCache") as? Bool ?? true {
@@ -65,7 +67,7 @@ final class AppModel: ObservableObject {
         didSet {
             UserDefaults.standard.set(sideDock, forKey: "sideDock")
             dockController.apply(mode: sideDock, model: self, useSaved: false)
-            if flameTimer != nil { startHeartbeat() }
+            if scanning { updateScanProgressTimer() }
         }
     }
     private let dockController = SideDockController()
@@ -89,7 +91,7 @@ final class AppModel: ObservableObject {
 
     /// 燃烧速率（tokens/秒），由热扫描采样差分得出
     @Published var burnRate: Int64?
-    private var rateSamples: [(Date, Int64)] = []
+    private var rateSampler = BurnRateSampler()
 
     /// 更新检查状态
     @Published var latestVersion: String?
@@ -119,11 +121,14 @@ final class AppModel: ObservableObject {
     }
 
     /// 正在燃烧的 harness（日志近 2 分钟有写入）
-    @Published var burningSources: [String] = []
+    @Published var burningSources: [String] = [] {
+        didSet { updateFlameTimer() }
+    }
+    private static let forceBurn = ProcessInfo.processInfo.environment["TOKENMETER_FORCE_BURN"] != nil
+    private static let forcedFlameTier = ProcessInfo.processInfo.environment["TOKENMETER_FLAME_TIER"]
     var isBurning: Bool {
         // 调试：TOKENMETER_FORCE_BURN=1 强行进入「燃烧中」，方便验证菜单栏宽度变化
-        if ProcessInfo.processInfo.environment["TOKENMETER_FORCE_BURN"] != nil { return true }
-        return !burningSources.isEmpty
+        Self.forceBurn || !burningSources.isEmpty
     }
 
     /// 坞底 harness 三态：0 运行中 / 1 待阅读 / 2 空闲；仅含本机有日志的源
@@ -245,27 +250,26 @@ final class AppModel: ObservableObject {
         range = r   //  summariesByRange 已预计算，直接查表，无需重扫
     }
 
-    /// 每档用 24 帧覆盖一个完整周期，显示时按经过的时间取样。
-    static let flameFrameCount = 24
+    private static let flameFPS = 30.0
 
-    private static func loadFlameFrames(_ prefix: String, pointSize: CGFloat) -> [NSImage] {
-        (0..<flameFrameCount).compactMap { i in
+    private static func loadFlameFrames(_ prefix: String, tier: FlameTier) -> [NSImage] {
+        (0..<Int(ceil(tier.period * flameFPS))).compactMap { i in
             guard let url = Bundle.main.resourceURL?.appendingPathComponent("\(prefix)\(i)@2x.png"),
                   let img = NSImage(contentsOf: url) else { return nil }
-            img.size = NSSize(width: pointSize, height: pointSize)
+            img.size = NSSize(width: 19, height: 19)
             img.isTemplate = false
             return img
         }
     }
 
-    static let flameFrames = loadFlameFrames("menubar_flame_", pointSize: 19)
-    static let flameFramesWarm = loadFlameFrames("menubar_flame_warm_", pointSize: 19)
-    static let flameFramesIntense = loadFlameFrames("menubar_flame_hot_", pointSize: 19)
-    static let flameFramesIntenseBig = loadFlameFrames("menubar_flame_hot_big_", pointSize: 19)
-    static let flameFramesInferno = loadFlameFrames("menubar_flame_inferno_", pointSize: 19)
-    static let flameFramesInfernoBig = loadFlameFrames("menubar_flame_inferno_big_", pointSize: 19)
-    static let flameFramesBlast = loadFlameFrames("menubar_flame_blast_", pointSize: 19)
-    static let flameFramesBlastBig = loadFlameFrames("menubar_flame_blast_big_", pointSize: 19)
+    static let flameFrames = loadFlameFrames("menubar_flame_", tier: .calm)
+    static let flameFramesWarm = loadFlameFrames("menubar_flame_warm_", tier: .warm)
+    static let flameFramesIntense = loadFlameFrames("menubar_flame_hot_", tier: .hot)
+    static let flameFramesIntenseBig = loadFlameFrames("menubar_flame_hot_big_", tier: .hot)
+    static let flameFramesInferno = loadFlameFrames("menubar_flame_inferno_", tier: .inferno)
+    static let flameFramesInfernoBig = loadFlameFrames("menubar_flame_inferno_big_", tier: .inferno)
+    static let flameFramesBlast = loadFlameFrames("menubar_flame_blast_", tier: .blast)
+    static let flameFramesBlastBig = loadFlameFrames("menubar_flame_blast_big_", tier: .blast)
 
     /// 档位阈值：≥4K 微旺，≥15K 旺盛，≥30K 猛燃（多舌），≥50K 爆燃（最高档）
     static let warmRateThreshold: Int64 = 4_000
@@ -276,20 +280,20 @@ final class AppModel: ObservableObject {
     enum FlameTier {
         case calm, warm, hot, inferno, blast
 
-        func period(menuOnly: Bool) -> TimeInterval {
+        var period: TimeInterval {
             switch self {
             case .calm: return 2.65
             case .warm: return 1.72
             case .hot: return 1.12
-            case .inferno: return menuOnly ? 1.30 : 1.08
-            case .blast: return menuOnly ? 1.95 : 1.48
+            case .inferno: return 1.08
+            case .blast: return 1.48
             }
         }
     }
 
     var flameTier: FlameTier {
         // 诊断：TOKENMETER_FLAME_TIER=calm|warm|hot|inferno|blast 强制档位
-        switch ProcessInfo.processInfo.environment["TOKENMETER_FLAME_TIER"] {
+        switch Self.forcedFlameTier {
         case "calm": return .calm
         case "warm": return .warm
         case "hot": return .hot
@@ -307,7 +311,7 @@ final class AppModel: ObservableObject {
 
     /// 火苗点尺寸随速率连续变化（12 → 23pt，对数压缩让低速也有变化）
     var flamePointSize: CGFloat {
-        if let forced = ProcessInfo.processInfo.environment["TOKENMETER_FLAME_TIER"] {
+        if let forced = Self.forcedFlameTier {
             switch forced {
             case "calm": return 13
             case "warm": return 16
@@ -353,14 +357,14 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// 火苗帧计数器独立成小对象：只让火苗图标重绘，避免 10fps 重绘整个面板树
+    /// 三处火焰共享一个相位，动画帧只通知图标视图。
     let flame = FlameTicker()
-    private var flameTick = 0
     private var lastHeartbeat: TimeInterval = 0
 
     private var timer: Timer?
     private var activityTimer: Timer?
     private var flameTimer: Timer?
+    private var scanProgressTimer: Timer?
     // 诊断计数（TOKENMETER_DEBUG 时每 10 秒输出一次）
     private var dbgWatcherEvents = 0
     private var dbgPollCount = 0
@@ -410,58 +414,54 @@ final class AppModel: ObservableObject {
                 self.pollActivity()
             }
         }
-        // 单一 UI 心跳：仅在「燃烧中」或「扫描中」运行，空闲时彻底停止
-        startHeartbeat()
+        updateFlameTimer()
     }
 
-    /// 按需启动心跳（有燃烧或扫描时才需要逐帧刷新）。
-    ///
-    /// 性能注意：之前每 100ms 新建一个 Task 再跳回主线程，实测这一项就吃掉 ~6% CPU
-    /// （定时器本来就在主 RunLoop 上，Task 是多此一举的调度开销）。
-    /// 现在直接在主线程执行；并且只在「动画看得见」时才用 10Hz：
-    /// 面板打开或悬浮坞开着 → 0.1s；否则 → 0.25s（菜单栏火苗降到 4Hz，肉眼几乎无差）。
-    func startHeartbeat() {
-        let animateFast = panelOpen || sideDock != "off"
-        // 10fps：6fps 实测肉眼可见卡顿（火焰是逐帧位图，帧少了像掉帧）。
-        // 两处共用同一帧号，帧率必须一致，否则节奏对不上。
-        let override = ProcessInfo.processInfo.environment["TOKENMETER_HEARTBEAT"].flatMap(Double.init)
-        let hbInterval = override.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? (animateFast ? 0.1 : 0.25)
-        if flameTimer?.timeInterval == hbInterval { return }
-        flameTimer?.invalidate()
-        lastHeartbeat = ProcessInfo.processInfo.systemUptime
-        let t = Timer(timeInterval: hbInterval, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.heartbeatTick() }
+    private func updateFlameTimer() {
+        guard isBurning else {
+            flameTimer?.invalidate()
+            flameTimer = nil
+            return
         }
-        t.tolerance = hbInterval * 0.2
+        guard flameTimer == nil else { return }
+        let override = ProcessInfo.processInfo.environment["TOKENMETER_HEARTBEAT"].flatMap(Double.init)
+        let interval = override.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? (1 / Self.flameFPS)
+        lastHeartbeat = ProcessInfo.processInfo.systemUptime
+        let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let now = ProcessInfo.processInfo.systemUptime
+                self.flame.advance(elapsed: now - self.lastHeartbeat, period: self.flameTier.period,
+                                   count: self.currentFlameFrames.count)
+                self.lastHeartbeat = now
+            }
+        }
+        t.tolerance = interval * 0.05
         RunLoop.main.add(t, forMode: .common)
         flameTimer = t
     }
 
-    /// 心跳主体（主线程直调，不再每个 tick 新建 Task）
-    private func heartbeatTick() {
-        let now = ProcessInfo.processInfo.systemUptime
-        let elapsed = now - lastHeartbeat
-        lastHeartbeat = now
-        flameTick += 1
-
-        if scanning, let p = scanProgress, flameTick % 3 == 0 {
-            scanFraction = p.fraction
-            scanDone = p.done
-            scanTotal = p.total
-        }
-
-        if !isBurning && !scanning {
-            stopHeartbeat()          // 空闲：停掉定时器，让系统可以休眠
+    /// 扫描进度沿用较低的刷新频率，独立于火焰播放。
+    private func updateScanProgressTimer() {
+        guard scanning else {
+            scanProgressTimer?.invalidate()
+            scanProgressTimer = nil
             return
         }
-        guard isBurning else { return }
-        let period = flameTier.period(menuOnly: (flameTimer?.timeInterval ?? 0.1) >= 0.25)
-        flame.advance(elapsed: elapsed, period: period, count: currentFlameFrames.count)
-    }
-
-    func stopHeartbeat() {
-        flameTimer?.invalidate()
-        flameTimer = nil
+        let interval: TimeInterval = panelOpen || sideDock != "off" ? 0.30 : 0.75
+        if scanProgressTimer?.timeInterval == interval { return }
+        scanProgressTimer?.invalidate()
+        let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let p = self.scanProgress else { return }
+                self.scanFraction = p.fraction
+                self.scanDone = p.done
+                self.scanTotal = p.total
+            }
+        }
+        t.tolerance = interval * 0.2
+        RunLoop.main.add(t, forMode: .common)
+        scanProgressTimer = t
     }
 
     /// 监听各 harness 日志目录：有写入 → 防抖 8 秒后刷新（日志静止即扫，比固定轮询更及时且省电）
@@ -545,21 +545,21 @@ final class AppModel: ObservableObject {
     }
 
     /// 速率 = 今日总量在滑动窗口内的平均增速（采样来自统计刷新，无额外扫描开销）
+    ///
+    /// 窗口必须覆盖至少两轮刷新，否则算不出速率：
+    /// 面板打开时 20s 一轮、燃烧中 60s、空闲 180s。之前窗口只有 25s，
+    /// 于是「面板收起 + 正在跑 agent」时旧的采样点刚加进来就被清掉，
+    /// burnRate 永远是 0，菜单栏和坞里都看不到速度。
     func updateRate(todayTotal: Int64, at now: Date) {
-        rateSamples.append((now, todayTotal))
-        rateSamples.removeAll { now.timeIntervalSince($0.0) > 25 }
-        if let first = rateSamples.first, let last = rateSamples.last,
-           first.0 < last.0, now.timeIntervalSince(first.0) >= 8 {
-            let dt = last.0.timeIntervalSince(first.0)
-            burnRate = max(0, Int64(Double(last.1 - first.1) / dt))
-        } else if burnRate == nil {
-            burnRate = 0
+        burnRate = rateSampler.push(total: todayTotal, at: now)
+        if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
+            FileHandle.standardError.write(Data("DBG rate=\(burnRate ?? -1) samples=\(rateSampler.sampleCount) total=\(todayTotal) burning=\(isBurning)\n".utf8))
         }
     }
 
     /// 停止燃烧时清空速率
     func clearRate() {
-        rateSamples.removeAll()
+        rateSampler.reset()
         burnRate = nil
     }
 
@@ -635,7 +635,6 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 if active != self.burningSources {
                     self.burningSources = active
-                    if !active.isEmpty { self.startHeartbeat() }
                     if active.isEmpty { self.clearRate() }
                 }
                 if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
@@ -704,7 +703,6 @@ final class AppModel: ObservableObject {
         guard !scanning else { return }
         dbgRefreshCount += 1
         scanning = true
-        startHeartbeat()
         scanStartedAt = Date()
         scanFraction = 0
         scanDone = 0

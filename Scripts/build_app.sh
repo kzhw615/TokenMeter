@@ -28,7 +28,7 @@ if [ -d "$BUILD/TokenMeter_TokenMeterApp.bundle" ]; then
 fi
 cp Assets/menubar_icon.png Assets/menubar_icon@2x.png "$APP/Contents/Resources/"
 cp Assets/menubar_flame@2x.png "$APP/Contents/Resources/"
-# 五档火焰每档 24 帧，旺盛及以上另有大尺寸变体。
+# 各档按周期导出约 30 fps 的帧序列，旺盛及以上另有大尺寸变体。
 cp Assets/menubar_flame_*@2x.png "$APP/Contents/Resources/"
 cp Assets/Flame-LICENSE.txt "$APP/Contents/Resources/"
 

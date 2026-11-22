@@ -123,7 +123,6 @@ final class StatusBarController: NSObject {
         NSStatusBar.system.removeStatusItem(item)
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         configureItem()
-        lastIconKey = nil
         lastTitleKey = nil
         refreshButton()
     }
@@ -161,10 +160,9 @@ final class StatusBarController: NSObject {
             }
         }
         // 火苗帧由独立 ticker 驱动：只在帧变化时重绘状态栏按钮（不再轮询）
-        model.flame.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] in
-                DispatchQueue.main.async { self?.refreshButton() }
+        model.flame.$frame
+            .sink { [weak self] frame in
+                self?.refreshIcon(frame: frame)
             }
             .store(in: &cancellables)
         refreshButton()
@@ -188,61 +186,57 @@ final class StatusBarController: NSObject {
         item.menu = nil
     }
 
-    /// 同步按钮图标与文字
-    /// 上次渲染结果，用于跳过无变化的重绘（状态栏文字排版较贵）
-
     /// 火苗缩放结果缓存：每帧都 copy + 设 size 会持续分配内存，
-    /// 按「档位 + 帧号 + 0.5pt 尺寸」缓存后，同一尺寸只生成一次。
-    private var flameCache: [String: NSImage] = [:]
+    /// 只缓存当前尺寸和素材序列；更换时释放上一组。
+    private var flameCache: [Int: NSImage] = [:]
+    private var cachedFirstFrame: NSImage?
+    private var cachedSize: CGFloat = 0
     /// 上次面板的 x（用于平滑定位，避免数值变化导致面板横移）
     private var lastPanelX: CGFloat?
 
-    private func scaledFlame(_ base: NSImage, tier: AppModel.FlameTier, frame: Int, size: CGFloat) -> NSImage? {
-        let rounded = (size * 2).rounded() / 2
-        let key = "\(tier)-\(frame)-\(rounded)"
-        if let hit = flameCache[key] { return hit }
-        if flameCache.count > 240 { flameCache.removeAll(keepingCapacity: true) }
-        let img = (base.copy() as? NSImage) ?? base
-        img.size = NSSize(width: rounded, height: rounded)
-        flameCache[key] = img
-        return img
-    }
-
-    /// 上一次真正写入菜单栏的图标状态与标题，用于避免每帧重复设置
     /// 最近一次隐藏面板的时间：用于抑制「点图标关闭后又被同一次点击重新打开」的竞态
     private var lastHideAt: Date?
     private var lastGlassStyle: String?
-    private var lastIconKey: String?
+    private static let idleIcon = MenuBarAssets.barIcon
+        ?? NSImage(systemSymbolName: "circle.hexagongrid.fill", accessibilityDescription: "TokenMeter")
+    private static let fallbackFlame = NSImage(systemSymbolName: "flame.fill", accessibilityDescription: "燃烧中")
     private var lastTitleKey: String?
+    /// 「带速率」时标题需要的宽度（pt），用于判断菜单栏放不放得下
+    private var lastWideWidth: CGFloat = 0
+
+    private func refreshIcon(frame: Int) {
+        guard let button = item.button else { return }
+        if model.isBurning {
+            let size = model.flamePointSize
+            let frames = model.flameFrames(for: size)
+            guard let first = frames.first else {
+                if button.image !== Self.fallbackFlame { button.image = Self.fallbackFlame }
+                return
+            }
+            let rounded = (size * 2).rounded() / 2
+            if first !== cachedFirstFrame || rounded != cachedSize {
+                cachedFirstFrame = first
+                cachedSize = rounded
+                flameCache.removeAll(keepingCapacity: true)
+            }
+            let index = frame % frames.count
+            let image: NSImage
+            if let hit = flameCache[index] {
+                image = hit
+            } else {
+                image = (frames[index].copy() as? NSImage) ?? frames[index]
+                image.size = NSSize(width: rounded, height: rounded)
+                flameCache[index] = image
+            }
+            if button.image !== image { button.image = image }
+        } else if button.image !== Self.idleIcon {
+            button.image = Self.idleIcon
+        }
+    }
 
     private func refreshButton() {
         guard let button = item.button else { return }
-
-        // ── 图标（火焰动画）──────────────────────────────────────
-        // 与坞内用同一个帧号：之前为了省 CPU 让状态栏每 2 帧取 1 帧，
-        // 结果两处火焰的动画节奏对不上（一处快一处慢），观感很怪。
-        // 统一走 rawFrame，帧率由心跳统一控制。
-        let rawFrame = model.flame.frame
-        let menuFrame = rawFrame
-        let frameIdx = model.isBurning ? menuFrame % max(1, model.currentFlameFrames.count) : -1
-        let size = model.isBurning ? model.flamePointSize : 20
-        let iconKey = "\(model.isBurning)-\(model.flameTier)-\(frameIdx)-\(size)"
-        if lastIconKey != iconKey {
-            lastIconKey = iconKey
-            if model.isBurning {
-                let frames = model.currentFlameFrames
-                if !frames.isEmpty {
-                    let idx = menuFrame % frames.count
-                    button.image = scaledFlame(frames[idx], tier: model.flameTier, frame: idx, size: size)
-                        ?? frames[idx]
-                } else {
-                    button.image = NSImage(systemSymbolName: "flame.fill", accessibilityDescription: "燃烧中")
-                }
-            } else {
-                button.image = MenuBarAssets.barIcon
-                    ?? NSImage(systemSymbolName: "circle.hexagongrid.fill", accessibilityDescription: "TokenMeter")
-            }
-        }
+        refreshIcon(frame: model.flame.frame)
 
         // ── 标题（只在文字/颜色变化时重设）────────────────────────
         // 关键：每帧无条件给 NSStatusItem 设 attributedTitle 会触发菜单栏
@@ -258,6 +252,12 @@ final class StatusBarController: NSObject {
             title = model.scanning ? " …" : " 0"
         }
         let red = model.budgetOver
+        // 记录「带速率」时需要的宽度
+        if let summary = model.summary {
+            let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+            let wide = " " + model.menuBarText(summary, includeRate: true)
+            lastWideWidth = ceil(NSAttributedString(string: wide, attributes: [.font: font]).size().width)
+        }
         let titleKey = "\(red)-\(title)"
         guard lastTitleKey != titleKey else { return }
         lastTitleKey = titleKey
@@ -272,25 +272,27 @@ final class StatusBarController: NSObject {
         DispatchQueue.main.async { [weak self, weak button] in
             guard let self, let button, let win = button.window, let screen = win.screen,
                   win.frame.minX > 1, win.frame.width > 1 else { return }   // 还没布局好，先不判断
-            // 调试：TOKENMETER_FORCE_RATIO=0.3 可模拟「菜单栏很挤」
-            // 刘海屏：状态项如果滑到刘海左侧区域就会被藏起来，所以「刘海右边界」是硬约束
+            // 用状态项的【右边界】而不是左边界：变宽时项是往左长的，右边界不变，
+            // 判断不会因为自己变宽而反复翻转。
             let notchLeft = screen.auxiliaryTopRightArea.map(\.minX) ?? 0
-            let space = win.frame.minX - notchLeft
-            let ratio = ProcessInfo.processInfo.environment["TOKENMETER_FORCE_RATIO"].flatMap(Double.init)
-                ?? (space / max(1, screen.frame.width))
+            let available = max(0, win.frame.maxX - notchLeft)   // 这块区域总共能给我们多宽
+            let need = self.lastWideWidth + 8                    // 带速率需要多宽
+            // 调试：TOKENMETER_FORCE_RATIO=0.3 可模拟「只剩三成空间」
+            let forced = ProcessInfo.processInfo.environment["TOKENMETER_FORCE_RATIO"].flatMap(Double.init)
+            let fits = forced.map { $0 * available >= need } ?? (available >= need + 20)
+            let fitsLoose = forced.map { $0 * available >= need + 20 } ?? (available >= need + 40)
             switch self.model.menuBarRateMode {
             case "always": self.model.menuBarCrowded = false
             case "never": self.model.menuBarCrowded = true
             default:
-                // 迟滞：挤到 0.20 以下才收起，回到 0.30 以上才恢复，避免来回抖。
-                // 0.20 ≈ 刘海右侧只剩不到 300pt 可放状态项，此时也该让位了。
-                if self.model.menuBarCrowded ? ratio > 0.30 : ratio < 0.20 {
+                // 迟滞：放不下就收起；要恢复到「明显放得下」才重新显示，避免来回抖
+                if self.model.menuBarCrowded ? fitsLoose : !fits {
                     self.model.menuBarCrowded.toggle()
                 }
             }
             if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
-                FileHandle.standardError.write(Data(String(format: "DBG itemX=%.0f ratio=%.2f crowded=%@ titleLen=%d\n",
-                    win.frame.minX, ratio, self.model.menuBarCrowded ? "是" : "否", title.count).utf8))
+                FileHandle.standardError.write(Data(String(format: "DBG itemX=%.0f avail=%.0f need=%.0f crowded=%@ titleLen=%d\n",
+                    win.frame.minX, available, need, self.model.menuBarCrowded ? "是" : "否", title.count).utf8))
             }
         }
     }

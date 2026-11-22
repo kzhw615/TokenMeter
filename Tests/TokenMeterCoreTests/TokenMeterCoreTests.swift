@@ -211,6 +211,32 @@ final class TokenMeterCoreTests: XCTestCase {
     }
 
     /// OpenMausBot 要出现在活动源列表里（悬浮坞据此展示它）
+    /// 速率采样：窗口必须覆盖至少两轮刷新，否则永远算不出速率
+    func testBurnRateSamplingCadence() {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+
+        // 面板打开：20 秒一轮，10 万 tokens / 20s = 5000/s
+        var s = BurnRateSampler()
+        s.push(total: 1_000_000, at: t0)
+        XCTAssertEqual(s.push(total: 1_100_000, at: t0.addingTimeInterval(20)), 5_000)
+        // 面板收起 + 燃烧中：60 秒一轮（旧窗口 25s 时这里会永远是 0）
+        var s60 = BurnRateSampler()
+        s60.push(total: 1_000_000, at: t0)
+        XCTAssertEqual(s60.push(total: 1_060_000, at: t0.addingTimeInterval(60)), 1_000)
+        // 空闲：180 秒一轮
+        var s180 = BurnRateSampler()
+        s180.push(total: 1_000_000, at: t0)
+        XCTAssertEqual(s180.push(total: 1_180_000, at: t0.addingTimeInterval(180)), 1_000)
+        // 没有增长时是 0，不会显示成无意义的数字
+        var sZero = BurnRateSampler()
+        sZero.push(total: 1_000_000, at: t0)
+        XCTAssertEqual(sZero.push(total: 1_000_000, at: t0.addingTimeInterval(60)), 0)
+        // 单个采样点算不出来（返回 0，而不是上一轮的旧值）
+        var sOne = BurnRateSampler()
+        XCTAssertEqual(sOne.push(total: 5, at: t0), 0)
+        XCTAssertEqual(sOne.sampleCount, 1)
+    }
+
     /// WorkBuddy 项目归属兜底：workSpace 匹配不上时，从 trace 里的绝对路径推断
     func testWorkBuddyPathProjectInference() {
         let home = NSHomeDirectory()
