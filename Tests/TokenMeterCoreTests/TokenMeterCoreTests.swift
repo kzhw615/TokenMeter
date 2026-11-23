@@ -211,6 +211,24 @@ final class TokenMeterCoreTests: XCTestCase {
     }
 
     /// OpenMausBot 要出现在活动源列表里（悬浮坞据此展示它）
+    /// 思维强度后缀要并回同一个模型（用户要求：不因思考强度不同而分开统计）
+    func testModelEffortSuffixStripping() {
+        XCTAssertEqual(Aggregator.normalizedModel("gemini-4-hydrogen-tiered-high"), "gemini-4-hydrogen")
+        XCTAssertEqual(Aggregator.normalizedModel("gemini-4-hydrogen-xhigh"), "gemini-4-hydrogen")
+        XCTAssertEqual(Aggregator.normalizedModel("gemini-4-neon-xhigh"), "gemini-4-neon")
+        XCTAssertEqual(Aggregator.normalizedModel("claude-opus-5-5-medium"), "claude-opus-5-5")
+        XCTAssertEqual(Aggregator.normalizedModel("gpt-6.2-sol-high"), "gpt-6.2-sol")
+        // 不能被误伤：这些后缀本身是模型名的一部分
+        XCTAssertEqual(Aggregator.normalizedModel("deepseek-v4.1-flash"), "deepseek-v4.1-flash")
+        XCTAssertEqual(Aggregator.normalizedModel("gemini-3.8-flash"), "gemini-3.8-flash")
+        XCTAssertEqual(Aggregator.normalizedModel("gpt-6.2-sol"), "gpt-6.2-sol")
+        XCTAssertEqual(Aggregator.normalizedModel("gpt-6.2-astra"), "gpt-6.2-astra")
+        XCTAssertEqual(Aggregator.normalizedModel("qwen4-max"), "qwen4-max")
+        // 剥完至少留两段
+        XCTAssertEqual(Aggregator.normalizedModel("high"), "high")
+        XCTAssertEqual(Aggregator.normalizedModel("foo-high"), "foo-high")
+    }
+
     /// 速率采样：窗口必须覆盖至少两轮刷新，否则永远算不出速率
     func testBurnRateSamplingCadence() {
         let t0 = Date(timeIntervalSince1970: 1_800_000_000)

@@ -68,12 +68,34 @@ public enum Aggregator {
     ]
 
     public static func normalizedModel(_ raw: String) -> String {
-        for prefix in ["custom-local:", "custom-remote:"] where raw.lowercased().hasPrefix(prefix) {
-            return String(raw.dropFirst(prefix.count))
+        var name = raw
+        for prefix in ["custom-local:", "custom-remote:"] where name.lowercased().hasPrefix(prefix) {
+            name = String(name.dropFirst(prefix.count))
+            break
         }
-        if let mapped = modelAliases[raw.lowercased()] { return mapped }
-        if let auto = normalizeAutoAlias(raw) { return auto }
-        return raw
+        if let mapped = modelAliases[name.lowercased()] { return mapped }
+        if let auto = normalizeAutoAlias(name) { name = auto }
+        return strippingEffort(name)
+    }
+
+    /// 思维强度/档位后缀：同一模型的不同思考强度不该拆成多行。
+    /// 例：gemini-4-hydrogen-tiered-high → gemini-4-hydrogen、claude-opus-5-5-medium → claude-opus-5-5
+    /// 只从**尾部**剥离，且保留至少两段（避免把整个名字剥空）。
+    static let effortTokens: Set<String> = [
+        "xhigh", "x-high", "high", "medium", "low", "minimal", "tiered",
+        "thinking", "reasoning", "none", "fast",
+    ]
+
+    public static func strippingEffort(_ name: String) -> String {
+        let parts = name.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count > 2 else { return name }
+        var kept = parts
+        // 从尾部连续剥离档位词（tiered-high 这种要剥两次）
+        while kept.count > 2, let last = kept.last, effortTokens.contains(last.lowercased()) {
+            kept.removeLast()
+        }
+        guard kept.count != parts.count else { return name }
+        return kept.joined(separator: "-")
     }
 
     static func bucketDate(day: String, hour: Int, calendar: Calendar) -> Date? {
