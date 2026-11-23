@@ -233,7 +233,14 @@ final class StatusBarController: NSObject {
                 button.image = Self.spacerImage(size: size)   // 占位，只换尺寸时重设
             }
             if button.bounds.height > 0, let layer = flameLayer {
-                let want = CGRect(x: 2, y: (button.bounds.height - size) / 2, width: size, height: size)
+                // 靠右贴住文字：状态项给图片的位置比图片本身宽（实测 12pt 图占 22pt 槽），
+                // 左对齐会留出 10pt 空白，看起来「火苗离文字很远」。
+                // 这里按槽宽把火焰画大一点并贴右侧，间隙≈按钮自身的 2pt 间距。
+                let slot = button.cell?.imageRect(forBounds: button.bounds) ?? .zero
+                let drawSize = slot.width > 4 ? max(9, min(size, slot.width - 1)) : size
+                let x = slot.width > 4 ? slot.maxX - drawSize - 1 : 2
+                let want = CGRect(x: x, y: (button.bounds.height - drawSize) / 2,
+                                  width: drawSize, height: drawSize)
                 if layer.frame != want {
                     CATransaction.begin()
                     CATransaction.setDisableActions(true)
@@ -250,6 +257,14 @@ final class StatusBarController: NSObject {
             }()
             if let cg { flameLayer?.contents = cg }
             flameLayer?.isHidden = false
+            if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil, index == 0,
+               let cell = button.cell {
+                let titleRect = cell.titleRect(forBounds: button.bounds)
+                let imageRect = cell.imageRect(forBounds: button.bounds)
+                FileHandle.standardError.write(Data(String(format: "DBG gap imgMaxX=%.1f titleMinX=%.1f 间隙=%.1fpt flameFrame=%@ size=%.1f\n",
+                    imageRect.maxX, titleRect.minX, titleRect.minX - imageRect.maxX,
+                    "\(flameLayer?.frame ?? .zero)", size).utf8))
+            }
         } else {
             flameLayer?.isHidden = true
             flameLayerSize = 0

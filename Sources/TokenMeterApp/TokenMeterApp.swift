@@ -250,14 +250,61 @@ final class AppModel: ObservableObject {
 
     private static let flameFPS = 30.0
 
+    /// 先按整组帧的可见区域裁掉透明边，再缩放/预解码。
+    /// 火焰素材 88×88 里可见部分只占约 41% 宽，直接缩到 12pt 时火焰只剩 5pt，
+    /// 视觉上就离文字很远。用整组并集包围盒可保证逐帧对齐、不抖。
     private static func loadFlameFrames(_ prefix: String, tier: FlameTier) -> [NSImage] {
-        (0..<Int(ceil(tier.period * flameFPS))).compactMap { i in
+        let originals: [NSImage] = (0..<Int(ceil(tier.period * flameFPS))).compactMap { i in
             guard let url = Bundle.main.resourceURL?.appendingPathComponent("\(prefix)\(i)@2x.png"),
                   let img = NSImage(contentsOf: url) else { return nil }
-            img.size = NSSize(width: 19, height: 19)
-            img.isTemplate = false
-            return predecoded(img)
+            return img
         }
+        guard !originals.isEmpty else { return [] }
+        // 整组的可见包围盒（取并集，避免逐帧抖动）
+        var union: CGRect?
+        var cgs: [CGImage] = []
+        for img in originals {
+            guard let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { continue }
+            cgs.append(cg)
+            if let box = visibleBox(cg) { union = union.map { $0.union(box) } ?? box }
+        }
+        guard let u = union, cgs.count == originals.count else {
+            return originals.map { finish($0) }
+        }
+        let side = max(u.width, u.height)
+        let crop = CGRect(x: u.midX - side / 2, y: u.midY - side / 2, width: side, height: side).integral
+        return cgs.compactMap { cg in
+            guard let part = cg.cropping(to: crop) else { return nil }
+            return finish(NSImage(cgImage: part, size: NSSize(width: 19, height: 19)))
+        }
+    }
+
+    /// 缩放 + 预解码成位图（30fps 下每帧解 PNG 很浪费）
+    private static func finish(_ img: NSImage) -> NSImage {
+        img.size = NSSize(width: 19, height: 19)
+        img.isTemplate = false
+        return predecoded(img)
+    }
+
+    /// 位图 alpha > 16 的最小外接矩形
+    private static func visibleBox(_ cg: CGImage) -> CGRect? {
+        let w = cg.width, h = cg.height
+        guard w > 0, h > 0,
+              let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let data = ctx.data else { return nil }
+        let ptr = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
+        var minX = w, minY = h, maxX = 0, maxY = 0
+        for y in 0..<h {
+            for x in 0..<w where ptr[(y * w + x) * 4 + 3] > 16 {
+                if x < minX { minX = x }; if x > maxX { maxX = x }
+                if y < minY { minY = y }; if y > maxY { maxY = y }
+            }
+        }
+        guard minX <= maxX, minY <= maxY else { return nil }
+        return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
     }
 
     /// 把 PNG 帧预解码成位图。
