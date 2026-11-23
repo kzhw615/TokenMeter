@@ -226,15 +226,13 @@ final class AppModel: ObservableObject {
 
     func menuBarText(_ s: Summary, includeRate: Bool = true) -> String {
         let shown = includeCache ? s.counts.total : s.counts.input + s.counts.output
-        // 速率段定宽（figure space 补位）：否则「29.5K/s · 7.09亿」↔「7.09亿」会让
-        // 状态栏图标左右跳动，连带着面板位置也会晃。
-        // 显示速度时把这一段补成定宽，避免数值位数变化让图标抖动；
-        // 不显示速度时不要留白，否则「收起速度」就白收了（宽度一点没省）。
+        // 速率段不再用 figure space 补成定宽。
+        // 补位是为了避免数字位数变化让图标左右挪，但代价是低速时（如 923/s）
+        // 会留下一大段看不见的空白，看起来像「速度和用量之间隔了很远」。
+        // 现在只在菜单栏拥挤时整体收起速率，宁可接受几 pt 的位数抖动。
         let forced = ProcessInfo.processInfo.environment["TOKENMETER_FORCE_BURN"] != nil
         let wantsRate = includeRate && isBurning && (forced || (burnRate ?? 0) > 0)
-        let rate = wantsRate
-            ? "\(Fmt.compactTokens(burnRate ?? 29_500))/s · ".padding(toLength: 10, withPad: "\u{2007}", startingAt: 0)
-            : ""
+        let rate = wantsRate ? "\(Fmt.compactTokens(burnRate ?? 29_500))/s · " : ""
         switch menuBarStyle {
         // 与面板、坞保持一致：用 Fmt.tokens（亿两位小数）。
         // compactTokens 只保留一位小数，会把 6.99亿 显示成 7.0亿，和别处对不上。

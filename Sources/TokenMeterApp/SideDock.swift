@@ -301,6 +301,19 @@ final class SideDockController: ObservableObject {
 /// 持续重算这一小块（实测在有任务运行时白吃掉 10%+ 单核），CA 的动画在渲染进程跑，主线程零成本。
 /// 逐帧图片视图：订阅 FlameTicker，直接设置 NSImageView.image。
 /// 走 Combine 而不是 SwiftUI 状态，避免每帧触发布局/重绘。
+/// 承载火苗图层的视图：在 layout() 里同步图层尺寸。
+/// 之前只在 observe() 里设 layer.frame，那时 bounds 还是 0，图层永远是 0×0 → 看不见。
+final class FlameLayerView: NSView {
+    var flameLayer: CALayer?
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        flameLayer?.frame = bounds
+        CATransaction.commit()
+    }
+}
+
 struct FrameSequenceView: NSViewRepresentable {
     let frames: [NSImage]
     let ticker: FlameTicker
@@ -309,12 +322,13 @@ struct FrameSequenceView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         // 用 CALayer 贴图而不是 NSImageView.image：30fps 下每次设 image 都要
         // 重新走视图绘制（实测坞里火苗单独就吃 5% 单核），改 layer.contents 便宜得多。
-        let v = NSView(frame: .zero)
+        let v = FlameLayerView(frame: .zero)
         v.wantsLayer = true
         let layer = CALayer()
         layer.contentsGravity = .resizeAspect
         layer.magnificationFilter = .linear
         v.layer?.addSublayer(layer)
+        v.flameLayer = layer
         context.coordinator.flameLayer = layer
         context.coordinator.observe(v, frames: frames, ticker: ticker)
         return v
@@ -343,12 +357,7 @@ struct FrameSequenceView: NSViewRepresentable {
             view = v
             if self.frames.count != frames.count { imageCache.removeAll(keepingCapacity: true) }
             self.frames = frames
-            if let layer = flameLayer, layer.superlayer != nil {
-                CATransaction.begin()
-                CATransaction.setDisableActions(true)
-                layer.frame = v.bounds
-                CATransaction.commit()
-            }
+            v.needsLayout = true
             // 档位切换会导致帧数变化，重置帧号避免越界/跳帧
             if lastFrame >= frames.count { lastFrame = -1 }
             if cancellable == nil {
