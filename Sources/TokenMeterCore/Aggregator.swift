@@ -266,12 +266,15 @@ public enum Aggregator {
                 guard parts.count == 3 else { return key }
                 return "\(Int(parts[1]) ?? 0)/\(Int(parts[2]) ?? 0)"
             }
-            if let cut = sameTimeCutoff {
-                previousLabel = "昨天同期（0:00–\(String(format: "%02d", cut)):00）"
+            let cutoffText = String(format: "%02d", sameTimeCutoff ?? 0)
+            if let _ = sameTimeCutoff {
+                previousLabel = Fmt.english
+                    ? "yesterday, same hours (0:00–\(cutoffText):00)"
+                    : "昨天同期（0:00–\(cutoffText):00）"
             } else {
-                let name = range.previousPeriodName(now: now, calendar: cal0) ?? "上一周期"
+                let name = range.previousPeriodName(now: now, calendar: cal0) ?? (Fmt.english ? "previous period" : "上一周期")
                 let span = pr.start == pr.end ? md(pr.start) : "\(md(pr.start))–\(md(pr.end))"
-                previousLabel = "\(name)（\(span)）"
+                previousLabel = Fmt.english ? "\(name) (\(span))" : "\(name)（\(span)）"
             }
         }
         if let pr = prevRange {

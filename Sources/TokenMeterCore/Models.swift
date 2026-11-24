@@ -66,6 +66,20 @@ public struct UsageBucket: Codable, Equatable, Sendable {
 
 public enum RangeKind: String, CaseIterable, Codable, Sendable {
     case today, yesterday, d7, d30, thisMonth, lastMonth, all
+    /// 用于面板上的一排切换标签：英文要短，否则 7 个标签会换行
+    public var tabLabel: String {
+        guard Fmt.english else { return label }
+        switch self {
+        case .today: return "Today"
+        case .yesterday: return "Yest."
+        case .d7: return "7d"
+        case .d30: return "30d"
+        case .thisMonth: return "This mo."
+        case .lastMonth: return "Last mo."
+        case .all: return "All"
+        }
+    }
+
     public var label: String {
         if Fmt.english {
             switch self {
@@ -116,6 +130,22 @@ public enum RangeKind: String, CaseIterable, Codable, Sendable {
     /// 范围结束日（闭区间）；开放式范围返回 nil
     /// 环比对象的自然语言说明（配合 previousDayRange 的起止日给出具体日期）
     public func previousPeriodName(now: Date = Date(), calendar: Calendar = .current) -> String? {
+        if Fmt.english {
+            switch self {
+            case .today: return "yesterday"
+            case .yesterday: return "the day before"
+            case .d7: return "previous 7 days"
+            case .d30: return "previous 30 days"
+            case .thisMonth: return "same time last month"
+            case .lastMonth:
+                guard let monthStart = calendar.dateInterval(of: .month, for: now)?.start,
+                      let target = calendar.date(byAdding: .month, value: -2, to: monthStart) else { return nil }
+                let c = calendar.dateComponents([.year, .month], from: target)
+                guard let y = c.year, let m = c.month else { return nil }
+                return String(format: "%d/%02d", y, m)
+            case .all: return nil
+            }
+        }
         switch self {
         case .today: return "昨天"
         case .yesterday: return "前天"

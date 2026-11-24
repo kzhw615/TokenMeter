@@ -14,7 +14,10 @@ enum SummaryCache {
         let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
             .appendingPathComponent("TokenMeter", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("summary-v1.json")
+        // 缓存里存了 hoursMode / previousLabel 这类已本地化的文案，
+        // 语言不同必须分开存，否则切到英文会读到中文旧缓存。
+        let lang = L10n.isEnglish ? "en" : "zh"
+        return dir.appendingPathComponent("summary-v1-\(lang).json")
     }
 
     private struct Payload: Codable {

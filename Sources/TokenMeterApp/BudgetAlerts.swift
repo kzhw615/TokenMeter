@@ -44,8 +44,8 @@ extension AppModel {
               let month = summariesByRange[.thisMonth]?.cost else { return }
         let dayKey = RangeKind.today.startDayKey() ?? ""
         let monthKey = RangeKind.thisMonth.startDayKey() ?? ""
-        check(scope: "day", key: dayKey, budget: dailyBudget, cost: today, label: "今日")
-        check(scope: "month", key: monthKey, budget: monthlyBudget, cost: month, label: "本月")
+        check(scope: "day", key: dayKey, budget: dailyBudget, cost: today, label: L10n.t("今日"))
+        check(scope: "month", key: monthKey, budget: monthlyBudget, cost: month, label: L10n.t("本月"))
     }
 
     private func check(scope: String, key: String, budget: Double, cost: Double, label: String) {
@@ -58,7 +58,9 @@ extension AppModel {
             let pct = Int((cost / budget * 100).rounded())
             let content = UNMutableNotificationContent()
             content.title = L10n.t("TokenMeter 预算提醒")
-            content.body = "\(label)预估费用 \(Fmt.cost(cost)) 已达预算 \(Fmt.cost(budget)) 的 \(pct)%\(level >= 1 ? "（已超支）" : "")"
+            content.body = L10n.isEnglish
+            ? "\(label) est. cost \(Fmt.cost(cost)) reached \(pct)% of the \(Fmt.cost(budget)) budget\(level >= 1 ? " (over budget)" : "")"
+            : "\(label)预估费用 \(Fmt.cost(cost)) 已达预算 \(Fmt.cost(budget)) 的 \(pct)%\(level >= 1 ? "（已超支）" : "")"
             content.sound = .default
             let req = UNNotificationRequest(identifier: flagKey, content: content, trigger: nil)
             UNUserNotificationCenter.current().add(req)

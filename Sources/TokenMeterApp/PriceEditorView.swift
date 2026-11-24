@@ -29,7 +29,7 @@ struct PriceEditorView: View {
                         .font(.system(size: 8, weight: .semibold))
                     Text(L10n.t("编辑单价"))
                         .font(.caption)
-                    Text("(\(rows.count) 个模型)")
+                    Text("(\(rows.count)" + L10n.t("个模型") + ")")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                     Spacer()
@@ -46,7 +46,7 @@ struct PriceEditorView: View {
                 VStack(spacing: 4) {
                     ForEach($rows) { $r in
                         HStack(spacing: 4) {
-                            TextField("模型名称", text: $r.pattern)
+                            TextField(L10n.t("模型名称"), text: $r.pattern)
                                 .textFieldStyle(.plain)
                                 .padding(.horizontal, 5).padding(.vertical, 3)
                                 .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.06)))
@@ -128,13 +128,13 @@ struct PriceEditorView: View {
             prices.append(ModelPrice(pattern: r.pattern, input: i, output: o,
                                      cacheRead: Double(r.cr), cacheWrite: Double(r.cw)))
         }
-        guard !prices.isEmpty else { message = "没有有效行"; return }
+        guard !prices.isEmpty else { message = L10n.t("没有有效行"); return }
         do {
             try PricingTable.save(PricingTable(prices: prices))
-            message = "已保存 \(prices.count) 条"
+            message = L10n.t("已保存") + " \(prices.count)"
             model.refresh()
         } catch {
-            message = "保存失败：\(error.localizedDescription)"
+            message = L10n.t("保存失败：") + error.localizedDescription
         }
     }
 
@@ -142,7 +142,7 @@ struct PriceEditorView: View {
         try? FileManager.default.removeItem(at: PricingTable.overrideURL)
         reload()
         model.refresh()
-        message = "已恢复内置价格表"
+        message = L10n.t("已恢复内置价格表")
     }
 }
 #endif

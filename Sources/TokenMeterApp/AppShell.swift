@@ -25,6 +25,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.statusBar?.showPanel()
             }
         }
+        // 截图/排查用：直接打开设置窗口
+        if ProcessInfo.processInfo.environment["TOKENMETER_SHOW_SETTINGS"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 9) {
+                AppActions.shared.openSettings()
+            }
+        }
         // 一键更新后的重启：此时旧实例可能还没退干净，不能按「重复实例」处理
         let isPostUpdate = CommandLine.arguments.contains("--post-update")
         if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {

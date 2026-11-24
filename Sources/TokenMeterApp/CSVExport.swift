@@ -18,15 +18,15 @@ enum CSVExport {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "TokenMeter-\(range.rawValue)-\(DayKey.key(for: Date())).csv"
         panel.canCreateDirectories = true
-        panel.title = "导出用量明细"
-        panel.message = "当前范围：\(range.label)（\(CSVExport.makeCSV(model: model, range: range).split(separator: "\n").count - 2) 行数据）"
+        panel.title = L10n.t("导出用量明细")
+        panel.message = L10n.t("当前范围：") + "\(range.label)（\(CSVExport.makeCSV(model: model, range: range).split(separator: "\n").count - 2) 行数据）"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let csv = makeCSV(model: model, range: range)
         do {
             try csv.write(to: url, atomically: true, encoding: .utf8)
-            model.settingsMessage = "已导出到 \(url.lastPathComponent)"
+            model.settingsMessage = L10n.t("已导出到") + " \(url.lastPathComponent)"
         } catch {
-            model.settingsMessage = "导出失败：\(error.localizedDescription)"
+            model.settingsMessage = L10n.t("导出失败：") + error.localizedDescription
         }
     }
 }

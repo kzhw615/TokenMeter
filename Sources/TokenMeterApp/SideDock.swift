@@ -470,9 +470,9 @@ struct SideDockView: View {
 
     private func stateText(_ state: Int) -> String {
         switch state {
-        case 0: return "运行中"
-        case 1: return "待阅读"
-        default: return "空闲"
+        case 0: return L10n.t("运行中")
+        case 1: return L10n.t("待阅读")
+        default: return L10n.t("空闲")
         }
     }
 

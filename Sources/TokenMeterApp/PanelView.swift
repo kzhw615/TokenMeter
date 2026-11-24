@@ -496,7 +496,7 @@ struct PanelView: View {
     private func summaryCards(_ s: Summary) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             SlidingTabs(
-                options: RangeKind.allCases.map { (option: $0, label: $0.label) },
+                options: RangeKind.allCases.map { (option: $0, label: $0.tabLabel) },
                 selection: Binding(get: { model.range }, set: { model.setRange($0) })
             )
 
@@ -683,7 +683,7 @@ struct PanelView: View {
             let dayCount = (s.calendarDays ?? []).filter { $0.counts.total > 0 }.count
             HStack(spacing: 8) {
                 collapsibleTitle(L10n.t("使用习惯 · 周几 × 小时"), key: "habit")
-                Text(L10n.t("全部历史") + " · \(dayCount) " + L10n.t("天有数据"))
+                Text(L10n.t("全部历史") + " · \(dayCount)" + L10n.t("天有数据"))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .padding(.trailing, 6)

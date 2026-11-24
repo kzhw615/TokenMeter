@@ -79,9 +79,9 @@ final class AppModel: ObservableObject {
         do {
             if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
             launchAtLogin = on
-            settingsMessage = on ? "已加入登录项" : "已移除登录项"
+            settingsMessage = L10n.t(on ? "已加入登录项" : "已移除登录项")
         } catch {
-            settingsMessage = "设置失败：\(error.localizedDescription)"
+            settingsMessage = L10n.t("设置失败：") + error.localizedDescription
         }
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
@@ -112,11 +112,11 @@ final class AppModel: ObservableObject {
 
     var updateButtonTitle: String {
         switch updatePhase {
-        case .idle, .failed: return "一键更新"
-        case .downloading: return "下载中…"
-        case .verifying: return "校验中…"
-        case .installing: return "安装中…"
-        case .restarting: return "重启中…"
+        case .idle, .failed: return L10n.t("一键更新")
+        case .downloading: return L10n.t("下载中…")
+        case .verifying: return L10n.t("校验中…")
+        case .installing: return L10n.t("安装中…")
+        case .restarting: return L10n.t("重启中…")
         }
     }
 

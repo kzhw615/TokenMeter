@@ -30,26 +30,26 @@ struct SettingsView: View {
 
     private var appearanceCard: some View {
         card(L10n.t("外观")) {
-            HStack(spacing: 9) {
-                Text(L10n.t("主题色")).font(.caption).foregroundStyle(.secondary).frame(width: 56, alignment: .leading)
-                ForEach(AppTheme.all) { t in
-                    Button { model.themeID = t.id } label: {
-                        Circle()
-                            .fill(t.primary)
-                            .frame(width: 16, height: 16)
-                            .overlay(
-                                Circle().strokeBorder(model.themeID == t.id ? Color.primary.opacity(0.75) : .clear,
-                                                      lineWidth: 2)
-                            )
+            row(L10n.t("主题色")) {
+                HStack(spacing: 8) {
+                    ForEach(AppTheme.all) { t in
+                        Button { model.themeID = t.id } label: {
+                            Circle()
+                                .fill(t.primary)
+                                .frame(width: 16, height: 16)
+                                .overlay(
+                                    Circle().strokeBorder(model.themeID == t.id ? Color.primary.opacity(0.75) : .clear,
+                                                          lineWidth: 2)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help(t.name)
                     }
-                    .buttonStyle(.plain)
-                    .help(t.name)
+                    Spacer()
                 }
-                Spacer()
             }
-            HStack(spacing: 9) {
-                Text(L10n.t("语言")).font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
-                Picker("语言", selection: Binding(
+            row(L10n.t("语言")) {
+                Picker(L10n.t("语言"), selection: Binding(
                     get: { L10n.mode },
                     set: { v in
                         UserDefaults.standard.set(v, forKey: "appLanguage")
@@ -60,24 +60,18 @@ struct SettingsView: View {
                     Text("中文").tag("zh")
                     Text("English").tag("en")
                 }
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .labelsHidden()
+                .pickerStyle(.segmented).controlSize(.small).labelsHidden()
             }
-            HStack(spacing: 9) {
-                Text(L10n.t("菜单栏显示")).font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+            row(L10n.t("菜单栏显示")) {
                 Picker(L10n.t("菜单栏显示"), selection: Binding(get: { model.menuBarStyle }, set: { model.menuBarStyle = $0 })) {
                     Text(L10n.t("用量 + 费用")).tag("both")
                     Text(L10n.t("仅用量")).tag("tokens")
                     Text(L10n.t("仅费用")).tag("cost")
                     Text(L10n.t("仅图标")).tag("icon")
                 }
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .labelsHidden()
-
-                // 速度显示策略：菜单栏宽度不够时收起速度，只留用量
-                Text(L10n.t("消耗速度")).font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+                .pickerStyle(.segmented).controlSize(.small).labelsHidden()
+            }
+            row(L10n.t("消耗速度")) {
                 Picker(L10n.t("消耗速度"), selection: Binding(
                     get: { model.menuBarRateMode },
                     set: { model.menuBarRateMode = $0 }
@@ -86,40 +80,20 @@ struct SettingsView: View {
                     Text(L10n.t("总是显示")).tag("always")
                     Text(L10n.t("不显示")).tag("never")
                 }
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .labelsHidden()
+                .pickerStyle(.segmented).controlSize(.small).labelsHidden()
                 .help(L10n.t("自动：菜单栏拥挤时只显示用量，腾出宽度"))
             }
-            HStack(spacing: 9) {
-                Text(L10n.t("面板外观")).font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+            row(L10n.t("面板外观")) {
                 Picker(L10n.t("面板外观"), selection: Binding(get: { model.panelAppearance }, set: { model.panelAppearance = $0 })) {
                     Text(L10n.t("跟随系统")).tag("auto")
                     Text(L10n.t("深色")).tag("dark")
                     Text(L10n.t("浅色")).tag("light")
                 }
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .labelsHidden()
-
-                // 速度显示策略：菜单栏宽度不够时收起速度，只留用量
-                Text(L10n.t("消耗速度")).font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
-                Picker(L10n.t("消耗速度"), selection: Binding(
-                    get: { model.menuBarRateMode },
-                    set: { model.menuBarRateMode = $0 }
-                )) {
-                    Text(L10n.t("自动")).tag("auto")
-                    Text(L10n.t("总是显示")).tag("always")
-                    Text(L10n.t("不显示")).tag("never")
-                }
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .labelsHidden()
-                .help(L10n.t("自动：菜单栏拥挤时只显示用量，腾出宽度"))
+                .pickerStyle(.segmented).controlSize(.small).labelsHidden()
             }
             HStack(spacing: 9) {
                 Text(L10n.t("玻璃不透明度")).font(.caption).foregroundStyle(.secondary)
-                    .frame(width: 78, alignment: .leading)
+                    .frame(width: 74, alignment: .leading).lineLimit(1).minimumScaleFactor(0.75)
                 Slider(value: Binding(get: { model.glassOpacity },
                                       set: { model.glassOpacity = $0 }), in: 0...1)
                     .controlSize(.small)
@@ -135,36 +109,37 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - 悬浮坞
+    /// 左侧标签 + 右侧控件，一行一个；英文文案不会和其他控件挤在一行
+    private func row<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 9) {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+                .frame(width: 74, alignment: .leading)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            content()
+        }
+    }
+
+
+
+    // MARK: - 预算
 
     private var dockCard: some View {
         card(L10n.t("侧边悬浮坞")) {
-            HStack(spacing: 9) {
-                Text(L10n.t("位置")).font(.caption).foregroundStyle(.secondary).frame(width: 56, alignment: .leading)
+            row(L10n.t("位置")) {
                 Picker(L10n.t("位置"), selection: Binding(get: { model.sideDock }, set: { model.sideDock = $0 })) {
                     Text(L10n.t("关闭")).tag("off")
                     Text(L10n.t("左侧")).tag("left")
                     Text(L10n.t("右侧")).tag("right")
                 }
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .labelsHidden()
-
-                // 速度显示策略：菜单栏宽度不够时收起速度，只留用量
-                Text(L10n.t("消耗速度")).font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
-                Picker(L10n.t("消耗速度"), selection: Binding(
-                    get: { model.menuBarRateMode },
-                    set: { model.menuBarRateMode = $0 }
-                )) {
-                    Text(L10n.t("自动")).tag("auto")
-                    Text(L10n.t("总是显示")).tag("always")
-                    Text(L10n.t("不显示")).tag("never")
+                .pickerStyle(.segmented).controlSize(.small).labelsHidden()
+                Spacer()
+            }
+            row(L10n.t("材质")) {
+                Picker(L10n.t("材质"), selection: Binding(get: { model.dockStyle }, set: { model.dockStyle = $0 })) {
+                    Text(L10n.t("黑色")).tag("black")
+                    Text(L10n.t("液态玻璃")).tag("glass")
                 }
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .labelsHidden()
-                .help(L10n.t("自动：菜单栏拥挤时只显示用量，腾出宽度"))
-                .frame(width: 200)
+                .pickerStyle(.segmented).controlSize(.small).labelsHidden()
                 Spacer()
             }
             Text(L10n.t("开启后可从屏幕边缘拖出，松手自动吸附；双击回到默认位置，单击展开面板。"))
@@ -172,13 +147,12 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - 预算
 
     private var budgetCard: some View {
         card(L10n.t("预算提醒")) {
-            budgetRow(label: "每日", value: Binding(get: { model.dailyBudget }, set: { model.dailyBudget = $0 }),
+            budgetRow(label: L10n.t("每日"), value: Binding(get: { model.dailyBudget }, set: { model.dailyBudget = $0 }),
                       cost: model.summariesByRange[.today]?.cost)
-            budgetRow(label: "每月", value: Binding(get: { model.monthlyBudget }, set: { model.monthlyBudget = $0 }),
+            budgetRow(label: L10n.t("每月"), value: Binding(get: { model.monthlyBudget }, set: { model.monthlyBudget = $0 }),
                       cost: model.summariesByRange[.thisMonth]?.cost)
             Text(L10n.t("达到 80% 和 100% 时发送系统通知；填 0 表示不提醒。"))
                 .font(.caption2).foregroundStyle(.tertiary)
@@ -187,7 +161,8 @@ struct SettingsView: View {
 
     private func budgetRow(label: String, value: Binding<Double>, cost: Double?) -> some View {
         HStack(spacing: 8) {
-            Text(label).font(.caption).frame(width: 32, alignment: .leading)
+            Text(label).font(.caption).frame(width: 46, alignment: .leading)
+                .lineLimit(1).minimumScaleFactor(0.7)
             TextField("0", value: value, format: .number)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 80)
@@ -204,7 +179,7 @@ struct SettingsView: View {
                     .frame(width: 90)
                     .tint(over ? Color.red : model.theme.primary)
             } else {
-                Text("今日 \(Fmt.cost(cost ?? 0))")
+                Text(L10n.t("今日") + " \(Fmt.cost(cost ?? 0))")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
         }
@@ -215,7 +190,7 @@ struct SettingsView: View {
     private var dockSourcesCard: some View {
         card(L10n.t("悬浮坞显示的工具")) {
             HStack(spacing: 9) {
-                Text(L10n.t("材质")).font(.caption).foregroundStyle(.secondary).frame(width: 56, alignment: .leading)
+                Text(L10n.t("材质")).font(.caption).foregroundStyle(.secondary).frame(width: 74, alignment: .leading).lineLimit(1).minimumScaleFactor(0.75)
                 Picker(L10n.t("材质"), selection: Binding(get: { model.dockStyle }, set: { model.dockStyle = $0 })) {
                     Text(L10n.t("黑色")).tag("ink")
                     Text(L10n.t("液态玻璃")).tag("glass")
@@ -225,7 +200,7 @@ struct SettingsView: View {
                 .labelsHidden()
 
                 // 速度显示策略：菜单栏宽度不够时收起速度，只留用量
-                Text(L10n.t("消耗速度")).font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+                Text(L10n.t("消耗速度")).font(.caption).foregroundStyle(.secondary).frame(width: 74, alignment: .leading).lineLimit(1).minimumScaleFactor(0.75)
                 Picker(L10n.t("消耗速度"), selection: Binding(
                     get: { model.menuBarRateMode },
                     set: { model.menuBarRateMode = $0 }
@@ -277,7 +252,7 @@ struct SettingsView: View {
             .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
-        .help(hidden ? "点击显示" : "点击隐藏")
+        .help(L10n.t(hidden ? "点击显示" : "点击隐藏"))
     }
 
     // MARK: - 价格
@@ -323,11 +298,11 @@ struct SettingsView: View {
                             Text(r.tokens > 0 ? Fmt.tokens(r.tokens) : "—")
                                 .font(.caption2).monospacedDigit()
                                 .frame(width: 70, alignment: .trailing)
-                            Text(r.files.map { "\($0) 文件" } ?? "")
+                            Text(r.files.map { "\($0)" + L10n.t(" 文件") } ?? "")
                                 .font(.caption2).foregroundStyle(.tertiary)
                                 .frame(width: 62, alignment: .trailing)
                             Spacer()
-                            Text(r.last.map { lastSeenFormatter.string(from: $0) } ?? "无记录")
+                            Text(r.last.map { lastSeenFormatter.string(from: $0) } ?? L10n.t("无记录"))
                                 .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
                         }
                         if let note = r.note, !note.isEmpty {
@@ -336,7 +311,7 @@ struct SettingsView: View {
                         }
                     }
                 }
-                Text("用量为当前口径（\(model.includeCache ? "含缓存" : "不含缓存")）今日合计；时间是该工具日志最后写入时间")
+                Text(L10n.t("用量为当前口径（") + L10n.t(model.includeCache ? "含缓存" : "不含缓存") + L10n.t("）今日合计；时间是该工具日志最后写入时间"))
                     .font(.caption2).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -357,7 +332,7 @@ struct SettingsView: View {
             HStack(spacing: 6) {
                 Image(systemName: issues.isEmpty ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                     .foregroundStyle(issues.isEmpty ? Color.green : Color.orange)
-                Text(issues.isEmpty ? "未发现异常" : "\(issues.count) 项需要留意")
+                Text(issues.isEmpty ? L10n.t("未发现异常") : "\(issues.count)" + L10n.t(" 项需要留意"))
                     .font(.caption.weight(.medium))
                 Spacer()
             }
@@ -432,11 +407,11 @@ final class SettingsWindowController {
     func show(model: AppModel) {
         if window == nil {
             let win = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 460, height: 620),
+                contentRect: NSRect(x: 0, y: 0, width: L10n.isEnglish ? 500 : 460, height: 620),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered,
                 defer: false)
-            win.title = "TokenMeter 设置"
+            win.title = L10n.t("TokenMeter 设置")
             win.contentView = NSHostingView(rootView: SettingsView().environmentObject(model))
             win.isReleasedWhenClosed = false
             win.center()
