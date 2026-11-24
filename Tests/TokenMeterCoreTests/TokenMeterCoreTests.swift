@@ -211,6 +211,30 @@ final class TokenMeterCoreTests: XCTestCase {
     }
 
     /// OpenMausBot 要出现在活动源列表里（悬浮坞据此展示它）
+    /// 凌晨 0 点这一小时也要比「同期」，不能退化成对比昨天一整天
+    func testTodayComparisonAtMidnightUsesSameHour() {
+        let cal = Calendar.current
+        let now = cal.date(from: DateComponents(year: 2026, month: 11, day: 25, hour: 0, minute: 30))!
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let today = fmt.string(from: now)
+        let yesterday = fmt.string(from: cal.date(byAdding: .day, value: -1, to: now)!)
+
+        let yFull = UsageBucket(day: yesterday, hour: 0, tool: "T", model: "m",
+                                counts: TokenCounts(input: 1000), requests: 1)
+        let yLater = UsageBucket(day: yesterday, hour: 10, tool: "T", model: "m",
+                                 counts: TokenCounts(input: 50000), requests: 1)
+        let t0 = UsageBucket(day: today, hour: 0, tool: "T", model: "m",
+                             counts: TokenCounts(input: 400), requests: 1)
+
+        let sum = Aggregator.summarize(buckets: [yFull, yLater, t0], range: .today,
+                                       pricing: PricingTable.load(), statuses: [], now: now)
+        // 只应比昨天 0 点这一小时（1000），不能把昨天 10 点的 50000 也算进来
+        XCTAssertEqual(sum.previousCounts?.total, 1000)
+        XCTAssertEqual(sum.comparableCounts?.total, 400)
+        XCTAssertEqual(sum.previousLabel, "昨天同期（0:00–01:00）")
+    }
+
     /// 使用习惯矩阵与项目×模型：用合成数据验证（不扫真实日志，跑得快）
     func testHabitGridAndProjectModels() {
         // 2026-11-16 是周一：构造周一 9 点 / 周二 14 点的用量

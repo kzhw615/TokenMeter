@@ -173,8 +173,10 @@ public enum Aggregator {
 
         let cal0 = Calendar.current
         // 「今天」与昨天比时只算已过完的整点：半天 vs 整天必然显示大幅下降，不公平。
+        // 注意凌晨 0 点这一小时也要比「同期」：nowHour == 0 时取 1，
+        // 否则会退化成「今天头 1 小时 vs 昨天一整天」，出现 −95% 这种吓人的数字。
         let nowHour = cal0.component(.hour, from: now)
-        let sameTimeCutoff: Int? = (range == .today && nowHour > 0) ? nowHour : nil
+        let sameTimeCutoff: Int? = (range == .today) ? max(1, nowHour) : nil
         let todayKey = DayKey.key(for: cal0.startOfDay(for: now), calendar: cal0)
         // 逐桶缓存：归档里有上万个 bucket，但只有几十个模型、几百天。
         // 之前每个 bucket 都要：①DayKey 的 DateFormatter 解析（还要抢锁）
