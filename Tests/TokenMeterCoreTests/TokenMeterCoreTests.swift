@@ -211,6 +211,35 @@ final class TokenMeterCoreTests: XCTestCase {
     }
 
     /// OpenMausBot 要出现在活动源列表里（悬浮坞据此展示它）
+    /// 使用习惯矩阵与项目×模型：用合成数据验证（不扫真实日志，跑得快）
+    func testHabitGridAndProjectModels() {
+        // 2026-11-16 是周一：构造周一 9 点 / 周二 14 点的用量
+        let b1 = UsageBucket(day: "2026-11-16", hour: 9, tool: "T1", model: "m-a",
+                             project: "proj-x", counts: TokenCounts(input: 1000), requests: 1)
+        let b2 = UsageBucket(day: "2026-11-17", hour: 14, tool: "T1", model: "m-b",
+                             project: "proj-x", counts: TokenCounts(input: 2000), requests: 1)
+        let b3 = UsageBucket(day: "2026-11-17", hour: 14, tool: "T2", model: "m-a",
+                             project: "proj-y", counts: TokenCounts(input: 3000), requests: 1)
+        let summary = Aggregator.summarize(buckets: [b1, b2, b3], range: .all,
+                                           pricing: PricingTable.load(), statuses: [])
+
+        let grid = summary.habitGrid ?? []
+        XCTAssertEqual(grid.count, 168)
+        XCTAssertEqual(grid.reduce(0, +), summary.counts.total, "习惯矩阵合计应等于区间总量")
+        // 周一 9 点 = 1*24+9；周二 14 点 = 2*24+14
+        XCTAssertEqual(grid[1 * 24 + 9], 1000)
+        XCTAssertEqual(grid[2 * 24 + 14], 2000 + 3000)
+
+        let pm = summary.projectModels ?? []
+        XCTAssertEqual(pm.count, 2)
+        for row in pm {
+            guard let stat = summary.projects.first(where: { $0.project == row.project }) else { continue }
+            XCTAssertEqual(row.parts.reduce(Int64(0)) { $0 + $1.counts.total }, stat.counts.total,
+                           "\(row.project) 的模型构成合计与项目总量不一致")
+        }
+        XCTAssertEqual(pm.first { $0.project == "proj-x" }?.parts.map(\.name), ["m-b", "m-a"])
+    }
+
     /// 思维强度后缀要并回同一个模型（用户要求：不因思考强度不同而分开统计）
     func testModelEffortSuffixStripping() {
         XCTAssertEqual(Aggregator.normalizedModel("gemini-4-hydrogen-tiered-high"), "gemini-4-hydrogen")

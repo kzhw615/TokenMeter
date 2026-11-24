@@ -129,6 +129,8 @@ struct PanelView: View {
     @State private var hoveredSection: String?
     /// 日历里点选的那一天（看当天明细）
     @State private var selectedDay: String?
+    /// 展开查看模型构成的项目（点一下展开/收起）
+    @State private var expandedProject: String?
     /// 折叠/切换动画时长（可用 TOKENMETER_ANIM_DURATION 放大，便于逐帧验证）
     private var animDuration: Double {
         ProcessInfo.processInfo.environment["TOKENMETER_ANIM_DURATION"].flatMap(Double.init) ?? 0.22
@@ -250,6 +252,7 @@ struct PanelView: View {
                     projectsSection(s)
                     trendSection(s)
                     hoursSection(s)
+                    habitSection(s)
                     footnotes(s)
                     }
                     .transition(.opacity)
@@ -628,10 +631,126 @@ struct PanelView: View {
                     Text(Fmt.cost(p.cost)).font(.callout).monospacedDigit().frame(width: 58, alignment: .trailing)
                 }
                 .background(rowBackground("proj-\(p.project)"))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: animDuration)) {
+                        expandedProject = (expandedProject == p.project) ? nil : p.project
+                    }
+                }
                 .onHover { hoveredRow = $0 ? "proj-\(p.project)" : nil }
+                if expandedProject == p.project, let pm = s.projectModels?.first(where: { $0.project == p.project }),
+                   !pm.parts.isEmpty {
+                    projectModelDetail(pm, total: disp(p.counts))
+                        .transition(.opacity)
+                }
             }
         }
             }
+    }
+
+    /// 使用习惯：7 行（周日…周六）× 24 列（小时）的用量热力图。
+    /// 回答「一周里什么时候最烧钱」，数据来自 Summary.habitGrid（168 个格子）。
+    private func habitSection(_ s: Summary) -> some View {
+        let cells = (s.habitGrid?.count == 168) ? (s.habitGrid ?? []) : []
+        let nonZero = cells.filter { $0 > 0 }.sorted()
+        let levelCount = 6
+        let thresholds: [Int64] = (1...levelCount).map { k in
+            guard !nonZero.isEmpty else { return 0 }
+            let idx = min(nonZero.count - 1, Int(Double(nonZero.count) * Double(k) / Double(levelCount)))
+            return nonZero[idx]
+        }
+        let base = (colorScheme == .dark ? NSColor(white: 0.32, alpha: 1) : NSColor(white: 0.90, alpha: 1))
+            .usingColorSpace(.sRGB) ?? .gray
+        let solid = NSColor(model.theme.primary).usingColorSpace(.sRGB) ?? .systemBlue
+        let tints: [Color] = (0..<levelCount).map { i in
+            let lv = 0.14 + 0.86 * Double(i) / Double(levelCount - 1)
+            return Color(nsColor: base.blended(withFraction: CGFloat(lv), of: solid) ?? solid)
+        }
+        let emptyColor = Color(nsColor: colorScheme == .light ? NSColor(white: 0.86, alpha: 1)
+                                                                : NSColor(white: 0.30, alpha: 1))
+        let gap: CGFloat = 2
+        let cell = min(16, max(5, (352 - 16 - gap * 23) / 24))
+        let gridW = 24 * (cell + gap) - gap
+        let gridH = 7 * (cell + gap) - gap
+        let weekdayNames = ["日", "一", "二", "三", "四", "五", "六"]
+
+        return VStack(alignment: .leading, spacing: 8) {
+            collapsibleTitle("使用习惯 · 周几 × 小时", key: "habit")
+            if !isCollapsed("habit") {
+                if cells.isEmpty {
+                    emptyNote
+                } else {
+                    HStack(alignment: .top, spacing: 4) {
+                        VStack(spacing: gap) {
+                            ForEach(0..<7, id: \.self) { wd in
+                                Text(weekdayNames[wd])
+                                    .font(.system(size: 8))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 12, height: cell)
+                            }
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Canvas { ctx, _ in
+                                for wd in 0..<7 {
+                                    for h in 0..<24 {
+                                        let rect = CGRect(x: CGFloat(h) * (cell + gap),
+                                                          y: CGFloat(wd) * (cell + gap),
+                                                          width: cell, height: cell)
+                                        let path = Path(roundedRect: rect, cornerRadius: 2)
+                                        let v = cells[wd * 24 + h]
+                                        if v <= 0 {
+                                            ctx.fill(path, with: .color(emptyColor))
+                                        } else {
+                                            let idx = thresholds.firstIndex(where: { v <= $0 }) ?? (levelCount - 1)
+                                            ctx.fill(path, with: .color(tints[idx]))
+                                        }
+                                    }
+                                }
+                            }
+                            .frame(width: gridW, height: gridH)
+                            ZStack(alignment: .leading) {
+                                ForEach([0, 6, 12, 18], id: \.self) { h in
+                                    Text("\(h)时")
+                                        .font(.system(size: 8))
+                                        .foregroundStyle(.tertiary)
+                                        .offset(x: CGFloat(h) * (cell + gap))
+                                }
+                            }
+                            .frame(width: gridW, height: 10, alignment: .leading)
+                        }
+                    }
+                    Text("颜色越深表示那个时段用量越大；横向是小时，纵向是周几")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    /// 展开某个项目后，显示它用到的模型构成
+    @ViewBuilder
+    private func projectModelDetail(_ pm: ProjectModels, total: Int64) -> some View {
+        let denom = max(1, total)
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(pm.parts.prefix(5).enumerated()), id: \.offset) { i, part in
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(palette[i % palette.count])
+                        .frame(width: 8, height: 8)
+                    Text(part.name).font(.caption2).lineLimit(1)
+                    Spacer(minLength: 6)
+                    Text(Fmt.tokens(disp(part.counts))).font(.caption2).monospacedDigit()
+                        .foregroundStyle(.secondary)
+                    Text(Fmt.percent(Double(disp(part.counts)) / Double(denom)))
+                        .font(.caption2).monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 44, alignment: .trailing)
+                }
+            }
+        }
+        .padding(.vertical, 5)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.06)))
     }
 
     /// 逐小时用量：堆叠柱（每段一种模型），与每日图同一套配色规则

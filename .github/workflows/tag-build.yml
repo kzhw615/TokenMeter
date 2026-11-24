@@ -1,0 +1,30 @@
+name: Tag build
+
+# 打 tag 时再完整构建一遍（含 App 打包脚本），避免「本地能编、CI 报错」的版本发出去。
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    name: 构建 App 与 CLI
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: 单元测试
+        run: swift test
+
+      - name: 打包 App
+        run: ./Scripts/build_app.sh "${GITHUB_REF_NAME#v}"
+
+      - name: 校验产物
+        run: |
+          set -euo pipefail
+          test -x build/TokenMeter.app/Contents/MacOS/TokenMeter
+          test -x build/tokenmeter
+          build/tokenmeter report --range today >/dev/null
+          echo "产物校验通过：$(ls -lh build/TokenMeter.app.zip 2>/dev/null || echo '(无 zip，由 Scripts/release.sh 生成)')"

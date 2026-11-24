@@ -179,6 +179,9 @@ public enum Aggregator {
         // 逐桶缓存：归档里有上万个 bucket，但只有几十个模型、几百天。
         // 之前每个 bucket 都要：①DayKey 的 DateFormatter 解析（还要抢锁）
         // ②价格表全表匹配（~100 条 pattern 的 contains，每桶两次）——实测占 summarize 的大头。
+        var habitGrid = [Int64](repeating: 0, count: 168)
+        var dayDateForHabit: [String: Date?] = [:]
+        var projectModelMap: [String: [String: (TokenCounts, Double)]] = [:]
         var modelCache: [String: String] = [:]
         var priceCache: [String: ModelPrice?] = [:]
         func priceOf(_ m: String) -> ModelPrice? {
@@ -238,6 +241,19 @@ public enum Aggregator {
             var d = dayMap[b.day] ?? (TokenCounts(), 0)
             d.counts += b.counts; d.cost += c
             dayMap[b.day] = d
+            // 使用习惯矩阵：周几 × 小时（周几 0=周日）
+            if let date = dayDateForHabit[b.day] ?? {
+                let v = DayKey.date(for: b.day)
+                dayDateForHabit[b.day] = v
+                return v
+            }() {
+                let wd = (cal0.component(.weekday, from: date) - 1 + 7) % 7
+                habitGrid[wd * 24 + b.hour] += b.counts.total
+            }
+            // 项目 × 模型
+            var pm = projectModelMap[b.project]?[model] ?? (TokenCounts(), 0)
+            pm.0 += b.counts; pm.1 += c
+            projectModelMap[b.project, default: [:]][model] = pm
 
             // 会话聚合（Top N 用）
         }
@@ -330,6 +346,12 @@ public enum Aggregator {
         let calendarDays = dayStats(calendarKeys)
         let calendarByTool = calendarDays.map { stack(dayToolMap, day: $0.day) }
         let calendarByModel = calendarDays.map { stack(dayModelMap, day: $0.day) }
+        let projectModels: [ProjectModels] = projectMap.keys.map { key in
+            let parts = (projectModelMap[key] ?? [:])
+                .map { StackPart(name: $0.key, counts: $0.value.0, cost: $0.value.1) }
+                .sorted { $0.counts.total > $1.counts.total }
+            return ProjectModels(project: key, parts: Array(parts.prefix(8)))
+        }
         let denom = Double(counts.input + counts.cacheRead)
         let hit = denom > 0 ? Double(counts.cacheRead) / denom : 0
         let projects = projectMap.map { ProjectStat(project: $0.key, counts: $0.value.counts, cost: $0.value.cost, share: Double($0.value.counts.total) / Double(totalAll), tools: Array($0.value.tools).sorted()) }
@@ -383,7 +405,9 @@ public enum Aggregator {
                        forecastCost: forecastCost, forecastCounts: forecastCounts,
                        calendarDays: calendarDays,
                        calendarByTool: calendarByTool,
-                       calendarByModel: calendarByModel)
+                       calendarByModel: calendarByModel,
+                       habitGrid: habitGrid,
+                       projectModels: projectModels)
     }
 
     /// 热扫描：只解析最近活跃的文件，返回今日含缓存总量（用于燃烧速率）

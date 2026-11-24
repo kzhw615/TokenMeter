@@ -315,6 +315,20 @@ public struct Summary: Codable, Sendable {
     public var calendarDays: [DayStat]?
     public var calendarByTool: [DayStack]?
     public var calendarByModel: [DayStack]?
+    /// 使用习惯：7×24 的用量矩阵（下标 = 周几*24 + 小时，周几 0=周日）
+    public var habitGrid: [Int64]?
+    /// 每个项目用了哪些模型（面板里点开项目看明细）
+    public var projectModels: [ProjectModels]?
+}
+
+/// 某个项目的模型构成（parts 已按用量降序）
+public struct ProjectModels: Codable, Sendable {
+    public var project: String
+    public var parts: [StackPart]
+    public init(project: String, parts: [StackPart]) {
+        self.project = project
+        self.parts = parts
+    }
 }
 
 public struct SourceStatus: Codable, Sendable {
