@@ -218,6 +218,15 @@ public enum Aggregator {
             var dm = dayModelMap[b.day]?[model] ?? (TokenCounts(), 0)
             dm.0 += b.counts; dm.1 += c
             dayModelMap[b.day, default: [:]][model] = dm
+            // 使用习惯矩阵：周几 × 小时（周几 0=周日）
+            if let date = dayDateForHabit[b.day] ?? {
+                let v = DayKey.date(for: b.day)
+                dayDateForHabit[b.day] = v
+                return v
+            }() {
+                let wd = (cal0.component(.weekday, from: date) - 1 + 7) % 7
+                habitGrid[wd * 24 + b.hour] += b.counts.total
+            }
             if let startKey, b.day < startKey { continue }
             if let endKey, b.day > endKey { continue }
             counts += b.counts
@@ -232,6 +241,10 @@ public enum Aggregator {
             var pj = projectMap[b.project] ?? (TokenCounts(), 0, [])
             pj.counts += b.counts; pj.cost += c; pj.tools.insert(b.tool)
             projectMap[b.project] = pj
+            // 项目 × 模型
+            var pm = projectModelMap[b.project]?[model] ?? (TokenCounts(), 0)
+            pm.0 += b.counts; pm.1 += c
+            projectModelMap[b.project, default: [:]][model] = pm
             var h = hourMap[b.hour] ?? (TokenCounts(), 0)
             h.counts += b.counts; h.cost += c
             hourMap[b.hour] = h
@@ -241,19 +254,6 @@ public enum Aggregator {
             var d = dayMap[b.day] ?? (TokenCounts(), 0)
             d.counts += b.counts; d.cost += c
             dayMap[b.day] = d
-            // 使用习惯矩阵：周几 × 小时（周几 0=周日）
-            if let date = dayDateForHabit[b.day] ?? {
-                let v = DayKey.date(for: b.day)
-                dayDateForHabit[b.day] = v
-                return v
-            }() {
-                let wd = (cal0.component(.weekday, from: date) - 1 + 7) % 7
-                habitGrid[wd * 24 + b.hour] += b.counts.total
-            }
-            // 项目 × 模型
-            var pm = projectModelMap[b.project]?[model] ?? (TokenCounts(), 0)
-            pm.0 += b.counts; pm.1 += c
-            projectModelMap[b.project, default: [:]][model] = pm
 
             // 会话聚合（Top N 用）
         }

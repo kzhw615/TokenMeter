@@ -220,8 +220,13 @@ final class TokenMeterCoreTests: XCTestCase {
                              project: "proj-x", counts: TokenCounts(input: 2000), requests: 1)
         let b3 = UsageBucket(day: "2026-11-17", hour: 14, tool: "T2", model: "m-a",
                              project: "proj-y", counts: TokenCounts(input: 3000), requests: 1)
+        // 习惯矩阵统计全部历史：即使只看今天，也应该包含之前的数据
+        let todayOnly = Aggregator.summarize(buckets: [b1, b2, b3], range: .today,
+                                             pricing: PricingTable.load(), statuses: [])
         let summary = Aggregator.summarize(buckets: [b1, b2, b3], range: .all,
                                            pricing: PricingTable.load(), statuses: [])
+        XCTAssertEqual((todayOnly.habitGrid ?? []).reduce(0, +), 1000 + 2000 + 3000,
+                       "习惯矩阵与所选范围无关，应覆盖全部历史")
 
         let grid = summary.habitGrid ?? []
         XCTAssertEqual(grid.count, 168)

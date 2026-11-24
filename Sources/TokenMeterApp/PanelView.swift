@@ -651,6 +651,8 @@ struct PanelView: View {
 
     /// 使用习惯：7 行（周日…周六）× 24 列（小时）的用量热力图。
     /// 回答「一周里什么时候最烧钱」，数据来自 Summary.habitGrid（168 个格子）。
+    /// 注意：这一块统计**全部历史**，不跟随上方范围切换（和日历热力图一致）——
+    /// 只算当天的话整张图只有一个格子会亮，看不出习惯。
     private func habitSection(_ s: Summary) -> some View {
         let cells = (s.habitGrid?.count == 168) ? (s.habitGrid ?? []) : []
         let nonZero = cells.filter { $0 > 0 }.sorted()
