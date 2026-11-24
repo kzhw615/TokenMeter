@@ -199,5 +199,8 @@ enum L10n {
 "取消": "Cancel",
 "正在统计历史用量…": "Scanning history…",
 "分钟": " min",
+"全部历史": "All time",
+"天有数据": "days with data",
+"本周": "This week",
     ]
 }

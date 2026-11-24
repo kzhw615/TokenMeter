@@ -679,7 +679,16 @@ struct PanelView: View {
                                         : ["日", "一", "二", "三", "四", "五", "六"]
 
         return VStack(alignment: .leading, spacing: 8) {
-            collapsibleTitle(L10n.t("使用习惯 · 周几 × 小时"), key: "habit")
+            // 标题右侧标明统计范围，免得以为是「本周」
+            let dayCount = (s.calendarDays ?? []).filter { $0.counts.total > 0 }.count
+            HStack(spacing: 8) {
+                collapsibleTitle(L10n.t("使用习惯 · 周几 × 小时"), key: "habit")
+                Text(L10n.t("全部历史") + " · \(dayCount) " + L10n.t("天有数据"))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .padding(.trailing, 6)
+                    .fixedSize()
+            }
             if !isCollapsed("habit") {
                 if cells.isEmpty {
                     emptyNote
