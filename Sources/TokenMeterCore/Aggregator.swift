@@ -361,7 +361,13 @@ public enum Aggregator {
             let e = hourMap[h]
             return HourStat(hour: h, counts: e?.counts ?? TokenCounts(), cost: e?.cost ?? 0)
         }
-        let hoursMode = singleDay ? (range == .today ? "今日逐小时" : "昨日逐小时") : "按钟点分布（范围内汇总）"
+        let hoursMode: String = {
+            if Fmt.english {
+                return singleDay ? (range == .today ? "Today, hourly" : "Yesterday, hourly")
+                                 : "By hour of day (range total)"
+            }
+            return singleDay ? (range == .today ? "今日逐小时" : "昨日逐小时") : "按钟点分布（范围内汇总）"
+        }()
         let hoursByModel = (0..<24).map { h -> HourStack in
             let parts = (hourModelMap[h] ?? [:])
                 .filter { !ignoredModels.contains($0.key.lowercased()) }

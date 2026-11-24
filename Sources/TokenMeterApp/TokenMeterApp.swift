@@ -774,6 +774,13 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// 语言变化：同步数字单位并重建界面（面板标题、菜单栏文案都受影响）
+    func languageChanged() {
+        Fmt.english = L10n.isEnglish
+        objectWillChange.send()
+        refresh()
+    }
+
     /// 退出时记录时间，供下次启动判断「关机前已完成」
     func noteRunEnd() {
         UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "lastRunEndAt")

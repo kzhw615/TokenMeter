@@ -67,6 +67,17 @@ public struct UsageBucket: Codable, Equatable, Sendable {
 public enum RangeKind: String, CaseIterable, Codable, Sendable {
     case today, yesterday, d7, d30, thisMonth, lastMonth, all
     public var label: String {
+        if Fmt.english {
+            switch self {
+            case .today: return "Today"
+            case .yesterday: return "Yesterday"
+            case .d7: return "7 days"
+            case .d30: return "30 days"
+            case .thisMonth: return "This month"
+            case .lastMonth: return "Last month"
+            case .all: return "All"
+            }
+        }
         switch self {
         case .today: return "今天"
         case .yesterday: return "昨天"

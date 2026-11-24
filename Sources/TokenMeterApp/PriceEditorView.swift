@@ -27,7 +27,7 @@ struct PriceEditorView: View {
                 HStack(spacing: 4) {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 8, weight: .semibold))
-                    Text("编辑单价")
+                    Text(L10n.t("编辑单价"))
                         .font(.caption)
                     Text("(\(rows.count) 个模型)")
                         .font(.caption2)
@@ -39,7 +39,7 @@ struct PriceEditorView: View {
             }
             .buttonStyle(.plain)
             if expanded {
-            Text("单位：美元 / 百万 tokens；名称按子串匹配，从上到下先命中先生效。")
+            Text(L10n.t("单位：美元 / 百万 tokens；名称按子串匹配，从上到下先命中先生效。"))
                 .font(.caption2).foregroundStyle(.tertiary)
             columnHeader
             ScrollView {
@@ -63,7 +63,7 @@ struct PriceEditorView: View {
                                     .foregroundStyle(.tertiary)
                             }
                             .buttonStyle(.borderless)
-                            .help("删除这一行")
+                            .help(L10n.t("删除这一行"))
                         }
                         .font(.caption2)
                     }
@@ -73,9 +73,9 @@ struct PriceEditorView: View {
             .scrollIndicators(.hidden)
             .padding(.trailing, 4)
             HStack(spacing: 8) {
-                Button("保存") { save() }
-                Button("加一行") { rows.append(Row(pattern: "", input: "", output: "", cr: "", cw: "")) }
-                Button("恢复内置") { reset() }
+                Button(L10n.t("保存")) { save() }
+                Button(L10n.t("加一行")) { rows.append(Row(pattern: "", input: "", output: "", cr: "", cw: "")) }
+                Button(L10n.t("恢复内置")) { reset() }
                 Spacer()
                 Text(message).font(.caption2).foregroundStyle(.secondary)
             }
@@ -97,11 +97,11 @@ struct PriceEditorView: View {
 
     private var columnHeader: some View {
         HStack(spacing: 4) {
-            Text("模型名称").frame(width: 132, alignment: .leading)
-            Text("输入").frame(width: 46)
-            Text("输出").frame(width: 46)
-            Text("缓存读").frame(width: 46)
-            Text("缓存写").frame(width: 46)
+            Text(L10n.t("模型名称")).frame(width: 132, alignment: .leading)
+            Text(L10n.t("输入")).frame(width: 46)
+            Text(L10n.t("输出")).frame(width: 46)
+            Text(L10n.t("缓存读")).frame(width: 46)
+            Text(L10n.t("缓存写")).frame(width: 46)
             Spacer(minLength: 0)
         }
         .font(.system(size: 9))

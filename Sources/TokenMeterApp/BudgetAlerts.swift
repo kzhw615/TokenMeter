@@ -57,7 +57,7 @@ extension AppModel {
             UserDefaults.standard.set(true, forKey: flagKey)
             let pct = Int((cost / budget * 100).rounded())
             let content = UNMutableNotificationContent()
-            content.title = "TokenMeter 预算提醒"
+            content.title = L10n.t("TokenMeter 预算提醒")
             content.body = "\(label)预估费用 \(Fmt.cost(cost)) 已达预算 \(Fmt.cost(budget)) 的 \(pct)%\(level >= 1 ? "（已超支）" : "")"
             content.sound = .default
             let req = UNNotificationRequest(identifier: flagKey, content: content, trigger: nil)

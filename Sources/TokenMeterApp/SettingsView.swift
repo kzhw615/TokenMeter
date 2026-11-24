@@ -29,9 +29,9 @@ struct SettingsView: View {
     // MARK: - 外观
 
     private var appearanceCard: some View {
-        card("外观") {
+        card(L10n.t("外观")) {
             HStack(spacing: 9) {
-                Text("主题色").font(.caption).foregroundStyle(.secondary).frame(width: 56, alignment: .leading)
+                Text(L10n.t("主题色")).font(.caption).foregroundStyle(.secondary).frame(width: 56, alignment: .leading)
                 ForEach(AppTheme.all) { t in
                     Button { model.themeID = t.id } label: {
                         Circle()
@@ -48,60 +48,77 @@ struct SettingsView: View {
                 Spacer()
             }
             HStack(spacing: 9) {
-                Text("菜单栏显示").font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
-                Picker("菜单栏显示", selection: Binding(get: { model.menuBarStyle }, set: { model.menuBarStyle = $0 })) {
-                    Text("用量 + 费用").tag("both")
-                    Text("仅用量").tag("tokens")
-                    Text("仅费用").tag("cost")
-                    Text("仅图标").tag("icon")
+                Text(L10n.t("语言")).font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+                Picker("语言", selection: Binding(
+                    get: { L10n.mode },
+                    set: { v in
+                        UserDefaults.standard.set(v, forKey: "appLanguage")
+                        model.languageChanged()
+                    }
+                )) {
+                    Text(L10n.t("跟随系统语言")).tag("auto")
+                    Text("中文").tag("zh")
+                    Text("English").tag("en")
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+                .labelsHidden()
+            }
+            HStack(spacing: 9) {
+                Text(L10n.t("菜单栏显示")).font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+                Picker(L10n.t("菜单栏显示"), selection: Binding(get: { model.menuBarStyle }, set: { model.menuBarStyle = $0 })) {
+                    Text(L10n.t("用量 + 费用")).tag("both")
+                    Text(L10n.t("仅用量")).tag("tokens")
+                    Text(L10n.t("仅费用")).tag("cost")
+                    Text(L10n.t("仅图标")).tag("icon")
                 }
                 .pickerStyle(.segmented)
                 .controlSize(.small)
                 .labelsHidden()
 
                 // 速度显示策略：菜单栏宽度不够时收起速度，只留用量
-                Text("消耗速度").font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
-                Picker("消耗速度", selection: Binding(
+                Text(L10n.t("消耗速度")).font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+                Picker(L10n.t("消耗速度"), selection: Binding(
                     get: { model.menuBarRateMode },
                     set: { model.menuBarRateMode = $0 }
                 )) {
-                    Text("自动").tag("auto")
-                    Text("总是显示").tag("always")
-                    Text("不显示").tag("never")
+                    Text(L10n.t("自动")).tag("auto")
+                    Text(L10n.t("总是显示")).tag("always")
+                    Text(L10n.t("不显示")).tag("never")
                 }
                 .pickerStyle(.segmented)
                 .controlSize(.small)
                 .labelsHidden()
-                .help("自动：菜单栏拥挤时只显示用量，腾出宽度")
+                .help(L10n.t("自动：菜单栏拥挤时只显示用量，腾出宽度"))
             }
             HStack(spacing: 9) {
-                Text("面板外观").font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
-                Picker("面板外观", selection: Binding(get: { model.panelAppearance }, set: { model.panelAppearance = $0 })) {
-                    Text("跟随系统").tag("auto")
-                    Text("深色").tag("dark")
-                    Text("浅色").tag("light")
+                Text(L10n.t("面板外观")).font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+                Picker(L10n.t("面板外观"), selection: Binding(get: { model.panelAppearance }, set: { model.panelAppearance = $0 })) {
+                    Text(L10n.t("跟随系统")).tag("auto")
+                    Text(L10n.t("深色")).tag("dark")
+                    Text(L10n.t("浅色")).tag("light")
                 }
                 .pickerStyle(.segmented)
                 .controlSize(.small)
                 .labelsHidden()
 
                 // 速度显示策略：菜单栏宽度不够时收起速度，只留用量
-                Text("消耗速度").font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
-                Picker("消耗速度", selection: Binding(
+                Text(L10n.t("消耗速度")).font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+                Picker(L10n.t("消耗速度"), selection: Binding(
                     get: { model.menuBarRateMode },
                     set: { model.menuBarRateMode = $0 }
                 )) {
-                    Text("自动").tag("auto")
-                    Text("总是显示").tag("always")
-                    Text("不显示").tag("never")
+                    Text(L10n.t("自动")).tag("auto")
+                    Text(L10n.t("总是显示")).tag("always")
+                    Text(L10n.t("不显示")).tag("never")
                 }
                 .pickerStyle(.segmented)
                 .controlSize(.small)
                 .labelsHidden()
-                .help("自动：菜单栏拥挤时只显示用量，腾出宽度")
+                .help(L10n.t("自动：菜单栏拥挤时只显示用量，腾出宽度"))
             }
             HStack(spacing: 9) {
-                Text("玻璃不透明度").font(.caption).foregroundStyle(.secondary)
+                Text(L10n.t("玻璃不透明度")).font(.caption).foregroundStyle(.secondary)
                     .frame(width: 78, alignment: .leading)
                 Slider(value: Binding(get: { model.glassOpacity },
                                       set: { model.glassOpacity = $0 }), in: 0...1)
@@ -111,7 +128,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 34, alignment: .trailing)
             }
-            Toggle("登录时自动启动", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
+            Toggle(L10n.t("登录时自动启动"), isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .font(.caption)
@@ -121,36 +138,36 @@ struct SettingsView: View {
     // MARK: - 悬浮坞
 
     private var dockCard: some View {
-        card("侧边悬浮坞") {
+        card(L10n.t("侧边悬浮坞")) {
             HStack(spacing: 9) {
-                Text("位置").font(.caption).foregroundStyle(.secondary).frame(width: 56, alignment: .leading)
-                Picker("位置", selection: Binding(get: { model.sideDock }, set: { model.sideDock = $0 })) {
-                    Text("关闭").tag("off")
-                    Text("左侧").tag("left")
-                    Text("右侧").tag("right")
+                Text(L10n.t("位置")).font(.caption).foregroundStyle(.secondary).frame(width: 56, alignment: .leading)
+                Picker(L10n.t("位置"), selection: Binding(get: { model.sideDock }, set: { model.sideDock = $0 })) {
+                    Text(L10n.t("关闭")).tag("off")
+                    Text(L10n.t("左侧")).tag("left")
+                    Text(L10n.t("右侧")).tag("right")
                 }
                 .pickerStyle(.segmented)
                 .controlSize(.small)
                 .labelsHidden()
 
                 // 速度显示策略：菜单栏宽度不够时收起速度，只留用量
-                Text("消耗速度").font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
-                Picker("消耗速度", selection: Binding(
+                Text(L10n.t("消耗速度")).font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+                Picker(L10n.t("消耗速度"), selection: Binding(
                     get: { model.menuBarRateMode },
                     set: { model.menuBarRateMode = $0 }
                 )) {
-                    Text("自动").tag("auto")
-                    Text("总是显示").tag("always")
-                    Text("不显示").tag("never")
+                    Text(L10n.t("自动")).tag("auto")
+                    Text(L10n.t("总是显示")).tag("always")
+                    Text(L10n.t("不显示")).tag("never")
                 }
                 .pickerStyle(.segmented)
                 .controlSize(.small)
                 .labelsHidden()
-                .help("自动：菜单栏拥挤时只显示用量，腾出宽度")
+                .help(L10n.t("自动：菜单栏拥挤时只显示用量，腾出宽度"))
                 .frame(width: 200)
                 Spacer()
             }
-            Text("开启后可从屏幕边缘拖出，松手自动吸附；双击回到默认位置，单击展开面板。")
+            Text(L10n.t("开启后可从屏幕边缘拖出，松手自动吸附；双击回到默认位置，单击展开面板。"))
                 .font(.caption2).foregroundStyle(.tertiary)
         }
     }
@@ -158,12 +175,12 @@ struct SettingsView: View {
     // MARK: - 预算
 
     private var budgetCard: some View {
-        card("预算提醒") {
+        card(L10n.t("预算提醒")) {
             budgetRow(label: "每日", value: Binding(get: { model.dailyBudget }, set: { model.dailyBudget = $0 }),
                       cost: model.summariesByRange[.today]?.cost)
             budgetRow(label: "每月", value: Binding(get: { model.monthlyBudget }, set: { model.monthlyBudget = $0 }),
                       cost: model.summariesByRange[.thisMonth]?.cost)
-            Text("达到 80% 和 100% 时发送系统通知；填 0 表示不提醒。")
+            Text(L10n.t("达到 80% 和 100% 时发送系统通知；填 0 表示不提醒。"))
                 .font(.caption2).foregroundStyle(.tertiary)
         }
     }
@@ -196,38 +213,38 @@ struct SettingsView: View {
     // MARK: - 坞内展示源
 
     private var dockSourcesCard: some View {
-        card("悬浮坞显示的工具") {
+        card(L10n.t("悬浮坞显示的工具")) {
             HStack(spacing: 9) {
-                Text("材质").font(.caption).foregroundStyle(.secondary).frame(width: 56, alignment: .leading)
-                Picker("材质", selection: Binding(get: { model.dockStyle }, set: { model.dockStyle = $0 })) {
-                    Text("黑色").tag("ink")
-                    Text("液态玻璃").tag("glass")
+                Text(L10n.t("材质")).font(.caption).foregroundStyle(.secondary).frame(width: 56, alignment: .leading)
+                Picker(L10n.t("材质"), selection: Binding(get: { model.dockStyle }, set: { model.dockStyle = $0 })) {
+                    Text(L10n.t("黑色")).tag("ink")
+                    Text(L10n.t("液态玻璃")).tag("glass")
                 }
                 .pickerStyle(.segmented)
                 .controlSize(.small)
                 .labelsHidden()
 
                 // 速度显示策略：菜单栏宽度不够时收起速度，只留用量
-                Text("消耗速度").font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
-                Picker("消耗速度", selection: Binding(
+                Text(L10n.t("消耗速度")).font(.caption).foregroundStyle(.secondary).frame(width: 66, alignment: .leading)
+                Picker(L10n.t("消耗速度"), selection: Binding(
                     get: { model.menuBarRateMode },
                     set: { model.menuBarRateMode = $0 }
                 )) {
-                    Text("自动").tag("auto")
-                    Text("总是显示").tag("always")
-                    Text("不显示").tag("never")
+                    Text(L10n.t("自动")).tag("auto")
+                    Text(L10n.t("总是显示")).tag("always")
+                    Text(L10n.t("不显示")).tag("never")
                 }
                 .pickerStyle(.segmented)
                 .controlSize(.small)
                 .labelsHidden()
-                .help("自动：菜单栏拥挤时只显示用量，腾出宽度")
+                .help(L10n.t("自动：菜单栏拥挤时只显示用量，腾出宽度"))
             }
-            Toggle("显示工具状态", isOn: Binding(get: { model.dockShowHarness }, set: { model.dockShowHarness = $0 }))
+            Toggle(L10n.t("显示工具状态"), isOn: Binding(get: { model.dockShowHarness }, set: { model.dockShowHarness = $0 }))
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .font(.caption)
             if model.dockShowHarness {
-                Text("点名称可隐藏，灰色为当前不显示。")
+                Text(L10n.t("点名称可隐藏，灰色为当前不显示。"))
                     .font(.caption2).foregroundStyle(.tertiary)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3), spacing: 6) {
                     ForEach(model.sourceStates, id: \.0) { name, _ in
@@ -266,7 +283,7 @@ struct SettingsView: View {
     // MARK: - 价格
 
     private var pricingCard: some View {
-        card("模型价格") {
+        card(L10n.t("模型价格")) {
             PriceEditorView()
         }
     }
@@ -293,10 +310,10 @@ struct SettingsView: View {
     }
 
     private var sourcesCard: some View {
-        card("数据来源") {
+        card(L10n.t("数据来源")) {
             let rows = sourceRows
             if rows.isEmpty {
-                Text("还没有扫描结果").font(.caption2).foregroundStyle(.secondary)
+                Text(L10n.t("还没有扫描结果")).font(.caption2).foregroundStyle(.secondary)
             } else {
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
                     VStack(alignment: .leading, spacing: 1) {
@@ -335,7 +352,7 @@ struct SettingsView: View {
     // MARK: - 数据体检 + 状态判定说明
 
     private var healthCard: some View {
-        card("数据体检") {
+        card(L10n.t("数据体检")) {
             let issues = model.dataIssues
             HStack(spacing: 6) {
                 Image(systemName: issues.isEmpty ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
@@ -354,14 +371,14 @@ struct SettingsView: View {
                 }
             }
             Divider()
-            Text("各工具状态是怎么判断的").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+            Text(L10n.t("各工具状态是怎么判断的")).font(.caption2.weight(.medium)).foregroundStyle(.secondary)
             ForEach(["Codex", "DSH", "WorkBuddy"], id: \.self) { name in
                 HStack(spacing: 6) {
                     Text(name).font(.caption2).frame(width: 76, alignment: .leading)
                     Text(ActivityDetector.stateBasis(for: name)).font(.caption2).foregroundStyle(.secondary)
                 }
             }
-            Text("其余工具：依据日志写入时间推断（这些工具没有提供真实状态）")
+            Text(L10n.t("其余工具：依据日志写入时间推断（这些工具没有提供真实状态）"))
                 .font(.caption2).foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -370,23 +387,23 @@ struct SettingsView: View {
     // MARK: - 关于
 
     private var aboutCard: some View {
-        card("关于") {
+        card(L10n.t("关于")) {
             HStack(spacing: 8) {
                 Text("TokenMeter v\(UpdateKit.currentVersion())").font(.caption)
                 Spacer()
-                Button("检查更新") { model.checkForUpdates(force: true) }
+                Button(L10n.t("检查更新")) { model.checkForUpdates(force: true) }
                     .font(.caption)
                 if let notice = model.updateNotice {
                     Text(notice)
                         .font(.caption2)
                         .foregroundStyle(notice.contains("失败") ? Color.red : Color.secondary)
                 }
-                Button("打开数据目录") {
+                Button(L10n.t("打开数据目录")) {
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: ScanCache.cacheDir.path)
                 }
                 .font(.caption)
             }
-            Text("所有数据均来自本机日志，不会上传到任何服务器。")
+            Text(L10n.t("所有数据均来自本机日志，不会上传到任何服务器。"))
                 .font(.caption2).foregroundStyle(.tertiary)
         }
     }

@@ -630,7 +630,7 @@ struct SideDockView: View {
         return VStack(spacing: 0) {
           VStack(spacing: 3) {
             iconView
-            Text("今天").font(.system(size: 9)).foregroundStyle(textSecondary)
+            Text(L10n.t("今天")).font(.system(size: 9)).foregroundStyle(textSecondary)
             Text(tokensText)
                 .font(.system(size: 12, weight: .bold))
                 .monospacedDigit()

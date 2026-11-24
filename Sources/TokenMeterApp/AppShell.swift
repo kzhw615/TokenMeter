@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
+        Fmt.english = L10n.isEnglish   // 数字单位（万/亿 vs K/M/B）跟语言走
         PricingTable.writeTemplateIfMissing()
         let model = AppModel()
         self.model = model

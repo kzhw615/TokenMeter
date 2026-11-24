@@ -176,7 +176,7 @@ struct PanelView: View {
         }
         .onTapGesture { toggleSection(key) }
         .animation(.easeOut(duration: 0.12), value: hoveredSection)
-        .help(isCollapsed(key) ? "展开" : "收起")
+        .help(L10n.t(isCollapsed(key) ? "展开" : "收起"))
     }
 
     /// 图表行的点击层：铺在整行背景上，空白处点一下就能折叠，
@@ -206,19 +206,19 @@ struct PanelView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.down.circle.fill").foregroundStyle(.orange)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("新版本 v\(v) 可用").font(.caption)
+                            Text(L10n.t("新版本 v") + v + L10n.t("可用")).font(.caption)
                             switch model.updatePhase {
                             case .downloading:
                                 HStack(spacing: 4) {
                                     ProgressView().controlSize(.mini)
-                                    Text("正在下载更新…").font(.caption2).foregroundStyle(.secondary)
+                                    Text(L10n.t("正在下载更新…")).font(.caption2).foregroundStyle(.secondary)
                                 }
                             case .verifying:
-                                Text("正在校验 sha256…").font(.caption2).foregroundStyle(.secondary)
+                                Text(L10n.t("正在校验 sha256…")).font(.caption2).foregroundStyle(.secondary)
                             case .installing:
-                                Text("正在替换应用…").font(.caption2).foregroundStyle(.secondary)
+                                Text(L10n.t("正在替换应用…")).font(.caption2).foregroundStyle(.secondary)
                             case .restarting:
-                                Text("即将重启…").font(.caption2).foregroundStyle(.secondary)
+                                Text(L10n.t("即将重启…")).font(.caption2).foregroundStyle(.secondary)
                             case .failed(let m):
                                 Text(m).font(.caption2).foregroundStyle(.red)
                             case .idle:
@@ -231,7 +231,7 @@ struct PanelView: View {
                                 .buttonStyle(.borderless).font(.caption)
                                 .disabled(model.updatePhase.busy)
                         }
-                        Button("下载页") {
+                        Button(L10n.t("下载页")) {
                             if let u = model.releaseURL { NSWorkspace.shared.open(u) }
                         }
                         .buttonStyle(.borderless).font(.caption)
@@ -296,7 +296,8 @@ struct PanelView: View {
         let cost = parts.reduce(0.0) { $0 + $1.cost }
         let weekday: String = {
             guard let d = DayKey.date(for: day) else { return "" }
-            let names = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
+            let names = L10n.isEnglish ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+                                    : ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
             let idx = Calendar.current.component(.weekday, from: d) - 1
             return (0..<7).contains(idx) ? names[idx] : ""
         }()
@@ -308,7 +309,7 @@ struct PanelView: View {
                 Text(Fmt.cost(cost)).font(.system(size: 10)).monospacedDigit().foregroundStyle(.secondary)
             }
             if parts.isEmpty {
-                Text("当天没有用量记录").font(.system(size: 10)).foregroundStyle(.tertiary)
+                Text(L10n.t("当天没有用量记录")).font(.system(size: 10)).foregroundStyle(.tertiary)
             } else {
                 ForEach(Array(parts.prefix(5).enumerated()), id: \.offset) { i, p in
                     HStack(spacing: 5) {
@@ -360,19 +361,19 @@ struct PanelView: View {
                     Spacer()
                     if model.scanTotal > 0 {
                         if let eta = scanETA {
-                            Text("剩约 \(eta)").font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
+                            Text(L10n.t("剩约") + " " + eta).font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
                         }
                         Text("\(model.scanDone) / \(model.scanTotal)")
                             .font(.caption2).monospacedDigit().foregroundStyle(.tertiary)
                     } else if let t = model.scanStartedAt {
-                        Text("已 \(Int(Date().timeIntervalSince(t))) 秒")
+                        Text("\(Int(Date().timeIntervalSince(t)))" + L10n.t("秒前"))
                             .font(.caption2).foregroundStyle(.tertiary)
                     }
                 }
                 ProgressView(value: model.scanFraction)
                     .progressViewStyle(.linear)
                     .tint(model.theme.primary)
-                Text("首次运行或日志有大量变动时需要几分钟；已完成的文件会被缓存，之后是秒级增量。")
+                Text(L10n.t("首次运行或日志有大量变动时需要几分钟；已完成的文件会被缓存，之后是秒级增量。"))
                     .font(.caption2).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -408,7 +409,7 @@ struct PanelView: View {
             if model.isBurning {
                 HStack(spacing: 3) {
                     FlameIcon(ticker: model.flame, frames: model.flameFrames(for: 12), size: 12)
-                    Text("燃烧中 \(model.burningSources.joined(separator: ", "))")
+                    Text(L10n.t("燃烧中") + " " + model.burningSources.joined(separator: ", "))
                         .font(.caption).foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -441,7 +442,7 @@ struct PanelView: View {
                         .foregroundStyle(.orange)
                 }
                 .buttonStyle(.borderless)
-                .help("新版本 v\(v) 可用，点击一键更新")
+                .help(L10n.t("新版本 v") + v + L10n.t("可用，点击一键更新"))
             }
             Text("v\(UpdateKit.currentVersion())")
                 .font(.caption2)
@@ -452,16 +453,16 @@ struct PanelView: View {
                 if model.updateChecking {
                     HStack(spacing: 3) {
                         ProgressView().controlSize(.mini).frame(width: 10, height: 10)
-                        Text("检查中…").font(.caption2)
+                        Text(L10n.t("检查中…")).font(.caption2)
                     }
                 } else {
-                    Text("检查更新").font(.caption2)
+                    Text(L10n.t("检查更新")).font(.caption2)
                 }
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
             .disabled(model.updateChecking)
-            .help("立即检查是否有新版本")
+            .help(L10n.t("立即检查是否有新版本"))
             if let notice = model.updateNotice {
                 Text(notice)
                     .font(.caption2)
@@ -470,22 +471,22 @@ struct PanelView: View {
                     .transition(.opacity)
             }
             Button(action: { confirmQuit() }) {
-                Text("退出").font(.caption2)
+                Text(L10n.t("退出")).font(.caption2)
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
-            .help("退出 TokenMeter")
+            .help(L10n.t("退出 TokenMeter"))
         }
     }
 
     /// 退出前弹窗确认，避免误点直接退出
     private func confirmQuit() {
         let alert = NSAlert()
-        alert.messageText = "退出 TokenMeter？"
-        alert.informativeText = "退出后菜单栏的用量显示与燃烧状态会停止更新；重新打开 App 即可恢复。"
+        alert.messageText = L10n.t("退出 TokenMeter？")
+        alert.informativeText = L10n.t("退出后菜单栏的用量显示与燃烧状态会停止更新；重新打开 App 即可恢复。")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "退出")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L10n.t("退出"))
+        alert.addButton(withTitle: L10n.t("取消"))
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
             NSApplication.shared.terminate(nil)
@@ -500,20 +501,20 @@ struct PanelView: View {
             )
 
             SlidingTabs(
-                options: [(option: true, label: "含缓存"), (option: false, label: "不含缓存")],
+                options: [(option: true, label: L10n.t("含缓存")), (option: false, label: L10n.t("不含缓存"))],
                 selection: Binding(get: { model.includeCache }, set: { model.includeCache = $0 })
             )
 
             HStack(spacing: 0) {
-                card(title: model.includeCache ? "用量（含缓存）" : "用量（不含缓存）",
+                card(title: L10n.t(model.includeCache ? "用量（含缓存）" : "用量（不含缓存）"),
                      value: Fmt.tokens(disp(s.counts)), unit: "tokens",
-                     sub: "输入 \(Fmt.tokens(s.counts.input))\n输出 \(Fmt.tokens(s.counts.output))")
+                     sub: L10n.t("输入") + " \(Fmt.tokens(s.counts.input))\n" + L10n.t("输出") + " \(Fmt.tokens(s.counts.output))")
                 Divider()
-                card(title: "预估费用", value: Fmt.cost(s.cost), unit: "",
-                     sub: "缓存读 \(Fmt.tokens(s.counts.cacheRead))\n缓存写 \(Fmt.tokens(s.counts.cacheWrite))")
+                card(title: L10n.t("预估费用"), value: Fmt.cost(s.cost), unit: "",
+                     sub: L10n.t("缓存读") + " \(Fmt.tokens(s.counts.cacheRead))\n" + L10n.t("缓存写") + " \(Fmt.tokens(s.counts.cacheWrite))")
                 Divider()
-                card(title: "缓存命中率", value: Fmt.percent(s.cacheHitRate), unit: "",
-                     sub: "\(s.requests) 次调用")
+                card(title: L10n.t("缓存命中率"), value: Fmt.percent(s.cacheHitRate), unit: "",
+                     sub: "\(s.requests) " + L10n.t("次调用"))
             }
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 10).fill(model.theme.cardTint))
@@ -563,7 +564,7 @@ struct PanelView: View {
     private func toolsSection(_ s: Summary) -> some View {
         let totalDisp = s.tools.reduce(Int64(0)) { $0 + disp($1.counts) }
         return VStack(alignment: .leading, spacing: 8) {
-            collapsibleTitle("按工具", key: "tools")
+            collapsibleTitle(L10n.t("按工具"), key: "tools")
             if !isCollapsed("tools") {
             if s.tools.isEmpty { emptyNote }
             ForEach(Array(s.tools.enumerated()), id: \.element.tool) { idx, t in
@@ -586,7 +587,7 @@ struct PanelView: View {
     private func modelsSection(_ s: Summary) -> some View {
         let totalDisp = s.models.reduce(Int64(0)) { $0 + disp($1.counts) }
         return VStack(alignment: .leading, spacing: 8) {
-            collapsibleTitle("按模型", key: "models")
+            collapsibleTitle(L10n.t("按模型"), key: "models")
             if !isCollapsed("models") {
             if s.models.isEmpty { emptyNote }
             let modelColors = seriesColors(s.models.map(\.model), globalOrder: s.models.map(\.model))
@@ -615,13 +616,13 @@ struct PanelView: View {
         let totalDisp = s.projects.reduce(Int64(0)) { $0 + disp($1.counts) }
         let list = Array(s.projects.prefix(8))
         return VStack(alignment: .leading, spacing: 8) {
-            collapsibleTitle("按项目", key: "projects")
+            collapsibleTitle(L10n.t("按项目"), key: "projects")
             if !isCollapsed("projects") {
             if list.isEmpty { emptyNote }
             let projColors = seriesColors(list.map(\.project), globalOrder: list.map(\.project))
             ForEach(Array(list.enumerated()), id: \.element.project) { idx, p in
                 HStack(spacing: 10) {
-                    Text(p.project == "-" ? "未归属" : p.project).font(.callout).frame(width: 110, alignment: .leading)
+                    Text(p.project == "-" ? L10n.t("未归属") : p.project).font(.callout).frame(width: 110, alignment: .leading)
                         .lineLimit(1).truncationMode(.middle)
                     bar(share: dispShare(p.counts, total: totalDisp), color: projColors[p.project] ?? palette[0])
                     Text(Fmt.tokens(disp(p.counts))).font(.callout).monospacedDigit()
@@ -672,10 +673,11 @@ struct PanelView: View {
         let cell = min(16, max(5, (352 - 16 - gap * 23) / 24))
         let gridW = 24 * (cell + gap) - gap
         let gridH = 7 * (cell + gap) - gap
-        let weekdayNames = ["日", "一", "二", "三", "四", "五", "六"]
+        let weekdayNames = L10n.isEnglish ? ["S", "M", "T", "W", "T", "F", "S"]
+                                        : ["日", "一", "二", "三", "四", "五", "六"]
 
         return VStack(alignment: .leading, spacing: 8) {
-            collapsibleTitle("使用习惯 · 周几 × 小时", key: "habit")
+            collapsibleTitle(L10n.t("使用习惯 · 周几 × 小时"), key: "habit")
             if !isCollapsed("habit") {
                 if cells.isEmpty {
                     emptyNote
@@ -710,7 +712,7 @@ struct PanelView: View {
                             .frame(width: gridW, height: gridH)
                             ZStack(alignment: .leading) {
                                 ForEach([0, 6, 12, 18], id: \.self) { h in
-                                    Text("\(h)时")
+                                    Text("\(h)" + L10n.t("时"))
                                         .font(.system(size: 8))
                                         .foregroundStyle(.tertiary)
                                         .offset(x: CGFloat(h) * (cell + gap))
@@ -719,7 +721,7 @@ struct PanelView: View {
                             .frame(width: gridW, height: 10, alignment: .leading)
                         }
                     }
-                    Text("颜色越深表示那个时段用量越大；横向是小时，纵向是周几")
+                    Text(L10n.t("颜色越深表示那个时段用量越大；横向是小时，纵向是周几"))
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
             }
@@ -792,7 +794,7 @@ struct PanelView: View {
         let stacks = s.hoursByModel ?? []
         let data: [HourStack] = stacks.isEmpty
             ? s.hours.map { HourStack(hour: $0.hour, parts: $0.counts.total > 0
-                ? [StackPart(name: "全部模型", counts: $0.counts, cost: $0.cost)] : []) }
+                ? [StackPart(name: L10n.t("全部模型"), counts: $0.counts, cost: $0.cost)] : []) }
             : stacks
         var seriesTotals: [String: Int64] = [:]
         // 合计必须和柱高同口径：柱高用 disp()（受「含缓存/不含缓存」影响），
@@ -805,9 +807,9 @@ struct PanelView: View {
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                collapsibleTitle("逐小时用量 · \(s.hoursMode)", key: "hours", fill: false, selfHighlight: false)
+                collapsibleTitle(L10n.t("逐小时用量") + " · " + s.hoursMode, key: "hours", fill: false, selfHighlight: false)
                 Spacer(minLength: 8)
-                Text("总计 \(Fmt.tokens(totalTokens))")
+                Text(L10n.t("总计") + " " + Fmt.tokens(totalTokens))
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
                     .lineLimit(1).fixedSize()
             }
@@ -841,7 +843,7 @@ struct PanelView: View {
                 AxisMarks(values: ["03", "09", "15", "21"]) { value in
                     AxisValueLabel {
                         if let key = value.as(String.self), let h = Int(key) {
-                            Text("\(h)时").font(.caption2)
+                            Text("\(h)" + L10n.t("时")).font(.caption2)
                         }
                     }
                 }
@@ -938,7 +940,7 @@ struct PanelView: View {
         let stacks: [DayStack] = byModel ? (s.trendByModel ?? []) : (s.trendByTool ?? [])
         let fallback: [DayStack] = s.trendDays.map { d in
             DayStack(day: d.day, parts: d.counts.total > 0
-                ? [StackPart(name: byModel ? "全部模型" : "全部工具", counts: d.counts, cost: d.cost)] : [])
+                ? [StackPart(name: L10n.t(byModel ? "全部模型" : "全部工具"), counts: d.counts, cost: d.cost)] : [])
         }
         let data = stacks.isEmpty ? fallback : stacks
         // 系列按总量降序，保证颜色稳定
@@ -956,10 +958,10 @@ struct PanelView: View {
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                collapsibleTitle(byModel ? "每日用量 · 按模型" : "每日用量 · 按工具", key: "trend",
+                collapsibleTitle(L10n.t(byModel ? "每日用量 · 按模型" : "每日用量 · 按工具"), key: "trend",
                                  fill: false, selfHighlight: false)
                 Spacer()
-                Text("总计 \(Fmt.tokens(totalTokens))")
+                Text(L10n.t("总计") + " " + Fmt.tokens(totalTokens))
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
                     .lineLimit(1).fixedSize()
                 Picker("", selection: Binding(
@@ -969,8 +971,8 @@ struct PanelView: View {
                         UserDefaults.standard.set(v, forKey: "trendViewMode")
                     }
                 )) {
-                    Text("趋势").tag("bars")
-                    Text("日历").tag("calendar")
+                    Text(L10n.t("趋势")).tag("bars")
+                    Text(L10n.t("日历")).tag("calendar")
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -984,8 +986,8 @@ struct PanelView: View {
                         UserDefaults.standard.set(v, forKey: "trendStackMode")
                     }
                 )) {
-                    Text("工具").tag("tool")
-                    Text("模型").tag("model")
+                    Text(L10n.t("工具")).tag("tool")
+                    Text(L10n.t("模型")).tag("model")
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -1232,20 +1234,20 @@ struct PanelView: View {
                 }
             })
             HStack(spacing: 4) {
-                Text("少").font(.system(size: 9)).foregroundStyle(.tertiary)
+                Text(L10n.t("少")).font(.system(size: 9)).foregroundStyle(.tertiary)
                 ForEach(Array(tints.enumerated()), id: \.offset) { i, _ in
                     RoundedRectangle(cornerRadius: 2).fill(tints[i]).frame(width: 9, height: 9)
                 }
-                Text("多").font(.system(size: 9)).foregroundStyle(.tertiary)
+                Text(L10n.t("多")).font(.system(size: 9)).foregroundStyle(.tertiary)
                 Spacer()
-                Text("\(dayTotals.values.filter { $0 > 0 }.count) 天有记录")
+                Text("\(dayTotals.values.filter { $0 > 0 }.count)" + L10n.t(" 天有记录"))
                     .font(.system(size: 9)).foregroundStyle(.tertiary)
             }
             if let sel = selectedDay {
                 dayDetail(day: sel, stack: data.first { $0.day == sel })
             } else {
                 Text(hoveredDay.flatMap { d in dayTotals[d].map { "\(String(d.dropFirst(5))) · \(Fmt.tokens($0))" } }
-                     ?? "点按格子查看当天明细")
+                     ?? L10n.t("点按格子查看当天明细"))
                     .font(.system(size: 10))
                     .foregroundStyle(hoveredDay == nil ? .tertiary : .secondary)
             }
@@ -1259,19 +1261,19 @@ struct PanelView: View {
                 let currentRaw = s.comparableCounts.map { disp($0) } ?? disp(s.counts)
                 let prevRaw = disp(prev)
                 let tokenDiff = prevRaw > 0 ? Double(currentRaw - prevRaw) / Double(prevRaw) : 0
-                let target = s.previousLabel ?? "上一周期"
+                let target = s.previousLabel ?? L10n.t("上一周期")
                 // 用带符号的百分比，避免「A → B」被误读成涨幅算式
                 HStack(spacing: 6) {
-                    Text("用量 \(tokenDiff >= 0 ? "+" : "−")\(Fmt.percent(abs(tokenDiff)))")
+                    Text(L10n.t("用量") + " \(tokenDiff >= 0 ? "+" : "−")\(Fmt.percent(abs(tokenDiff)))")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(tokenDiff >= 0 ? Color.orange : Color.green)
                     if let pc = s.previousCost, let cur = s.comparableCost, pc > 0 {
                         let costDiff = (cur - pc) / pc
-                        Text("费用 \(costDiff >= 0 ? "+" : "−")\(Fmt.percent(abs(costDiff)))")
+                        Text(L10n.t("费用") + " \(costDiff >= 0 ? "+" : "−")\(Fmt.percent(abs(costDiff)))")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(costDiff >= 0 ? Color.orange : Color.green)
                     }
-                    Text("对比\(target)")
+                    Text(L10n.t("对比") + target)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -1279,7 +1281,7 @@ struct PanelView: View {
             if let fc = s.forecastCost, fc > 0 {
                 HStack(spacing: 4) {
                     Image(systemName: "chart.line.uptrend.xyaxis").font(.caption2)
-                    Text("按当前速度预计本月 \(Fmt.cost(fc))").font(.caption)
+                    Text(L10n.t("按当前速度预计本月") + " " + Fmt.cost(fc)).font(.caption)
                 }
                 .foregroundStyle(.secondary)
             }
@@ -1298,19 +1300,19 @@ struct PanelView: View {
 private var footer: some View {
         HStack(spacing: 10) {
             if let t = model.lastScan {
-                Text("上次统计 \(timeFormatter.string(from: t))").font(.caption2).foregroundStyle(.secondary)
+                Text(L10n.t("上次统计") + " " + timeFormatter.string(from: t)).font(.caption2).foregroundStyle(.secondary)
             }
             if let m = model.settingsMessage {
                 Text(m).font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("刷新") { model.refresh() }
+            Button(L10n.t("刷新")) { model.refresh() }
                 .buttonStyle(.borderless)
                 .keyboardShortcut("r", modifiers: .command)
-            Button("导出") { actions.exportCSV() }
+            Button(L10n.t("导出")) { actions.exportCSV() }
                 .buttonStyle(.borderless)
-                .help("把当前范围的明细导出成 CSV")
-            Button("设置") { actions.openSettings() }
+                .help(L10n.t("把当前范围的明细导出成 CSV"))
+            Button(L10n.t("设置")) { actions.openSettings() }
                 .buttonStyle(.borderless)
         }
         .padding(.top, 4)
@@ -1360,7 +1362,7 @@ private func budgetRow(label: String, value: Binding<Double>, cost: Double?) -> 
     }
 
     private var emptyNote: some View {
-        Text("该范围内暂无数据").font(.caption).foregroundStyle(.secondary)
+        Text(L10n.t("该范围内暂无数据")).font(.caption).foregroundStyle(.secondary)
     }
 
     private func bar(share: Double, color: Color) -> some View {

@@ -1,9 +1,18 @@
 import Foundation
 
 public enum Fmt {
-    /// 中文单位：亿 / 万
+    /// 英文界面用 K/M/B 单位，中文界面用 万/亿。
+    /// 由 App 在启动时按语言设置，CLI 按环境变量决定。
+    public static var english = ProcessInfo.processInfo.environment["TOKENMETER_LANG"] == "en"
+
     public static func tokens(_ n: Int64) -> String {
         let v = Double(n)
+        if english {
+            if abs(v) >= 1e9 { return String(format: "%.2fB", v / 1e9) }
+            if abs(v) >= 1e6 { return String(format: "%.1fM", v / 1e6) }
+            if abs(v) >= 1e3 { return String(format: "%.1fK", v / 1e3) }
+            return String(Int64(v))
+        }
         if abs(v) >= 1e8 { return String(format: "%.2f亿", v / 1e8) }
         if abs(v) >= 1e4 { return String(format: "%.1f万", v / 1e4) }
         return String(Int64(v))
@@ -21,6 +30,12 @@ public enum Fmt {
 
     public static func compactTokens(_ n: Int64) -> String {
         let v = Double(n)
+        if english {
+            if abs(v) >= 1e9 { return String(format: "%.1fB", v / 1e9) }
+            if abs(v) >= 1e6 { return String(format: "%.1fM", v / 1e6) }
+            if abs(v) >= 1e3 { return String(format: "%.1fK", v / 1e3) }
+            return String(Int64(v))
+        }
         if abs(v) >= 1e8 { return String(format: "%.1f亿", v / 1e8) }
         if abs(v) >= 1e6 { return String(format: "%.1fM", v / 1e6) }
         if abs(v) >= 1e3 { return String(format: "%.1fK", v / 1e3) }
