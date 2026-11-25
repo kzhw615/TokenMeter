@@ -109,6 +109,8 @@ final class SideDockController: ObservableObject {
     var dockHeight: CGFloat { max(Self.barBlockHeight, topPadding + 112 + rowsBlockHeight + bottomInset) }
 
     @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合（拖动/回弹时渐变）
+    /// 坞是否真正显示着（用于判断「同一侧但被关掉了」这种状态）
+    var isShowing: Bool { panel != nil }
     /// 坞当前实际吸附在哪一侧（拖动后会和设置里的值同步）
     weak var appModel: AppModel?
     @Published var side: String = "right"

@@ -66,14 +66,17 @@ final class AppModel: ObservableObject {
     @Published var sideDock: String = UserDefaults.standard.string(forKey: "sideDock") ?? "off" {
         didSet {
             UserDefaults.standard.set(sideDock, forKey: "sideDock")
-            // 拖到另一侧时 snap() 已经挪好了窗口，这里不要再 apply 一次（会把 Y 重置成默认值）
-            if sideDock != dockController.side {
+            // 拖到另一侧时 snap() 已经挪好了窗口，这里不要再 apply 一次（会把 Y 重置成默认值）。
+            // 但「被关掉后重新打开」必须 apply —— 否则坞不会回来（关掉时 side 还是上次的值）。
+            if sideDock != dockController.side || !dockController.isShowing {
                 dockController.apply(mode: sideDock, model: self, useSaved: false)
             }
             if scanning { updateScanProgressTimer() }
         }
     }
     private let dockController = SideDockController()
+    /// 仅供自测钩子读取
+    var dockControllerForTest: SideDockController { dockController }
 
     /// 开机自启（SMAppService）
     @Published var launchAtLogin: Bool = (SMAppService.mainApp.status == .enabled)

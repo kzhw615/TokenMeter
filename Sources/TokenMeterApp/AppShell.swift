@@ -25,6 +25,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.statusBar?.showPanel()
             }
         }
+        // 自测用：按顺序切换悬浮坞状态，验证「关掉后还能再打开」
+        if let seq = ProcessInfo.processInfo.environment["TOKENMETER_DOCK_SEQ"] {
+            let steps = seq.split(separator: ",").map(String.init)
+            for (i, step) in steps.enumerated() {
+                let delay: Double = 9.0 + Double(i) * 2.5
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let model = self?.model else { return }
+                    model.sideDock = step
+                    let shown: Bool = model.dockControllerForTest.isShowing
+                    let text: String = "DBG dock seq step=\(step) → \(shown ? "显示" : "隐藏")\n"
+                    FileHandle.standardError.write(Data(text.utf8))
+                }
+            }
+        }
         // 截图/排查用：直接打开设置窗口
         if ProcessInfo.processInfo.environment["TOKENMETER_SHOW_SETTINGS"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 9) {
