@@ -155,3 +155,43 @@ private struct GlassPanel<V: View>: View {
 }
 
 #endif
+
+#if os(macOS)
+/// 真正的系统液态玻璃背景（AppKit 层）。
+/// SwiftUI 的 .glassEffect 在自定义 Shape 上的表现和系统组件不一致（缺边缘折射），
+/// 这里直接用 NSGlassEffectView，拿到的就是系统级 Liquid Glass。
+struct GlassBackdrop: NSViewRepresentable {
+    var cornerRadius: CGFloat
+    var tint: NSColor?
+
+    func makeNSView(context: Context) -> NSView {
+        if #available(macOS 26.0, *) {
+            let v = NSGlassEffectView()
+            v.style = .regular
+            v.cornerRadius = cornerRadius
+            v.tintColor = tint
+            return v
+        }
+        let v = NSVisualEffectView()
+        v.material = .hudWindow
+        v.blendingMode = .behindWindow
+        v.state = .active
+        v.wantsLayer = true
+        v.layer?.cornerRadius = cornerRadius
+        v.layer?.cornerCurve = .continuous
+        v.layer?.masksToBounds = true
+        return v
+    }
+
+    func updateNSView(_ v: NSView, context: Context) {
+        if #available(macOS 26.0, *), let g = v as? NSGlassEffectView {
+            g.cornerRadius = cornerRadius
+            g.tintColor = tint
+            return
+        }
+        if let e = v as? NSVisualEffectView {
+            e.layer?.cornerRadius = cornerRadius
+        }
+    }
+}
+#endif
