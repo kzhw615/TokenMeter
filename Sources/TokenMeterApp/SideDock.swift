@@ -692,43 +692,45 @@ struct SideDockView: View {
 
 
     /// 玻璃档的高光：overlay（背景层会被 AppKit 玻璃盖住）。
-    /// 关键技巧：在**左上角放一个 60×60 的方框**，方框里画圆角 30 的描边——
-    /// 它的左上四分之一弧线与胶囊圆角完全重合，而在方框内做对角线渐变天然就是 45°，
-    /// 不会像「整条长条上做渐变」那样退化成从上往下打光。
+    /// 画法：整圈描边 + 两个蒙版相乘
+    ///   ① 顶部 60×60 方框内的对角渐变 → 顶部弧线左亮右暗，45° 光向
+    ///   ② 纵向渐变（顶部亮、到一半高度消失）→ 亮光顺着左边向下延伸后淡出
+    /// 只用一个角部圆弧会显得像一个"圈"，加上纵向衰减才像沿着边缘的一道光。
     @ViewBuilder
     private var glassHighlight: some View {
-        let box: CGFloat = 60
-        let arc = RoundedRectangle(cornerRadius: 30, style: .continuous)
-        // 受光弧线：白 → 透明，位置按方框的对角线走
-        let lightStroke = LinearGradient(
+        let rim = RoundedRectangle(cornerRadius: 30, style: .continuous).inset(by: 1.1)
+        let diag = LinearGradient(
             stops: [.init(color: .white, location: 0.00),
-                    .init(color: .white.opacity(0.85), location: 0.10),
-                    .init(color: .white.opacity(0.35), location: 0.24),
-                    .init(color: .clear, location: 0.46)],
+                    .init(color: .white.opacity(0.80), location: 0.12),
+                    .init(color: .white.opacity(0.28), location: 0.28),
+                    .init(color: .clear, location: 0.48)],
             startPoint: .topLeading, endPoint: .bottomTrailing)
+            .frame(width: 64, height: 64)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // 纵向衰减：0% 全亮 → 35% 剩三成 → 60% 消失
+        let vertical = LinearGradient(
+            stops: [.init(color: .white, location: 0.00),
+                    .init(color: .white.opacity(0.30), location: 0.35),
+                    .init(color: .clear, location: 0.60)],
+            startPoint: .top, endPoint: .bottom)
 
-        ZStack(alignment: .topLeading) {
-            // ① 柔光晕：模糊版本，玻璃的"通透"来自这层，塑料只有硬反光
-            arc.stroke(lightStroke, lineWidth: 5)
-                .blur(radius: 3)
-                .opacity(0.9)
-                .frame(width: box, height: box)
+        ZStack {
+            // ① 柔光晕（薄一点，别糊成光斑）
+            rim.stroke(Color.white, lineWidth: 4)
+                .blur(radius: 2)
+                .opacity(0.75)
+                .mask(diag)
+                .mask(vertical)
             // ② 亮线本体
-            arc.stroke(lightStroke, lineWidth: 2.4)
-                .frame(width: box, height: box)
-            // ③ 内侧折射暗线：沿同一弧线往里收 2.4pt，压住"贴纸"感
-            arc.inset(by: 2.4)
-                .stroke(LinearGradient(
-                    stops: [.init(color: .black.opacity(0.22), location: 0.00),
-                            .init(color: .clear, location: 0.30)],
-                    startPoint: .topLeading, endPoint: .bottomTrailing),
-                        lineWidth: 1.4)
-                .frame(width: box, height: box)
+            rim.stroke(Color.white, lineWidth: 1.8)
+                .mask(diag)
+                .mask(vertical)
+            // ③ 内侧折射暗线：只在上半段，压住贴纸感
+            rim.inset(by: 2.2)
+                .stroke(Color.black.opacity(0.18), lineWidth: 1.2)
+                .mask(diag)
+                .mask(vertical)
         }
-        .frame(width: box, height: box, alignment: .topLeading)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.top, 1)
-        .padding(.leading, 1)
         .allowsHitTesting(false)
     }
 
