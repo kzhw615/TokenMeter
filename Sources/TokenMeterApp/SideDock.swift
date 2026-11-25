@@ -600,8 +600,11 @@ struct SideDockView: View {
                     // 也不会盖住上面的高光（NSGlassEffectView 是独立 AppKit 视图，
                     // 实测既不被 clipShape 裁、又会压在高光之上，所以退回这里）。
                     if #available(macOS 26.0, *) {
+                        // 注意：这里必须传**具体**形状。传 AnyShape 时 glassEffect 会忽略
+                        // 形状参数、直接铺满整个视图边界——表现就是「圆角没了，变成直角方块」。
+                        let capsule = RoundedRectangle(cornerRadius: 30, style: .continuous).inset(by: 4)
                         shape.fill(.clear)
-                            .glassEffect(.regular.tint(tintSwiftUI), in: shape)
+                            .glassEffect(.regular.tint(tintSwiftUI), in: capsule)
                     } else {
                         shape.fill(.ultraThinMaterial)
                     }
