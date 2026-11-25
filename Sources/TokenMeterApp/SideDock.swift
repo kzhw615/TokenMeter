@@ -163,8 +163,14 @@ final class SideDockController: ObservableObject {
     static let barBlockHeight: CGFloat = 168   // 舱体块恒定（已知安全组合）；可见舱体由形状内缩参数控制
     var rowCount: Int = 0
     // 必须 ≥ 喇叭口半径（26），否则下喇叭口会被窗口底边裁掉（右下角缺一块）
-    var bottomInset: CGFloat { max(28, BarFlareShape.defaultRadius + 2) }
-    var dockHeight: CGFloat { max(Self.barBlockHeight, 28 + 112 + (rowCount > 0 ? 10 + CGFloat(rowCount) * 34 : 0) + bottomInset) }
+    var bottomInset: CGFloat { max(16, BarFlareShape.defaultRadius - 10) }
+    /// 玻璃档顶部内边距更小（胶囊本身有弧度），黑档需要更多
+    var isGlassStyle: Bool = true
+    var topPadding: CGFloat { isGlassStyle ? 14 : 28 }
+    /// 工具行区域总高（行间距 11、行高 29）
+    var rowsBlockHeight: CGFloat { rowCount > 0 ? CGFloat(rowCount) * 40 - 11 + 8 : 0 }
+    /// 窗口高度 = 顶部内边距 + 数据块 + 工具行 + 底部内缩，不再留多余空白
+    var dockHeight: CGFloat { max(Self.barBlockHeight, topPadding + 112 + rowsBlockHeight + bottomInset) }
 
     @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合（拖动/回弹时渐变）
     @Published var side: String = "right"
@@ -179,6 +185,7 @@ final class SideDockController: ObservableObject {
 
     /// useSaved=true 仅首启：沿用上次吸附的侧别；设置切换走 false：显式意图优先
     func apply(mode: String, model: AppModel, useSaved: Bool = false) {
+        isGlassStyle = model.dockStyle != "ink"
         teardown()
         guard mode == "left" || mode == "right" else { return }
         guard let screen = NSScreen.main else { return }
@@ -593,7 +600,7 @@ struct SideDockView: View {
 
     /// 坞底 harness 三态行：橙脉冲=运行中 / 绿=待阅读 / 灰=空闲；居左 + 图标
     private var harnessRows: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 11) {
             ForEach(model.visibleDockSources, id: \.0) { name, state in
                 HStack(spacing: 0) {
                     if state == 0 {
@@ -609,7 +616,7 @@ struct SideDockView: View {
                         Image(nsImage: img)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 26, height: 26)
+                            .frame(width: 29, height: 29)
                             // 浅色玻璃上白色 logo（如 Claude）会消失，加一层极淡描边阴影提对比
                             .shadow(color: isGlassDock ? Color.black.opacity(0.35) : .clear,
                                     radius: isGlassDock ? 1.2 : 0)
@@ -617,9 +624,9 @@ struct SideDockView: View {
                         // 没有官方图标时不要自己造字母徽章（看起来像另一个产品），
                         // 统一退到 harness 中性图标
                         Image(systemName: "square.grid.2x2.fill")
-                            .font(.system(size: 15, weight: .medium))
+                            .font(.system(size: 17, weight: .medium))
                             .foregroundStyle(textTertiary)
-                            .frame(width: 26, height: 26)
+                            .frame(width: 29, height: 29)
                     }
                 }
                 .padding(.trailing, 5)
@@ -763,7 +770,7 @@ struct SideDockView: View {
           }
           .frame(width: 44, height: 112)
           .frame(width: 56)
-          .padding(.top, isGlassDock ? 14 : 28)
+          .padding(.top, controller.topPadding)
           harnessRows
           Spacer(minLength: 0)
         }
