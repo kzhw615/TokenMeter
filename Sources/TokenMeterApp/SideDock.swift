@@ -83,6 +83,39 @@ struct BarFlareShape: Shape {
     }
 }
 
+/// 坞的毛玻璃背景：AppKit 视图 + 层圆角裁切。
+/// 为什么不用 SwiftUI 的 material / glassEffect：这类「系统效果图层」在上屏合成时
+/// 不理会 SwiftUI 的 clipShape / in: 参数，会铺满整个窗口（表现为直角方块）。
+/// NSVisualEffectView 是自己的视图，layer.masksToBounds + cornerRadius 一定能裁住。
+final class DockBackdropView: NSView {
+    private let blur = NSVisualEffectView()
+    var style: String = "glass"
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.backgroundColor = .clear
+        layer?.cornerRadius = 30
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+        blur.material = .hudWindow
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        blur.wantsLayer = true
+        blur.layer?.masksToBounds = true
+        blur.layer?.cornerCurve = .continuous
+        addSubview(blur)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        // 铺满整个窗口，圆角由容器层裁切（窗口即胶囊，不留 4pt 边）
+        blur.frame = bounds
+        blur.layer?.cornerRadius = 30
+    }
+}
+
 /// 悬浮坞面板：右键菜单交给 SwiftUI 的 .contextMenu，
 /// 这样才能区分「坞空白处」和「某个工具行」，各自弹不同的菜单。
 final class DockPanel: NSPanel {}
@@ -133,8 +166,18 @@ final class SideDockController: ObservableObject {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = false   // 改由视图内的 DragGesture 显式移动
-        panel.contentView = NSHostingView(rootView:
+        let hosting = NSHostingView(rootView:
             SideDockView(controller: self).environmentObject(model))
+        if model.dockStyle == "glass" {
+            let backdrop = DockBackdropView(frame: NSRect(x: 0, y: 0,
+                                                          width: Self.barWidth, height: dockHeight))
+            hosting.frame = backdrop.bounds
+            hosting.autoresizingMask = [.width, .height]
+            backdrop.addSubview(hosting)
+            panel.contentView = backdrop
+        } else {
+            panel.contentView = hosting
+        }
         panel.orderFrontRegardless()
         self.panel = panel
 
@@ -570,8 +613,7 @@ struct SideDockView: View {
             return AnyShape(UnevenRoundedRectangle(
                 topLeadingRadius: 30, bottomLeadingRadius: 30,
                 bottomTrailingRadius: 30, topTrailingRadius: 30,
-                style: .continuous)
-                .inset(by: 4))
+                style: .continuous))
         }
         // 黑色档：贴边融合的凹角要和左侧圆角视觉一致，否则一大一小很怪。
         // flare/rise 是凹弧的水平外扩与爬升，都取 radius 后两个角大小就对得上了。
@@ -599,15 +641,18 @@ struct SideDockView: View {
                     // 用 SwiftUI 原生 glassEffect：它是普通图层，会被 clipShape 正确裁切、
                     // 也不会盖住上面的高光（NSGlassEffectView 是独立 AppKit 视图，
                     // 实测既不被 clipShape 裁、又会压在高光之上，所以退回这里）。
-                    if #available(macOS 26.0, *) {
-                        // 注意：这里必须传**具体**形状。传 AnyShape 时 glassEffect 会忽略
-                        // 形状参数、直接铺满整个视图边界——表现就是「圆角没了，变成直角方块」。
-                        let capsule = RoundedRectangle(cornerRadius: 30, style: .continuous).inset(by: 4)
-                        shape.fill(.clear)
-                            .glassEffect(.regular.tint(tintSwiftUI), in: capsule)
-                    } else {
-                        shape.fill(.ultraThinMaterial)
-                    }
+                    // 材质/玻璃这类「系统效果图层」上屏合成时不吃 SwiftUI 的 clipShape
+                    // （窗口截图里是圆角、屏幕上却是直角方块）。
+                    // 必须用 background(_:in:) 让系统自己按形状裁切。
+                    // 毛玻璃由 AppKit 的 DockBackdropView 负责（layer 裁切，上屏可靠）。
+                    // 这里只保留一层极薄的着色，让玻璃档和黑档在色彩上区分开。
+                    shape.fill(Color.white.opacity(0.06 * v))
+                    shape.fill(LinearGradient(
+                        colors: [tintSwiftUI.opacity(0.6), tintSwiftUI.opacity(0.2)],
+                        startPoint: .top, endPoint: .bottom))
+                    // 先画一圈很淡的暗边：玻璃压在浅色页面上时，圆角会「糊」进背景，
+                    // 有了这圈边界，圆角轮廓才看得出来。
+                    shape.stroke(Color.black.opacity(dark ? 0.28 : 0.13), lineWidth: 2.0)
                     // 高光限制在顶部 66×66 的方形区域内做渐变，对角线才是真正的 45°。
                     shape.stroke(Color.white, lineWidth: 2.6)
                         .mask(
