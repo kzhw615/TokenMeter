@@ -418,8 +418,6 @@ struct SideDockView: View {
         guard let s = todaySummary else { return " " }
         return Fmt.cost(s.cost)
     }
-    /// 悬浮某个工具时，底行改为显示「状态 + 判定依据」
-    @State private var hoveredSource: String?
     /// 拖拽起始时的「屏幕坐标鼠标位置」与「窗口原点」。
     /// 不能用 SwiftUI 的 translation：窗口自身在被移动，局部坐标系随之变化，
     /// 会形成反馈回路（实测表现为位移减半 + 来回抖动）。
@@ -449,21 +447,7 @@ struct SideDockView: View {
             }
     }
 
-    private func stateColor(_ state: Int) -> Color {
-        switch state {
-        case 0: return .orange
-        case 1: return .green
-        default: return .white.opacity(0.55)
-        }
-    }
 
-    private func stateText(_ state: Int) -> String {
-        switch state {
-        case 0: return L10n.t("运行中")
-        case 1: return L10n.t("待阅读")
-        default: return L10n.t("空闲")
-        }
-    }
 
 
     /// 坞空白处右键：坞自己的设置项（位置 / 材质 / 回位）+ 隐藏 + 通用操作
@@ -565,11 +549,6 @@ struct SideDockView: View {
                 .opacity(isGlassDock ? 1 : (state == 2 ? 0.45 : 1))
                 .frame(width: 44)
                 .frame(width: 56)
-                .onHover { inside in
-                    if inside { hoveredSource = name }
-                    else if hoveredSource == name { hoveredSource = nil }
-                }
-                .help("\(name)｜\(stateText(state))\n\(ActivityDetector.stateBasis(for: name))")
                 .contextMenu { rowMenu(name) }
             }
         }
@@ -671,22 +650,9 @@ struct SideDockView: View {
                 .monospacedDigit()
                 .foregroundStyle(textTertiary)
             Rectangle().fill(hairline).frame(width: 20, height: 1)
-            if let hovered = hoveredSource {
-                VStack(spacing: 0) {
-                    Text(stateText(model.sourceStates.first { $0.0 == hovered }?.1 ?? 2))
-                        .font(.system(size: 7, weight: .semibold))
-                        .foregroundStyle(stateColor(model.sourceStates.first { $0.0 == hovered }?.1 ?? 2))
-                    Text(ActivityDetector.shortBasis(for: hovered))
-                        .font(.system(size: 6))
-                        .foregroundStyle(textSecondary)
-                }
-                .lineLimit(1)
-                .frame(width: 56)
-            } else {
-                Text(bottomText)
-                    .font(.system(size: 7, weight: model.isBurning ? .semibold : .regular))
-                    .foregroundStyle(model.isBurning ? Color.orange : textSecondary)
-            }
+            Text(bottomText)
+                .font(.system(size: 7, weight: model.isBurning ? .semibold : .regular))
+                .foregroundStyle(model.isBurning ? Color.orange : textSecondary)
           }
           .frame(width: 44, height: 112)
           .frame(width: 56)
