@@ -591,27 +591,36 @@ struct SideDockView: View {
             // 直接用系统液态玻璃视图（NSGlassEffectView）当背景：模糊、折射、边缘光都是系统的，
             // 比在 SwiftUI 里拿 Shape 拼材质更接近系统观感。
             let radius: CGFloat = 30
-            let tintColor = (dark ? NSColor(white: 0.08, alpha: 1) : NSColor(white: 0.99, alpha: 1))
-                .withAlphaComponent(0.26 * v)
+            let tintColor = (dark ? NSColor(white: 0.06, alpha: 1) : NSColor(white: 0.99, alpha: 1))
+                .withAlphaComponent(0.10 * v)
             ZStack {
                 if v < 0.04 {
                     shape.fill(.clear)
                 } else {
-                    // 清澈玻璃：更透、折射更明显，能看清后面的内容
                     GlassBackdrop(cornerRadius: radius, tint: tintColor, clearStyle: true)
-                    // 边缘高光：亮的一圈细线（玻璃存在感的来源）。
-                    // 外圈画粗，clipShape 切掉外侧一半后才是一条 1pt 左右的锐利亮边。
-                    shape.stroke(LinearGradient(
-                        colors: [.white.opacity(0.95), .white.opacity(0.55), .white.opacity(0.85)],
-                        startPoint: .top, endPoint: .bottom), lineWidth: 2.8)
-                    // 顶左再加一层更亮的反射，模拟斜上方来光
-                    shape.stroke(LinearGradient(
-                        colors: [.white, .white.opacity(0.25), .clear],
-                        startPoint: .topLeading, endPoint: .center), lineWidth: 2.8)
-                    // 底右暗边：制造厚度，浅色背景上不至于「糊掉」
-                    shape.stroke(LinearGradient(
-                        colors: [.clear, .black.opacity(dark ? 0.30 : 0.16)],
-                        startPoint: .center, endPoint: .bottomTrailing), lineWidth: 2.8)
+                    // 光从左上方斜射过来：沿对角线做渐变，只有左上那段弧线是亮的，
+                    // 到 38% 处已经完全消失（右下角一点白都不能有）。
+                    shape.stroke(
+                        LinearGradient(
+                            stops: [.init(color: .white.opacity(0.98), location: 0.00),
+                                    .init(color: .white.opacity(0.62), location: 0.10),
+                                    .init(color: .white.opacity(0.18), location: 0.24),
+                                    .init(color: .clear, location: 0.38)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 2.2)
+                    // 左上角内侧的一小片辉光：光进入玻璃后的散射，同样沿对角线衰减
+                    shape.fill(
+                        LinearGradient(
+                            stops: [.init(color: .white.opacity(dark ? 0.12 : 0.22), location: 0.00),
+                                    .init(color: .clear, location: 0.30)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing))
+                    // 右下背光侧的暗边：厚度感，和左上亮边形成斜向明暗
+                    shape.stroke(
+                        LinearGradient(
+                            stops: [.init(color: .clear, location: 0.62),
+                                    .init(color: .black.opacity(dark ? 0.30 : 0.14), location: 1.0)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 2.2)
                 }
             }
             .clipShape(shape)
