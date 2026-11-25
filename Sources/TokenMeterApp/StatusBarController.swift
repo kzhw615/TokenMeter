@@ -63,6 +63,10 @@ final class StatusBarController: NSObject {
         actions.refresh = { [weak model] in model?.refresh() }
         actions.checkUpdate = { [weak model] in model?.checkForUpdates(force: true) }
         actions.markAllRead = { [weak model] in model?.markAllRead() }
+        actions.exportCSV = { [weak self] in self?.exportCSVFromMenu() }
+        actions.setMenuBarStyle = { [weak model] v in model?.menuBarStyle = v }
+        actions.setRateMode = { [weak model] v in model?.rateDisplayMode = v }
+        actions.setDockSide = { [weak model] v in model?.sideDock = v }
         // 右键菜单「隐藏悬浮坞」：等价于设置里把位置设为「关闭」
         actions.hideDock = { [weak model] in model?.sideDock = "off" }
         actions.quit = { [weak self] in self?.quitApp() }
@@ -178,6 +182,11 @@ final class StatusBarController: NSObject {
         } else {
             togglePanel()
         }
+    }
+
+    /// 菜单栏右键的「导出 CSV…」：没有面板上下文，固定导出今天；日期可选由保存面板处理
+    private func exportCSVFromMenu() {
+        CSVExport.present(model: model, range: .today)
     }
 
     private func showContextMenu() {
