@@ -117,6 +117,19 @@ final class DockBackdropView: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    /// 内容视图必须放进玻璃的 contentView：
+    /// NSGlassEffectView 只保证 contentView 在玻璃内部，任意 subview 的 z 序是不保证的
+    /// （实测会把我们的高光 overlay 压在玻璃下面，看起来就是「高光很暗」）。
+    func setContent(_ v: NSView) {
+        v.frame = bounds
+        v.autoresizingMask = [.width, .height]
+        if #available(macOS 26.0, *), let g = glass as? NSGlassEffectView {
+            g.contentView = v
+        } else {
+            addSubview(v)
+        }
+    }
+
     /// 不透明度滑块 → 玻璃着色强度
     func updateTint(opacity: Double, dark: Bool) {
         guard #available(macOS 26.0, *), let g = glass as? NSGlassEffectView else { return }
@@ -193,9 +206,7 @@ final class SideDockController: ObservableObject {
         if model.dockStyle == "glass" {
             let backdrop = DockBackdropView(frame: NSRect(x: 0, y: 0,
                                                           width: Self.barWidth, height: dockHeight))
-            hosting.frame = backdrop.bounds
-            hosting.autoresizingMask = [.width, .height]
-            backdrop.addSubview(hosting)
+            backdrop.setContent(hosting)
             backdrop.updateTint(opacity: model.glassOpacity, dark: false)
             panel.contentView = backdrop
         } else {
@@ -680,42 +691,44 @@ struct SideDockView: View {
     }
 
 
-    /// 玻璃档的高光：必须是 overlay（画在内容层之上）。
-    /// 之前放在 .background 里，会被 AppKit 的玻璃视图盖住，看起来就是「高光没了」。
+    /// 玻璃档的高光：overlay（背景层会被 AppKit 玻璃盖住）。
+    /// 关键技巧：在**左上角放一个 60×60 的方框**，方框里画圆角 30 的描边——
+    /// 它的左上四分之一弧线与胶囊圆角完全重合，而在方框内做对角线渐变天然就是 45°，
+    /// 不会像「整条长条上做渐变」那样退化成从上往下打光。
     @ViewBuilder
     private var glassHighlight: some View {
-        let rim = RoundedRectangle(cornerRadius: 30, style: .continuous).inset(by: 1.2)
-        ZStack {
-            // 左上斜向受光：限制在顶部 60×60 方框内做 45° 衰减，左端最亮、右上角没有
-            rim.stroke(Color.white, lineWidth: 1.8)
-                .mask(
-                    LinearGradient(
-                        stops: [.init(color: .white, location: 0.00),
-                                .init(color: .white.opacity(0.55), location: 0.14),
-                                .init(color: .white.opacity(0.10), location: 0.30),
-                                .init(color: .clear, location: 0.46)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing)
-                        .frame(width: 60, height: 60)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                )
-            // 顶边内侧一层极淡的镜面
-            Rectangle()
-                .fill(LinearGradient(colors: [.white.opacity(0.18), .clear],
-                                     startPoint: .top, endPoint: .center))
-                .frame(height: 140)
-                .frame(maxHeight: .infinity, alignment: .top)
-                .mask(rim.stroke(Color.white, lineWidth: 6))
-            // 右下背光侧暗边
-            rim.stroke(Color.black.opacity(0.16), lineWidth: 1.6)
-                .mask(
-                    LinearGradient(
-                        stops: [.init(color: .clear, location: 0.70),
-                                .init(color: .white, location: 1.00)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing)
-                        .frame(width: 120, height: 120)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                )
+        let box: CGFloat = 60
+        let arc = RoundedRectangle(cornerRadius: 30, style: .continuous)
+        // 受光弧线：白 → 透明，位置按方框的对角线走
+        let lightStroke = LinearGradient(
+            stops: [.init(color: .white, location: 0.00),
+                    .init(color: .white.opacity(0.85), location: 0.10),
+                    .init(color: .white.opacity(0.35), location: 0.24),
+                    .init(color: .clear, location: 0.46)],
+            startPoint: .topLeading, endPoint: .bottomTrailing)
+
+        ZStack(alignment: .topLeading) {
+            // ① 柔光晕：模糊版本，玻璃的"通透"来自这层，塑料只有硬反光
+            arc.stroke(lightStroke, lineWidth: 5)
+                .blur(radius: 3)
+                .opacity(0.9)
+                .frame(width: box, height: box)
+            // ② 亮线本体
+            arc.stroke(lightStroke, lineWidth: 2.4)
+                .frame(width: box, height: box)
+            // ③ 内侧折射暗线：沿同一弧线往里收 2.4pt，压住"贴纸"感
+            arc.inset(by: 2.4)
+                .stroke(LinearGradient(
+                    stops: [.init(color: .black.opacity(0.22), location: 0.00),
+                            .init(color: .clear, location: 0.30)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 1.4)
+                .frame(width: box, height: box)
         }
+        .frame(width: box, height: box, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.top, 1)
+        .padding(.leading, 1)
         .allowsHitTesting(false)
     }
 
