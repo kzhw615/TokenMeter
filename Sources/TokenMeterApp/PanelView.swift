@@ -734,6 +734,14 @@ struct PanelView: View {
                                 }
                             }
                             .frame(width: gridW, height: gridH)
+                            // 垫一层不透明底：格子之间的缝隙原本透出玻璃材质，
+                            // 背景一变（切窗口、鼠标悬停）整块图的观感就跟着变亮变暗
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color(nsColor: colorScheme == .light
+                                                ? NSColor(white: 0.965, alpha: 1)
+                                                : NSColor(white: 0.16, alpha: 1)))
+                            )
                             ZStack(alignment: .leading) {
                                 ForEach([0, 6, 12, 18], id: \.self) { h in
                                     Text("\(h)" + L10n.t("时"))
