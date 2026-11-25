@@ -592,35 +592,44 @@ struct SideDockView: View {
             // 比在 SwiftUI 里拿 Shape 拼材质更接近系统观感。
             let radius: CGFloat = 30
             let tintColor = (dark ? NSColor(white: 0.06, alpha: 1) : NSColor(white: 0.99, alpha: 1))
-                .withAlphaComponent(0.10 * v)
+                .withAlphaComponent(0.05 * v)
             ZStack {
                 if v < 0.04 {
                     shape.fill(.clear)
                 } else {
                     GlassBackdrop(cornerRadius: radius, tint: tintColor, clearStyle: true)
-                    // 光从左上方斜射过来：沿对角线做渐变，只有左上那段弧线是亮的，
-                    // 到 38% 处已经完全消失（右下角一点白都不能有）。
-                    shape.stroke(
-                        LinearGradient(
-                            stops: [.init(color: .white.opacity(0.98), location: 0.00),
-                                    .init(color: .white.opacity(0.62), location: 0.10),
-                                    .init(color: .white.opacity(0.18), location: 0.24),
-                                    .init(color: .clear, location: 0.38)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing),
-                        lineWidth: 2.2)
-                    // 左上角内侧的一小片辉光：光进入玻璃后的散射，同样沿对角线衰减
-                    shape.fill(
-                        LinearGradient(
-                            stops: [.init(color: .white.opacity(dark ? 0.12 : 0.22), location: 0.00),
-                                    .init(color: .clear, location: 0.30)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing))
+                    // 关键：坞是「窄而高」的条形，如果按整个形状做 topLeading→bottomTrailing 渐变，
+                    // 那条对角线几乎是竖直的，看起来就成了"从上往下打光"。
+                    // 所以把高光限制在顶部一块接近正方形的区域里做渐变，
+                    // 这样对角线才是真的 45°，能看出光从左上斜着来。
+                    shape.stroke(Color.white.opacity(0.95), lineWidth: 2.2)
+                        .mask(
+                            LinearGradient(
+                                stops: [.init(color: .white, location: 0.00),
+                                        .init(color: .white.opacity(0.75), location: 0.10),
+                                        .init(color: .white.opacity(0.22), location: 0.26),
+                                        .init(color: .clear, location: 0.46)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing)
+                                .frame(width: 66, height: 66)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        )
+                    // 左上角一小块径向辉光：光进入玻璃后的散射
+                    Rectangle()
+                        .fill(RadialGradient(
+                            colors: [.white.opacity(dark ? 0.16 : 0.30), .clear],
+                            center: .topLeading, startRadius: 0, endRadius: 90))
+                        .frame(width: 150, height: 150)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     // 右下背光侧的暗边：厚度感，和左上亮边形成斜向明暗
-                    shape.stroke(
-                        LinearGradient(
-                            stops: [.init(color: .clear, location: 0.62),
-                                    .init(color: .black.opacity(dark ? 0.30 : 0.14), location: 1.0)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing),
-                        lineWidth: 2.2)
+                    shape.stroke(Color.black.opacity(dark ? 0.30 : 0.14), lineWidth: 2.2)
+                        .mask(
+                            LinearGradient(
+                                stops: [.init(color: .clear, location: 0.72),
+                                        .init(color: .white, location: 1.00)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing)
+                                .frame(width: 120, height: 120)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        )
                 }
             }
             .clipShape(shape)
