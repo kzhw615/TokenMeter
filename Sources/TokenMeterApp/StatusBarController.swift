@@ -63,6 +63,8 @@ final class StatusBarController: NSObject {
         actions.refresh = { [weak model] in model?.refresh() }
         actions.checkUpdate = { [weak model] in model?.checkForUpdates(force: true) }
         actions.markAllRead = { [weak model] in model?.markAllRead() }
+        // 右键菜单「隐藏悬浮坞」：等价于设置里把位置设为「关闭」
+        actions.hideDock = { [weak model] in model?.sideDock = "off" }
         actions.quit = { [weak self] in self?.quitApp() }
     }
 

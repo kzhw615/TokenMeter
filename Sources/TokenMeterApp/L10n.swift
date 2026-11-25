@@ -174,6 +174,7 @@ enum L10n {
         "立即检查是否有新版本": "Check for updates now",
         "把当前范围的明细导出成 CSV": "Export the current range as CSV",
         "设置…": "Settings…",
+"隐藏悬浮坞": "Hide dock",
         "标记全部已读": "Mark all as read",
         "用量（含缓存）": "Usage (with cache)",
         "用量（不含缓存）": "Usage (no cache)",
