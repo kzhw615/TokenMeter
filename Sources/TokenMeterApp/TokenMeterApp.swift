@@ -66,7 +66,10 @@ final class AppModel: ObservableObject {
     @Published var sideDock: String = UserDefaults.standard.string(forKey: "sideDock") ?? "off" {
         didSet {
             UserDefaults.standard.set(sideDock, forKey: "sideDock")
-            dockController.apply(mode: sideDock, model: self, useSaved: false)
+            // 拖到另一侧时 snap() 已经挪好了窗口，这里不要再 apply 一次（会把 Y 重置成默认值）
+            if sideDock != dockController.side {
+                dockController.apply(mode: sideDock, model: self, useSaved: false)
+            }
             if scanning { updateScanProgressTimer() }
         }
     }
@@ -150,9 +153,14 @@ final class AppModel: ObservableObject {
     @Published var glassOpacity: Double = UserDefaults.standard.object(forKey: "glassOpacity") as? Double ?? 0.55 {
         didSet {
             UserDefaults.standard.set(glassOpacity, forKey: "glassOpacity")
-            dockController.apply(mode: sideDock, model: self, useSaved: true)
+            dockController.updateGlassOpacity(glassOpacity)
         }
     }
+
+    func enableDockGlassEffects() {
+        dockController.enableGlassEffects()
+    }
+
     /// 侧边坞隐藏名单（默认全展示已安装源）
     @Published var hiddenDockSources: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "dockHiddenSources") ?? []) {
         didSet {
@@ -216,12 +224,11 @@ final class AppModel: ObservableObject {
         return sourceStates.filter { !hiddenDockSources.contains($0.0) }
     }
 
-    /// 菜单栏是否太挤（挤的时候只显示用量，不显示速度，见 menuBarRateMode）
+    /// 菜单栏是否有空间显示速度。仅在自动模式下决定显隐。
     @Published var menuBarCrowded = false
-    /// 速度显示策略：auto（默认，菜单栏挤时收起）/ always / never
-    var menuBarRateMode: String {
-        get { UserDefaults.standard.string(forKey: "menuBarRateMode") ?? "auto" }
-        set { UserDefaults.standard.set(newValue, forKey: "menuBarRateMode") }
+    /// 菜单栏与悬浮坞共用速度设置，延用原有的持久化键。
+    @Published var rateDisplayMode: String = UserDefaults.standard.string(forKey: "menuBarRateMode") ?? "auto" {
+        didSet { UserDefaults.standard.set(rateDisplayMode, forKey: "menuBarRateMode") }
     }
 
     func menuBarText(_ s: Summary, includeRate: Bool = true) -> String {
@@ -230,9 +237,9 @@ final class AppModel: ObservableObject {
         // 补位是为了避免数字位数变化让图标左右挪，但代价是低速时（如 923/s）
         // 会留下一大段看不见的空白，看起来像「速度和用量之间隔了很远」。
         // 现在只在菜单栏拥挤时整体收起速率，宁可接受几 pt 的位数抖动。
-        let forced = ProcessInfo.processInfo.environment["TOKENMETER_FORCE_BURN"] != nil
-        let wantsRate = includeRate && isBurning && (forced || (burnRate ?? 0) > 0)
-        let rate = wantsRate ? "\(Fmt.compactTokens(burnRate ?? 29_500))/s · " : ""
+        let value = burnRate ?? (Self.forceBurn ? 29_500 : 0)
+        let wantsRate = includeRate && isBurning && (rateDisplayMode == "always" || Self.forceBurn || value > 0)
+        let rate = wantsRate ? "\(Fmt.compactTokens(value))/s · " : ""
         switch menuBarStyle {
         // 与面板、坞保持一致：用 Fmt.tokens（亿两位小数）。
         // compactTokens 只保留一位小数，会把 6.99亿 显示成 7.0亿，和别处对不上。

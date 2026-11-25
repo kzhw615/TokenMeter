@@ -119,6 +119,8 @@ enum L10n {
         "材质": "Material",
         "黑色": "Black",
         "液态玻璃": "Glass",
+        "允许背景折射与自动字色…": "Allow refraction and adaptive text…",
+        "需要屏幕录制权限。坞后方的小块画面仅在本机内存中处理。": "Requires Screen Recording access. Only the small area behind the dock is processed in memory on this Mac.",
         "显示工具状态": "Show tool status",
         "点名称可隐藏，灰色为当前不显示。": "Click a name to hide it; gray means hidden.",
         "模型价格": "Model pricing",

@@ -7,6 +7,7 @@ import TokenMeterCore
 struct SettingsView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var dockCaptureAllowed = CGPreflightScreenCaptureAccess()
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -24,6 +25,9 @@ struct SettingsView: View {
         }
         .frame(width: 460, height: 620)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            dockCaptureAllowed = CGPreflightScreenCaptureAccess()
+        }
     }
 
     // MARK: - 外观
@@ -72,16 +76,7 @@ struct SettingsView: View {
                 .pickerStyle(.segmented).controlSize(.small).labelsHidden()
             }
             row(L10n.t("消耗速度")) {
-                Picker(L10n.t("消耗速度"), selection: Binding(
-                    get: { model.menuBarRateMode },
-                    set: { model.menuBarRateMode = $0 }
-                )) {
-                    Text(L10n.t("自动")).tag("auto")
-                    Text(L10n.t("总是显示")).tag("always")
-                    Text(L10n.t("不显示")).tag("never")
-                }
-                .pickerStyle(.segmented).controlSize(.small).labelsHidden()
-                .help(L10n.t("自动：菜单栏拥挤时只显示用量，腾出宽度"))
+                ratePicker
             }
             row(L10n.t("面板外观")) {
                 Picker(L10n.t("面板外观"), selection: Binding(get: { model.panelAppearance }, set: { model.panelAppearance = $0 })) {
@@ -94,10 +89,11 @@ struct SettingsView: View {
             HStack(spacing: 9) {
                 Text(L10n.t("玻璃不透明度")).font(.caption).foregroundStyle(.secondary)
                     .frame(width: 74, alignment: .leading).lineLimit(1).minimumScaleFactor(0.75)
-                Slider(value: Binding(get: { model.glassOpacity },
-                                      set: { model.glassOpacity = $0 }), in: 0...1)
+                Slider(value: $model.glassOpacity, in: 0...1)
                     .controlSize(.small)
-                Text("\(Int(model.glassOpacity * 100))%")
+                    .tint(model.theme.primary)
+                    .accessibilityLabel(Text(L10n.t("玻璃不透明度")))
+                Text("\(glassOpacityPercent)%")
                     .font(.caption2).monospacedDigit()
                     .foregroundStyle(.secondary)
                     .frame(width: 34, alignment: .trailing)
@@ -107,6 +103,23 @@ struct SettingsView: View {
                 .controlSize(.small)
                 .font(.caption)
         }
+    }
+
+    private var glassOpacityPercent: Int {
+        let opacity = model.glassOpacity
+        if opacity <= 0 { return 0 }
+        if opacity >= 1 { return 100 }
+        return min(99, max(1, Int((opacity * 100).rounded())))
+    }
+
+    private var ratePicker: some View {
+        Picker(L10n.t("消耗速度"), selection: $model.rateDisplayMode) {
+            Text(L10n.t("自动")).tag("auto")
+            Text(L10n.t("总是显示")).tag("always")
+            Text(L10n.t("不显示")).tag("never")
+        }
+        .pickerStyle(.segmented).controlSize(.small).labelsHidden()
+        .help(L10n.t("自动：菜单栏拥挤时只显示用量，腾出宽度"))
     }
 
     /// 左侧标签 + 右侧控件，一行一个；英文文案不会和其他控件挤在一行
@@ -135,8 +148,8 @@ struct SettingsView: View {
                 Spacer()
             }
             row(L10n.t("材质")) {
-                Picker(L10n.t("材质"), selection: Binding(get: { model.dockStyle }, set: { model.dockStyle = $0 })) {
-                    Text(L10n.t("黑色")).tag("black")
+                Picker(L10n.t("材质"), selection: dockMaterial) {
+                    Text(L10n.t("黑色")).tag("ink")
                     Text(L10n.t("液态玻璃")).tag("glass")
                 }
                 .pickerStyle(.segmented).controlSize(.small).labelsHidden()
@@ -144,9 +157,22 @@ struct SettingsView: View {
             }
             Text(L10n.t("开启后可从屏幕边缘拖出，松手自动吸附；双击回到默认位置，单击展开面板。"))
                 .font(.caption2).foregroundStyle(.tertiary)
+            if model.dockStyle == "glass" && !dockCaptureAllowed {
+                Divider()
+                Button(L10n.t("允许背景折射与自动字色…")) {
+                    model.enableDockGlassEffects()
+                    dockCaptureAllowed = CGPreflightScreenCaptureAccess()
+                }
+                .font(.caption).controlSize(.small)
+                Text(L10n.t("需要屏幕录制权限。坞后方的小块画面仅在本机内存中处理。"))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
         }
     }
 
+    private var dockMaterial: Binding<String> {
+        Binding(get: { model.dockStyle == "glass" ? "glass" : "ink" }, set: { model.dockStyle = $0 })
+    }
 
     private var budgetCard: some View {
         card(L10n.t("预算提醒")) {
@@ -191,7 +217,7 @@ struct SettingsView: View {
         card(L10n.t("悬浮坞显示的工具")) {
             HStack(spacing: 9) {
                 Text(L10n.t("材质")).font(.caption).foregroundStyle(.secondary).frame(width: 74, alignment: .leading).lineLimit(1).minimumScaleFactor(0.75)
-                Picker(L10n.t("材质"), selection: Binding(get: { model.dockStyle }, set: { model.dockStyle = $0 })) {
+                Picker(L10n.t("材质"), selection: dockMaterial) {
                     Text(L10n.t("黑色")).tag("ink")
                     Text(L10n.t("液态玻璃")).tag("glass")
                 }
@@ -199,20 +225,8 @@ struct SettingsView: View {
                 .controlSize(.small)
                 .labelsHidden()
 
-                // 速度显示策略：菜单栏宽度不够时收起速度，只留用量
                 Text(L10n.t("消耗速度")).font(.caption).foregroundStyle(.secondary).frame(width: 74, alignment: .leading).lineLimit(1).minimumScaleFactor(0.75)
-                Picker(L10n.t("消耗速度"), selection: Binding(
-                    get: { model.menuBarRateMode },
-                    set: { model.menuBarRateMode = $0 }
-                )) {
-                    Text(L10n.t("自动")).tag("auto")
-                    Text(L10n.t("总是显示")).tag("always")
-                    Text(L10n.t("不显示")).tag("never")
-                }
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .labelsHidden()
-                .help(L10n.t("自动：菜单栏拥挤时只显示用量，腾出宽度"))
+                ratePicker
             }
             Toggle(L10n.t("显示工具状态"), isOn: Binding(get: { model.dockShowHarness }, set: { model.dockShowHarness = $0 }))
                 .toggleStyle(.switch)

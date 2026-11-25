@@ -64,7 +64,9 @@ extension View {
     /// 真·液态玻璃：macOS 26+ 用系统 glassEffect，旧系统退回自绘材质叠层
     @ViewBuilder
     func liquidGlass(cornerRadius: CGFloat = 22, tint: Color = .clear, opacity: Double = 0.45) -> some View {
-        if #available(macOS 26.0, *) {
+        if opacity <= 0 {
+            self
+        } else if #available(macOS 26.0, *) {
             GlassPanel(opacity: opacity, tint: tint, cornerRadius: cornerRadius, content: self)
         } else {
             glassBackground(cornerRadius: cornerRadius, tint: tint)
@@ -117,7 +119,7 @@ private struct GlassPanel<V: View>: View {
         let v = min(max(opacity, 0), 1)
         // 不再自己铺一层白色（那正是"磨砂贴纸"的来源）。
         // 直接用系统玻璃，滑块控制它的 tint 强度：
-        //   v=0  几乎无色的玻璃（透、有折射）
+        //   v 接近 0 时保留一条细边
         //   v=1  厚实的着色玻璃（接近实体）
         let tintColor = dark
             ? Color(red: 0.10, green: 0.11, blue: 0.14)
@@ -132,8 +134,7 @@ private struct GlassPanel<V: View>: View {
         return content
             .background {
                 if v < 0.04 {
-                    // 0% 时不叠任何材质，做到真正透明（只保留边框避免完全找不到窗口）
-                    shape.strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                    shape.strokeBorder(Color.primary.opacity(3 * v), lineWidth: 1)
                 } else {
                     ZStack {
                     shape.fill(.clear).glassEffect(effect, in: shape)

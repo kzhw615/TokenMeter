@@ -83,69 +83,6 @@ struct BarFlareShape: Shape {
     }
 }
 
-/// 坞的毛玻璃背景：AppKit 视图 + 层圆角裁切。
-/// 为什么不用 SwiftUI 的 material / glassEffect：这类「系统效果图层」在上屏合成时
-/// 不理会 SwiftUI 的 clipShape / in: 参数，会铺满整个窗口（表现为直角方块）。
-/// NSVisualEffectView 是自己的视图，layer.masksToBounds + cornerRadius 一定能裁住。
-final class DockBackdropView: NSView {
-    private let blur = NSVisualEffectView()
-    private var glass: AnyObject?
-    var tintAlpha: CGFloat = 0.4
-    var isDark: Bool = false
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        layer?.backgroundColor = .clear
-        layer?.cornerRadius = 30
-        layer?.cornerCurve = .continuous
-        layer?.masksToBounds = true
-        // 统一用 NSVisualEffectView 提供「模糊」这一层：
-        // .underWindowBackground 是最轻的玻璃模糊，再配合 alphaValue 降低磨砂感，
-        // 观感接近清澈玻璃（背景能看清，但不是完全无处理）。
-        blur.material = .underWindowBackground
-        blur.blendingMode = .behindWindow
-        blur.state = .active
-        blur.alphaValue = 0.55
-        addSubview(blur)
-    }
-    required init?(coder: NSCoder) { fatalError() }
-
-    /// 内容视图必须放进玻璃的 contentView：
-    /// NSGlassEffectView 只保证 contentView 在玻璃内部，任意 subview 的 z 序是不保证的
-    /// （实测会把我们的高光 overlay 压在玻璃下面，看起来就是「高光很暗」）。
-    func setContent(_ v: NSView) {
-        v.frame = bounds
-        v.autoresizingMask = [.width, .height]
-        if #available(macOS 26.0, *), let g = glass as? NSGlassEffectView {
-            g.contentView = v
-        } else {
-            addSubview(v)
-        }
-    }
-
-    /// 不透明度滑块 → 玻璃着色强度
-    func updateTint(opacity: Double, dark: Bool) {
-        if #available(macOS 26.0, *), let g = glass as? NSGlassEffectView {
-            let base: NSColor = dark ? NSColor(white: 0.08, alpha: 1) : NSColor(white: 0.98, alpha: 1)
-            g.tintColor = base.withAlphaComponent(0.85 * min(max(opacity, 0), 1))
-            return
-        }
-        // 模糊强度跟滑块走：0 → 几乎不模糊（最清澈），1 → 完整模糊
-        blur.alphaValue = 0.35 + 0.55 * min(max(opacity, 0), 1)
-    }
-
-    override func layout() {
-        super.layout()
-        if #available(macOS 26.0, *), let g = glass as? NSGlassEffectView {
-            g.frame = bounds
-            g.cornerRadius = 30
-            return
-        }
-        blur.frame = bounds
-    }
-}
-
 /// 悬浮坞面板：右键菜单交给 SwiftUI 的 .contextMenu，
 /// 这样才能区分「坞空白处」和「某个工具行」，各自弹不同的菜单。
 final class DockPanel: NSPanel {}
@@ -172,9 +109,13 @@ final class SideDockController: ObservableObject {
     var dockHeight: CGFloat { max(Self.barBlockHeight, topPadding + 112 + rowsBlockHeight + bottomInset) }
 
     @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合（拖动/回弹时渐变）
+    /// 坞当前实际吸附在哪一侧（拖动后会和设置里的值同步）
+    weak var appModel: AppModel?
     @Published var side: String = "right"
+    @Published private(set) var glassDarkBackdrop: Bool?
 
     private var panel: NSPanel?
+    private var glassBackdrop: DockBackdropView? { panel?.contentView as? DockBackdropView }
     private var detail: NSWindow?
     private var screenObserver: NSObjectProtocol?
     private var moveObserver: NSObjectProtocol?
@@ -184,12 +125,14 @@ final class SideDockController: ObservableObject {
 
     /// useSaved=true 仅首启：沿用上次吸附的侧别；设置切换走 false：显式意图优先
     func apply(mode: String, model: AppModel, useSaved: Bool = false) {
-        isGlassStyle = model.dockStyle != "ink"
+        isGlassStyle = model.dockStyle == "glass"
         teardown()
         guard mode == "left" || mode == "right" else { return }
         guard let screen = NSScreen.main else { return }
         let vf = screen.visibleFrame
         side = useSaved ? (UserDefaults.standard.string(forKey: "dockSide") ?? mode) : mode
+        // 启动时按「实际吸附的侧别」回写设置，避免坞在左边、设置/菜单却显示右边
+        if model.sideDock != side { model.sideDock = side }
         rowCount = model.visibleDockSources.count
         fuse = 1
 
@@ -197,8 +140,7 @@ final class SideDockController: ObservableObject {
             contentRect: NSRect(origin: originFor(side: side, vf: vf, saved: useSaved), size: NSSize(width: Self.barWidth, height: dockHeight)),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false)
-        // 黑色档配白字（深色外观）；玻璃档是浅色底，用浅色外观让材质与文字都跟着变
-        panel.appearance = NSAppearance(named: model.dockStyle == "glass" ? .aqua : .darkAqua)
+        if !isGlassStyle { panel.appearance = NSAppearance(named: .darkAqua) }
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
@@ -209,22 +151,26 @@ final class SideDockController: ObservableObject {
         panel.isMovableByWindowBackground = false   // 改由视图内的 DragGesture 显式移动
         let hosting = NSHostingView(rootView:
             SideDockView(controller: self).environmentObject(model))
-        if model.dockStyle == "glass" {
-            let backdrop = DockBackdropView(frame: NSRect(x: 0, y: 0,
-                                                          width: Self.barWidth, height: dockHeight))
-            backdrop.setContent(hosting)
-            backdrop.updateTint(opacity: model.glassOpacity, dark: false)
-            panel.contentView = backdrop
+        if isGlassStyle {
+            panel.contentView = DockBackdropView(
+                frame: NSRect(x: 0, y: 0, width: Self.barWidth, height: dockHeight),
+                content: hosting, opacity: model.glassOpacity
+            ) { [weak self] dark in
+                self?.glassDarkBackdrop = dark
+            }
         } else {
             panel.contentView = hosting
         }
         panel.orderFrontRegardless()
         self.panel = panel
+        glassBackdrop?.start()
 
         moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification, object: panel, queue: .main) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    guard let self, !self.snapping, self.fuse == 1 else { return }
+                    guard let self else { return }
+                    self.glassBackdrop?.updateRegion()
+                    guard !self.snapping, self.fuse == 1 else { return }
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
                         self.fuse = 0      // 脱边：融合形态淡出为圆角浮块
                     }
@@ -261,8 +207,21 @@ final class SideDockController: ObservableObject {
         moveObserver = nil
         if let m = mouseUpLocal { NSEvent.removeMonitor(m); mouseUpLocal = nil }
         if let m = mouseUpGlobal { NSEvent.removeMonitor(m); mouseUpGlobal = nil }
+        glassBackdrop?.stop()
         panel?.orderOut(nil)
         panel = nil
+    }
+
+    func updateGlassOpacity(_ opacity: Double) {
+        glassBackdrop?.setOpacity(opacity)
+    }
+
+    func enableGlassEffects() {
+        if CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() {
+            glassBackdrop?.recheckPermission()
+        } else if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     /// 60fps 手动插值滑动（borderless nonactivating 面板上 NSAnimationContext/animator 不生效）
@@ -316,6 +275,9 @@ final class SideDockController: ObservableObject {
                     self.fuse = 1      // 圆角浮块形变为贴边融合形态
                 }
                 self.save(side: newSide, originY: targetY)
+                // 菜单里的勾选和设置项都读 sideDock，拖到另一侧后要同步，
+                // 否则会出现「坞在左边、菜单勾的却是右边」。
+                if self.appModel?.sideDock != newSide { self.appModel?.sideDock = newSide }
             }
         }
     }
@@ -539,22 +501,25 @@ struct SideDockView: View {
     private var dockMenu: some View {
         Button(L10n.t("打开面板")) { controller.showDetail(model: model) }
         Divider()
-        Toggle(isOn: Binding(get: { model.sideDock == "left" },
+        Toggle(isOn: Binding(get: { controller.side == "left" },
                              set: { if $0 { model.sideDock = "left" } })) {
             Text(L10n.t("移到左侧"))
         }
-        Toggle(isOn: Binding(get: { model.sideDock == "right" },
+        Toggle(isOn: Binding(get: { controller.side == "right" },
                              set: { if $0 { model.sideDock = "right" } })) {
             Text(L10n.t("移到右侧"))
         }
         Divider()
-        Toggle(isOn: Binding(get: { model.dockStyle == "ink" },
+        Toggle(isOn: Binding(get: { !isGlassDock },
                              set: { if $0 { model.dockStyle = "ink" } })) {
             Text(L10n.t("黑色"))
         }
         Toggle(isOn: Binding(get: { model.dockStyle == "glass" },
                              set: { if $0 { model.dockStyle = "glass" } })) {
             Text(L10n.t("液态玻璃"))
+        }
+        if isGlassDock && !CGPreflightScreenCaptureAccess() {
+            Button(L10n.t("允许背景折射与自动字色…")) { controller.enableGlassEffects() }
         }
         Divider()
         Button(L10n.t("回到默认位置")) { model.resetDockPosition() }
@@ -572,11 +537,11 @@ struct SideDockView: View {
         Button(L10n.t("设置…")) { AppActions.shared.openSettings() }
     }
 
-    /// 底行：燃烧中=速率（含 0/s），空闲=命中率；悬浮时改为判定说明
-    private var bottomIsRate: Bool { model.isBurning }
+    /// 燃烧时按显示设置选速率，其他时候展示缓存命中率。
+    private var bottomIsRate: Bool { model.isBurning && model.rateDisplayMode != "never" }
     private var bottomText: String {
         guard let s = todaySummary else { return " " }
-        if model.isBurning { return Fmt.compactTokens(model.burnRate ?? 0) + "/s" }
+        if bottomIsRate { return Fmt.compactTokens(model.burnRate ?? 0) + "/s" }
         return Fmt.percent(s.cacheHitRate)
     }
 
@@ -607,7 +572,7 @@ struct SideDockView: View {
                             .frame(width: 7, height: 7)
                     } else {
                         Circle()
-                            .fill(state == 1 ? Color.green : (isGlassDock ? Color.black.opacity(0.42) : Color.white.opacity(0.3)))
+                            .fill(state == 1 ? Color.green : (isGlassDock ? textPrimary.opacity(0.46) : .white.opacity(0.3)))
                             .frame(width: 7, height: 7)
                     }
                     Spacer(minLength: 6)
@@ -617,8 +582,7 @@ struct SideDockView: View {
                             .scaledToFit()
                             .frame(width: controller.isGlassStyle ? 29 : 26,
                                     height: controller.isGlassStyle ? 29 : 26)
-                            // 浅色玻璃上白色 logo（如 Claude）会消失，加一层极淡描边阴影提对比
-                            .shadow(color: isGlassDock ? Color.black.opacity(0.35) : .clear,
+                            .shadow(color: isGlassDock ? .black.opacity(usesLightText ? 0.16 : 0.35) : .clear,
                                     radius: isGlassDock ? 1.2 : 0)
                     } else {
                         // 没有官方图标时不要自己造字母徽章（看起来像另一个产品），
@@ -631,7 +595,7 @@ struct SideDockView: View {
                     }
                 }
                 .padding(.trailing, 5)
-                // 黑色档靠透明度淡化"空闲"图标；玻璃档是浅底，半透明会看不清，保持不透明
+                // 玻璃上的品牌图标保留色彩，通过左侧圆点区分空闲状态。
                 .opacity(isGlassDock ? 1 : (state == 2 ? 0.45 : 1))
                 .frame(width: 44)
                 .frame(width: 56)
@@ -641,115 +605,49 @@ struct SideDockView: View {
         .padding(.top, 8)
     }
 
-    /// 玻璃档是浅色底，文字要用深色；黑色档沿用白字
     private var isGlassDock: Bool { model.dockStyle == "glass" }
-    private var textPrimary: Color { isGlassDock ? .black.opacity(0.86) : .white }
-    private var textSecondary: Color { isGlassDock ? .black.opacity(0.55) : .white.opacity(0.55) }
-    private var textTertiary: Color { isGlassDock ? .black.opacity(0.45) : .white.opacity(0.7) }
-    private var hairline: Color { isGlassDock ? .black.opacity(0.14) : .white.opacity(0.15) }
+    private var usesLightText: Bool {
+        !isGlassDock || (controller.glassDarkBackdrop ?? (scheme == .dark))
+    }
+    private var textPrimary: Color { usesLightText ? .white : Color(white: 0.04) }
+    private var textSecondary: Color { textPrimary.opacity(isGlassDock ? 0.86 : 0.55) }
+    private var textTertiary: Color { textPrimary.opacity(isGlassDock ? 0.82 : 0.7) }
+    private var hairline: Color { textPrimary.opacity(isGlassDock ? 0.28 : 0.15) }
 
-    /// 坞外形：玻璃档用完整圆角浮块（不做贴边融合的内凹角），黑色档保留融合凹角
-    private var dockShape: AnyShape {
-        if model.dockStyle == "glass" {
-            // 玻璃档：正圆角胶囊，四角半径完全一致（BarFlareShape 的融合曲线各角不一致）
-            return AnyShape(UnevenRoundedRectangle(
-                topLeadingRadius: 30, bottomLeadingRadius: 30,
-                bottomTrailingRadius: 30, topTrailingRadius: 30,
-                style: .continuous))
-        }
-        // 黑色档：贴边融合的凹角要和左侧圆角视觉一致，否则一大一小很怪。
-        // flare/rise 是凹弧的水平外扩与爬升，都取 radius 后两个角大小就对得上了。
-        return AnyShape(BarFlareShape(side: controller.side,
-                                      fuse: controller.fuse,
-                                      bottomInset: controller.bottomInset,
-                                      radius: BarFlareShape.defaultRadius))
+    private var inkShape: BarFlareShape {
+        BarFlareShape(side: controller.side, fuse: controller.fuse, bottomInset: controller.bottomInset)
     }
 
-    /// 悬浮坞底色：纯黑 / 液态玻璃（macOS 26+ 走系统 glassEffect，旧系统用材质）
-    @ViewBuilder
-    private func dockBackground(ink: Color) -> some View {
-        let shape = dockShape
-        if model.dockStyle == "glass" {
-            let v = min(max(model.glassOpacity, 0), 1)
-            let dark = scheme == .dark
-            // 直接用系统液态玻璃视图（NSGlassEffectView）当背景：模糊、折射、边缘光都是系统的，
-            // 比在 SwiftUI 里拿 Shape 拼材质更接近系统观感。
-            let radius: CGFloat = 30
-            let tintSwiftUI = (dark ? Color(white: 0.06) : Color(white: 0.99)).opacity(0.05 * v)
-            ZStack {
-                if v < 0.04 {
-                    shape.fill(.clear)
-                } else {
-                    // 用 SwiftUI 原生 glassEffect：它是普通图层，会被 clipShape 正确裁切、
-                    // 也不会盖住上面的高光（NSGlassEffectView 是独立 AppKit 视图，
-                    // 实测既不被 clipShape 裁、又会压在高光之上，所以退回这里）。
-                    // 材质/玻璃这类「系统效果图层」上屏合成时不吃 SwiftUI 的 clipShape
-                    // （窗口截图里是圆角、屏幕上却是直角方块）。
-                    // 必须用 background(_:in:) 让系统自己按形状裁切。
-                    // 只留一层极薄的着色：模糊、折射、边缘高光由容器里的
-                    // NSGlassEffectView（系统液态玻璃）负责，不再自己画描边，
-                    // 否则会出现「一圈都是高光」「边被裁掉」这类问题。
-                    // 系统 .clear 玻璃在这种透明无边框面板里会渲染成黑块，
-                    // .regular 又是磨砂奶白。折中：最薄的材质 + 低不透明度，
-                    // 背景颜色能明显透上来，又保留一层极淡的模糊。
-                    // 不用 material/glassEffect：它们在这种透明无边框面板里会渲染成黑块或奶白。
-                    // 直接给一层极淡的白 + 系统模糊背景，背景内容清晰透出来 = 「清澈玻璃」的观感。
-                    shape.fill(Color.white.opacity(0.05 + 0.10 * v))
-                }
-            }
-            .clipShape(shape)
-        } else {
-            shape.fill(ink)
+    private var glassRim: some View {
+        let rim = RoundedRectangle(cornerRadius: DockBackdropView.cornerRadius, style: .circular)
+        return rim.strokeBorder(
+            LinearGradient(stops: [
+                .init(color: .white.opacity(0.84), location: 0),
+                .init(color: .white.opacity(0.36), location: 0.17),
+                .init(color: .black.opacity(0.16), location: 0.54),
+                .init(color: .white.opacity(0.40), location: 1)
+            ], startPoint: .topLeading, endPoint: .bottomTrailing),
+            lineWidth: 1)
+        .background {
+            rim.strokeBorder(
+                LinearGradient(stops: [
+                    .init(color: .white.opacity(0.22), location: 0),
+                    .init(color: .clear, location: 0.36),
+                    .init(color: .clear, location: 0.72),
+                    .init(color: .white.opacity(0.17), location: 1)
+                ], startPoint: .topLeading, endPoint: .bottomTrailing),
+                lineWidth: 3)
         }
-    }
-
-
-    /// 玻璃档的高光：overlay（背景层会被 AppKit 玻璃盖住）。
-    /// 画法：整圈描边 + 两个蒙版相乘
-    ///   ① 顶部 60×60 方框内的对角渐变 → 顶部弧线左亮右暗，45° 光向
-    ///   ② 纵向渐变（顶部亮、到一半高度消失）→ 亮光顺着左边向下延伸后淡出
-    /// 只用一个角部圆弧会显得像一个"圈"，加上纵向衰减才像沿着边缘的一道光。
-    @ViewBuilder
-    private var glassHighlight: some View {
-        let rim = RoundedRectangle(cornerRadius: 30, style: .continuous).inset(by: 1.1)
-        let diag = LinearGradient(
-            stops: [.init(color: .white, location: 0.00),
-                    .init(color: .white.opacity(0.85), location: 0.14),
-                    .init(color: .white.opacity(0.40), location: 0.32),
-                    .init(color: .clear, location: 0.56)],
-            startPoint: .topLeading, endPoint: .bottomTrailing)
-            .frame(width: 64, height: 64)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // 纵向衰减：0% 全亮 → 35% 剩三成 → 60% 消失
-        let vertical = LinearGradient(
-            stops: [.init(color: .white, location: 0.00),
-                    .init(color: .white.opacity(0.45), location: 0.45),
-                    .init(color: .white.opacity(0.12), location: 0.75),
-                    .init(color: .clear, location: 0.92)],
-            startPoint: .top, endPoint: .bottom)
-
-        ZStack {
-            // ① 柔光晕（薄一点，别糊成光斑）
-            rim.stroke(Color.white, lineWidth: 4)
-                .blur(radius: 2)
-                .opacity(0.75)
-                .mask(diag)
-                .mask(vertical)
-            // ② 亮线本体
-            rim.stroke(Color.white, lineWidth: 2.2)
-                .mask(diag)
-                .mask(vertical)
-            // ③ 内侧折射暗线：只在上半段，压住贴纸感
-            rim.inset(by: 2.2)
-                .stroke(Color.black.opacity(0.18), lineWidth: 1.2)
-                .mask(diag)
-                .mask(vertical)
+        .overlay {
+            rim.inset(by: 1.4).strokeBorder(
+                LinearGradient(colors: [.black.opacity(0.15), .clear, .white.opacity(0.22)],
+                               startPoint: .top, endPoint: .bottom),
+                lineWidth: 0.7)
         }
         .allowsHitTesting(false)
     }
 
     var body: some View {
-        let ink = Color.black
         return VStack(spacing: 0) {
           VStack(spacing: 3) {
             iconView
@@ -766,9 +664,11 @@ struct SideDockView: View {
                 .foregroundStyle(textTertiary)
             Rectangle().fill(hairline).frame(width: 20, height: 1)
             Text(bottomText)
-                .font(.system(size: 7, weight: model.isBurning ? .semibold : .regular))
-                .foregroundStyle(model.isBurning ? Color.orange : textSecondary)
+                .font(.system(size: 7, weight: bottomIsRate ? .semibold : .regular))
+                .foregroundStyle(bottomIsRate && !isGlassDock ? Color.orange : textSecondary)
           }
+          .shadow(color: isGlassDock ? (usesLightText ? .black.opacity(0.44) : .white.opacity(0.54)) : .clear,
+                  radius: 0.8)
           .frame(width: 44, height: 112)
           .frame(width: 56)
           .padding(.top, controller.topPadding)
@@ -780,9 +680,11 @@ struct SideDockView: View {
         // 玻璃档是四边内缩 4pt 的胶囊，内容必须居中，否则会偏右
         .frame(width: 64, height: controller.dockHeight,
                alignment: isGlassDock ? .top : (controller.side == "right" ? .topTrailing : .topLeading))
-        .background(dockBackground(ink: ink))
-        .overlay { if model.dockStyle == "glass" { glassHighlight } }
-        .overlay(dockShape.stroke(Color.white.opacity(model.dockStyle == "glass" ? 0.25 : 0.06), lineWidth: 0.7))
+        .background { if !isGlassDock { inkShape.fill(.black) } }
+        .overlay {
+            if isGlassDock { glassRim }
+            else { inkShape.stroke(.white.opacity(0.06), lineWidth: 0.7) }
+        }
         .contentShape(Rectangle())
         .contextMenu { dockMenu }
         .gesture(dragGesture)

@@ -342,9 +342,13 @@ final class StatusBarController: NSObject {
         if model.menuBarStyle == "icon" {
             title = ""
         } else if let s = model.summary, s.counts.total > 0 {
-            // menuBarText 内部已经带速率前缀（燃烧中才加），这里不要再加一遍。
-            // 菜单栏挤的时候不显示速度，只用用量（宽度能省约 60pt）。
-            title = " " + model.menuBarText(s, includeRate: !model.menuBarCrowded)
+            let includeRate: Bool
+            switch model.rateDisplayMode {
+            case "always": includeRate = true
+            case "never": includeRate = false
+            default: includeRate = !model.menuBarCrowded
+            }
+            title = " " + model.menuBarText(s, includeRate: includeRate)
         } else {
             title = model.scanning ? " …" : " 0"
         }
@@ -378,14 +382,9 @@ final class StatusBarController: NSObject {
             let forced = ProcessInfo.processInfo.environment["TOKENMETER_FORCE_RATIO"].flatMap(Double.init)
             let fits = forced.map { $0 * available >= need } ?? (available >= need + 20)
             let fitsLoose = forced.map { $0 * available >= need + 20 } ?? (available >= need + 40)
-            switch self.model.menuBarRateMode {
-            case "always": self.model.menuBarCrowded = false
-            case "never": self.model.menuBarCrowded = true
-            default:
-                // 迟滞：放不下就收起；要恢复到「明显放得下」才重新显示，避免来回抖
-                if self.model.menuBarCrowded ? fitsLoose : !fits {
-                    self.model.menuBarCrowded.toggle()
-                }
+            // 放不下就收起，空间充裕后再恢复，避免自动模式来回抖。
+            if self.model.menuBarCrowded ? fitsLoose : !fits {
+                self.model.menuBarCrowded.toggle()
             }
             if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
                 FileHandle.standardError.write(Data(String(format: "DBG itemX=%.0f avail=%.0f need=%.0f crowded=%@ titleLen=%d\n",
@@ -404,6 +403,7 @@ final class StatusBarController: NSObject {
         case "light": panel.appearance = NSAppearance(named: .aqua)
         default: panel.appearance = nil          // 跟随系统
         }
+        panel.hasShadow = model.glassOpacity > 0
         panel.contentView?.wantsLayer = true
         panel.contentView?.layer?.cornerRadius = 24
         panel.contentView?.layer?.cornerCurve = .continuous
@@ -429,7 +429,6 @@ final class StatusBarController: NSObject {
         p.collectionBehavior = [.canJoinAllSpaces]
         p.isOpaque = false
         p.backgroundColor = .clear
-        p.hasShadow = true
         p.hidesOnDeactivate = false
         p.contentView = hosting
         p.isReleasedWhenClosed = false
