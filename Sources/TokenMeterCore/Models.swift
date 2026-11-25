@@ -360,6 +360,18 @@ public struct Summary: Codable, Sendable {
     public var habitGrid: [Int64]?
     /// 每个项目用了哪些模型（面板里点开项目看明细）
     public var projectModels: [ProjectModels]?
+    /// 每个工具用了哪些模型（面板里点开工具看明细）
+    public var toolModels: [ToolModels]?
+}
+
+/// 某个工具的模型构成（parts 已按用量降序）
+public struct ToolModels: Codable, Sendable {
+    public var tool: String
+    public var parts: [StackPart]
+    public init(tool: String, parts: [StackPart]) {
+        self.tool = tool
+        self.parts = parts
+    }
 }
 
 /// 某个项目的模型构成（parts 已按用量降序）

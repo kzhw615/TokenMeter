@@ -131,6 +131,8 @@ struct PanelView: View {
     @State private var selectedDay: String?
     /// 展开查看模型构成的项目（点一下展开/收起）
     @State private var expandedProject: String?
+    /// 展开查看模型构成的工具
+    @State private var expandedTool: String?
     /// 折叠/切换动画时长（可用 TOKENMETER_ANIM_DURATION 放大，便于逐帧验证）
     private var animDuration: Double {
         ProcessInfo.processInfo.environment["TOKENMETER_ANIM_DURATION"].flatMap(Double.init) ?? 0.22
@@ -578,7 +580,18 @@ struct PanelView: View {
                     Text(Fmt.cost(t.cost)).font(.callout).monospacedDigit().frame(width: 58, alignment: .trailing)
                 }
                 .background(rowBackground("tool-\(t.tool)"))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: animDuration)) {
+                        expandedTool = (expandedTool == t.tool) ? nil : t.tool
+                    }
+                }
                 .onHover { hoveredRow = $0 ? "tool-\(t.tool)" : nil }
+                if expandedTool == t.tool, let tm = s.toolModels?.first(where: { $0.tool == t.tool }),
+                   !tm.parts.isEmpty {
+                    modelBreakdown(tm.parts, total: disp(t.counts))
+                        .transition(.opacity)
+                }
             }
         }
             }
@@ -742,9 +755,15 @@ struct PanelView: View {
     /// 展开某个项目后，显示它用到的模型构成
     @ViewBuilder
     private func projectModelDetail(_ pm: ProjectModels, total: Int64) -> some View {
+        modelBreakdown(pm.parts, total: total)
+    }
+
+    /// 通用的「构成明细」：模型色点 + 名称 + 用量 + 占比（工具与项目共用）
+    @ViewBuilder
+    private func modelBreakdown(_ parts: [StackPart], total: Int64) -> some View {
         let denom = max(1, total)
         VStack(alignment: .leading, spacing: 3) {
-            ForEach(Array(pm.parts.prefix(5).enumerated()), id: \.offset) { i, part in
+            ForEach(Array(parts.prefix(5).enumerated()), id: \.offset) { i, part in
                 HStack(spacing: 6) {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(palette[i % palette.count])
@@ -757,6 +776,10 @@ struct PanelView: View {
                         .font(.caption2).monospacedDigit()
                         .foregroundStyle(.tertiary)
                         .frame(width: 44, alignment: .trailing)
+                    Text(Fmt.cost(part.cost))
+                        .font(.caption2).monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 56, alignment: .trailing)
                 }
             }
         }

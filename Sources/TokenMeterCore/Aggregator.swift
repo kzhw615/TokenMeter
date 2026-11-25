@@ -184,6 +184,7 @@ public enum Aggregator {
         var habitGrid = [Int64](repeating: 0, count: 168)
         var dayDateForHabit: [String: Date?] = [:]
         var projectModelMap: [String: [String: (TokenCounts, Double)]] = [:]
+        var toolModelMap: [String: [String: (TokenCounts, Double)]] = [:]
         var modelCache: [String: String] = [:]
         var priceCache: [String: ModelPrice?] = [:]
         func priceOf(_ m: String) -> ModelPrice? {
@@ -243,6 +244,10 @@ public enum Aggregator {
             var pj = projectMap[b.project] ?? (TokenCounts(), 0, [])
             pj.counts += b.counts; pj.cost += c; pj.tools.insert(b.tool)
             projectMap[b.project] = pj
+            // 工具 × 模型（点开工具看明细用）
+            var tm = toolModelMap[b.tool]?[model] ?? (TokenCounts(), 0)
+            tm.0 += b.counts; tm.1 += c
+            toolModelMap[b.tool, default: [:]][model] = tm
             // 项目 × 模型
             var pm = projectModelMap[b.project]?[model] ?? (TokenCounts(), 0)
             pm.0 += b.counts; pm.1 += c
@@ -357,6 +362,12 @@ public enum Aggregator {
                 .sorted { $0.counts.total > $1.counts.total }
             return ProjectModels(project: key, parts: Array(parts.prefix(8)))
         }
+        let toolModels: [ToolModels] = toolMap.keys.map { key in
+            let parts = (toolModelMap[key] ?? [:])
+                .map { StackPart(name: $0.key, counts: $0.value.0, cost: $0.value.1) }
+                .sorted { $0.counts.total > $1.counts.total }
+            return ToolModels(tool: key, parts: Array(parts.prefix(8)))
+        }
         let denom = Double(counts.input + counts.cacheRead)
         let hit = denom > 0 ? Double(counts.cacheRead) / denom : 0
         let projects = projectMap.map { ProjectStat(project: $0.key, counts: $0.value.counts, cost: $0.value.cost, share: Double($0.value.counts.total) / Double(totalAll), tools: Array($0.value.tools).sorted()) }
@@ -418,7 +429,8 @@ public enum Aggregator {
                        calendarByTool: calendarByTool,
                        calendarByModel: calendarByModel,
                        habitGrid: habitGrid,
-                       projectModels: projectModels)
+                       projectModels: projectModels,
+                       toolModels: toolModels)
     }
 
     /// 热扫描：只解析最近活跃的文件，返回今日含缓存总量（用于燃烧速率）

@@ -267,6 +267,16 @@ final class TokenMeterCoreTests: XCTestCase {
                            "\(row.project) 的模型构成合计与项目总量不一致")
         }
         XCTAssertEqual(pm.first { $0.project == "proj-x" }?.parts.map(\.name), ["m-b", "m-a"])
+
+        // 工具 × 模型：同样要和「按工具」榜对得上
+        let tms = summary.toolModels ?? []
+        XCTAssertEqual(tms.count, summary.tools.count)
+        for row in tms {
+            guard let stat = summary.tools.first(where: { $0.tool == row.tool }) else { continue }
+            XCTAssertEqual(row.parts.reduce(Int64(0)) { $0 + $1.counts.total }, stat.counts.total,
+                           "\(row.tool) 的模型构成合计与工具总量不一致")
+        }
+        XCTAssertEqual(tms.first { $0.tool == "T2" }?.parts.map(\.name), ["m-a"])
     }
 
     /// 思维强度后缀要并回同一个模型（用户要求：不因思考强度不同而分开统计）
