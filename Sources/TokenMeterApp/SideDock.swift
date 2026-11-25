@@ -591,36 +591,40 @@ struct SideDockView: View {
             // 直接用系统液态玻璃视图（NSGlassEffectView）当背景：模糊、折射、边缘光都是系统的，
             // 比在 SwiftUI 里拿 Shape 拼材质更接近系统观感。
             let radius: CGFloat = 30
-            let tintColor = (dark ? NSColor(white: 0.06, alpha: 1) : NSColor(white: 0.99, alpha: 1))
-                .withAlphaComponent(0.05 * v)
+            let tintSwiftUI = (dark ? Color(white: 0.06) : Color(white: 0.99)).opacity(0.05 * v)
             ZStack {
                 if v < 0.04 {
                     shape.fill(.clear)
                 } else {
-                    GlassBackdrop(cornerRadius: radius, tint: tintColor, clearStyle: true)
-                    // 关键：坞是「窄而高」的条形，如果按整个形状做 topLeading→bottomTrailing 渐变，
-                    // 那条对角线几乎是竖直的，看起来就成了"从上往下打光"。
-                    // 所以把高光限制在顶部一块接近正方形的区域里做渐变，
-                    // 这样对角线才是真的 45°，能看出光从左上斜着来。
-                    shape.stroke(Color.white.opacity(0.95), lineWidth: 2.2)
+                    // 用 SwiftUI 原生 glassEffect：它是普通图层，会被 clipShape 正确裁切、
+                    // 也不会盖住上面的高光（NSGlassEffectView 是独立 AppKit 视图，
+                    // 实测既不被 clipShape 裁、又会压在高光之上，所以退回这里）。
+                    if #available(macOS 26.0, *) {
+                        shape.fill(.clear)
+                            .glassEffect(.regular.tint(tintSwiftUI), in: shape)
+                    } else {
+                        shape.fill(.ultraThinMaterial)
+                    }
+                    // 高光限制在顶部 66×66 的方形区域内做渐变，对角线才是真正的 45°。
+                    shape.stroke(Color.white, lineWidth: 2.6)
                         .mask(
                             LinearGradient(
                                 stops: [.init(color: .white, location: 0.00),
-                                        .init(color: .white.opacity(0.75), location: 0.10),
-                                        .init(color: .white.opacity(0.22), location: 0.26),
-                                        .init(color: .clear, location: 0.46)],
+                                        .init(color: .white.opacity(0.55), location: 0.12),
+                                        .init(color: .white.opacity(0.12), location: 0.26),
+                                        .init(color: .clear, location: 0.40)],
                                 startPoint: .topLeading, endPoint: .bottomTrailing)
                                 .frame(width: 66, height: 66)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         )
-                    // 左上角一小块径向辉光：光进入玻璃后的散射
+                    // 左上角径向辉光：光进入玻璃后的散射
                     Rectangle()
                         .fill(RadialGradient(
                             colors: [.white.opacity(dark ? 0.16 : 0.30), .clear],
                             center: .topLeading, startRadius: 0, endRadius: 90))
                         .frame(width: 150, height: 150)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    // 右下背光侧的暗边：厚度感，和左上亮边形成斜向明暗
+                    // 右下背光侧暗边：厚度感，与左上亮边形成斜向明暗
                     shape.stroke(Color.black.opacity(dark ? 0.30 : 0.14), lineWidth: 2.2)
                         .mask(
                             LinearGradient(
