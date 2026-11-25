@@ -1,6 +1,22 @@
 #if os(macOS)
 import SwiftUI
 
+extension Color {
+    /// 在**固定外观**下转成 sRGB。
+    /// 直接 `NSColor(color)` 会按当前绘制外观解析：青色在 Aqua 下 g=0.765、DarkAqua 下 g=0.824，
+    /// 面板材质在「窗口 key / 非 key」之间切换时解析结果会变，图表颜色就会轻微变亮变暗。
+    func stableSRGB(dark: Bool) -> NSColor {
+        guard let app = NSAppearance(named: dark ? .darkAqua : .aqua) else {
+            return NSColor(self).usingColorSpace(.sRGB) ?? .systemBlue
+        }
+        var resolved: NSColor = .systemBlue
+        app.performAsCurrentDrawingAppearance {
+            resolved = NSColor(self).usingColorSpace(.sRGB) ?? .systemBlue
+        }
+        return resolved
+    }
+}
+
 /// 主题色（Accent）：影响总览卡片底色、工具/模型条形配色、每日用量图
 struct AppTheme: Identifiable, Equatable {
     let id: String

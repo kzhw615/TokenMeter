@@ -677,7 +677,8 @@ struct PanelView: View {
         }
         let base = (colorScheme == .dark ? NSColor(white: 0.32, alpha: 1) : NSColor(white: 0.90, alpha: 1))
             .usingColorSpace(.sRGB) ?? .gray
-        let solid = NSColor(model.theme.primary).usingColorSpace(.sRGB) ?? .systemBlue
+        // 固定外观解析，避免随面板材质/key 状态在 Aqua ↔ DarkAqua 之间漂移
+        let solid = model.theme.primary.stableSRGB(dark: colorScheme == .dark)
         let tints: [Color] = (0..<levelCount).map { i in
             let lv = 0.14 + 0.86 * Double(i) / Double(levelCount - 1)
             return Color(nsColor: base.blended(withFraction: CGFloat(lv), of: solid) ?? solid)
@@ -1187,7 +1188,9 @@ struct PanelView: View {
         // 之前以纯白为基底，用量最少的格子接近白色，和灰色空地格之间跳变太突兀。
         let base = (colorScheme == .dark ? NSColor(white: 0.32, alpha: 1) : NSColor(white: 0.90, alpha: 1))
             .usingColorSpace(.sRGB) ?? .gray
-        let solid = NSColor(tint).usingColorSpace(.sRGB) ?? .systemBlue
+        // 同样固定外观解析：否则青色在 Aqua/DarkAqua 下解析值不同（g 0.765 ↔ 0.824），
+        // 面板材质切换 key 状态时整块日历会跟着变亮变暗。
+        let solid = tint.stableSRGB(dark: colorScheme == .dark)
         let tints: [Color] = (0..<levelCount).map { i in
             let lv = 0.16 + 0.84 * Double(i) / Double(levelCount - 1)
             return Color(nsColor: base.blended(withFraction: CGFloat(lv), of: solid) ?? solid)
