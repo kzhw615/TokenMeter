@@ -407,6 +407,7 @@ struct PulseDot: NSViewRepresentable {
 struct SideDockView: View {
     @ObservedObject var controller: SideDockController
     @EnvironmentObject var model: AppModel
+    @Environment(\.colorScheme) private var scheme
 
     private var todaySummary: Summary? { model.summariesByRange[.today] }
     private var tokensText: String {
@@ -585,49 +586,49 @@ struct SideDockView: View {
     private func dockBackground(ink: Color) -> some View {
         let shape = dockShape
         if model.dockStyle == "glass" {
-            if #available(macOS 26.0, *) {
-                // 与面板共用同一个不透明度设置。
-                // 注意：系统玻璃即使 tint 为 0 也会带一层膜，所以 0% 时必须完全不叠玻璃层，
-                // 否则永远"不透"。
-                let v = min(max(model.glassOpacity, 0), 1)
-                if v < 0.04 {
-                    shape.fill(.clear)
-                } else {
-                    ZStack {
-                        // ① 系统玻璃：提供真实背景模糊 + 边缘折射
+            let v = min(max(model.glassOpacity, 0), 1)
+            let dark = scheme == .dark
+            // 与面板同一套做法：白色雾面会把玻璃糊成磨砂塑料，
+            // 改成「给玻璃本体上色」——滑块控制 tint 强度，模糊与折射交给系统。
+            let tintColor = dark
+                ? Color(red: 0.10, green: 0.11, blue: 0.14)
+                : Color(red: 0.98, green: 0.98, blue: 1.00)
+            ZStack {
+                if #available(macOS 26.0, *) {
+                    if v < 0.04 {
                         shape.fill(.clear)
-                            .glassEffect(.regular, in: shape)
-                        // ② 主体薄雾：拉高滑块才明显
-                        shape.fill(Color.white.opacity(0.42 * v))
-                        // ③ 自绘反光：顶部高光带（玻璃最直观的特征）
-                        shape.fill(
-                            LinearGradient(
-                                colors: [.white.opacity(0.55 * v), .white.opacity(0.12 * v),
-                                         .clear, .white.opacity(0.10 * v)],
-                                startPoint: .top, endPoint: .bottom))
-                            .blendMode(.plusLighter)
-                        // ④ 斜面亮边 + 底部内阴影：立体感
-                        shape.stroke(
-                            LinearGradient(
-                                colors: [.white.opacity(0.95), .white.opacity(0.30), .clear],
-                                startPoint: .topLeading, endPoint: .center),
-                            lineWidth: 1.3)
-                        shape.fill(
-                            LinearGradient(
-                                colors: [.clear, .black.opacity(0.10)],
-                                startPoint: .center, endPoint: .bottom))
-                        shape.stroke(
-                            LinearGradient(
-                                colors: [.clear, .black.opacity(0.12)],
-                                startPoint: .center, endPoint: .bottomTrailing),
-                            lineWidth: 1)
+                    } else {
+                        shape.fill(.clear)
+                            .glassEffect(.regular.tint(tintColor.opacity(0.62 * v)), in: shape)
                     }
-                    .compositingGroup()
-                    .clipShape(shape)
+                } else {
+                    if v < 0.04 {
+                        shape.fill(.clear)
+                    } else {
+                        shape.fill(.ultraThinMaterial)
+                        shape.fill(LinearGradient(
+                            colors: [tintColor.opacity(0.55 * v), tintColor.opacity(0.20 * v)],
+                            startPoint: .top, endPoint: .bottom))
+                    }
                 }
-            } else {
-                shape.fill(.ultraThinMaterial)
+                // 顶部镜面：只覆盖上四分之一，模拟弧面受光，别铺满（铺满就是白雾）
+                shape.fill(LinearGradient(
+                    colors: [.white.opacity(dark ? 0.10 : 0.22 * v), .clear],
+                    startPoint: .top, endPoint: .center))
+                // 底部厚度：极淡的内阴影
+                shape.fill(LinearGradient(
+                    colors: [.clear, .black.opacity(dark ? 0.16 : 0.05)],
+                    startPoint: .center, endPoint: .bottom))
+                // 受光亮边：外圈画粗一点，clipShape 会切掉外侧一半，视觉上才是 1pt 的细线。
+                // 顶左白、底右暗——只画白边的话，玻璃压在浅色页面上的时候整块会「消失」。
+                shape.stroke(LinearGradient(
+                    colors: [.white.opacity(dark ? 0.55 : 0.95), .white.opacity(0.15), .clear],
+                    startPoint: .topLeading, endPoint: .center), lineWidth: 2.4)
+                shape.stroke(LinearGradient(
+                    colors: [.clear, .black.opacity(dark ? 0.28 : 0.14)],
+                    startPoint: .center, endPoint: .bottomTrailing), lineWidth: 2.4)
             }
+            .clipShape(shape)
         } else {
             shape.fill(ink)
         }
