@@ -100,20 +100,14 @@ final class DockBackdropView: NSView {
         layer?.cornerRadius = 30
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
-        if #available(macOS 26.0, *) {
-            // 系统液态玻璃：模糊、折射、边缘高光全部由系统提供，
-            // 放进我们自己的圆角容器里，再由容器层裁切——圆角和效果都可靠。
-            let g = NSGlassEffectView()
-            g.style = .regular
-            g.cornerRadius = 30
-            addSubview(g)
-            glass = g
-        } else {
-            blur.material = .hudWindow
-            blur.blendingMode = .behindWindow
-            blur.state = .active
-            addSubview(blur)
-        }
+        // 统一用 NSVisualEffectView 提供「模糊」这一层：
+        // .underWindowBackground 是最轻的玻璃模糊，再配合 alphaValue 降低磨砂感，
+        // 观感接近清澈玻璃（背景能看清，但不是完全无处理）。
+        blur.material = .underWindowBackground
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        blur.alphaValue = 0.55
+        addSubview(blur)
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -132,9 +126,13 @@ final class DockBackdropView: NSView {
 
     /// 不透明度滑块 → 玻璃着色强度
     func updateTint(opacity: Double, dark: Bool) {
-        guard #available(macOS 26.0, *), let g = glass as? NSGlassEffectView else { return }
-        let base: NSColor = dark ? NSColor(white: 0.08, alpha: 1) : NSColor(white: 0.98, alpha: 1)
-        g.tintColor = base.withAlphaComponent(0.85 * min(max(opacity, 0), 1))
+        if #available(macOS 26.0, *), let g = glass as? NSGlassEffectView {
+            let base: NSColor = dark ? NSColor(white: 0.08, alpha: 1) : NSColor(white: 0.98, alpha: 1)
+            g.tintColor = base.withAlphaComponent(0.85 * min(max(opacity, 0), 1))
+            return
+        }
+        // 模糊强度跟滑块走：0 → 几乎不模糊（最清澈），1 → 完整模糊
+        blur.alphaValue = 0.35 + 0.55 * min(max(opacity, 0), 1)
     }
 
     override func layout() {
@@ -145,9 +143,6 @@ final class DockBackdropView: NSView {
             return
         }
         blur.frame = bounds
-        blur.layer?.cornerRadius = 30
-        blur.layer?.cornerCurve = .continuous
-        blur.layer?.masksToBounds = true
     }
 }
 
@@ -688,12 +683,12 @@ struct SideDockView: View {
                     // 只留一层极薄的着色：模糊、折射、边缘高光由容器里的
                     // NSGlassEffectView（系统液态玻璃）负责，不再自己画描边，
                     // 否则会出现「一圈都是高光」「边被裁掉」这类问题。
-                    // 系统玻璃在深色背景下会偏暗（看起来像"灰色加了透明度"）。
-                    // 叠一层上亮下暗的白，模拟光在玻璃内部散射，观感更接近浅色玻璃。
-                    shape.fill(LinearGradient(
-                        colors: [Color.white.opacity(0.08 + 0.12 * v),
-                                 Color.white.opacity(0.03 + 0.08 * v)],
-                        startPoint: .top, endPoint: .bottom))
+                    // 系统 .clear 玻璃在这种透明无边框面板里会渲染成黑块，
+                    // .regular 又是磨砂奶白。折中：最薄的材质 + 低不透明度，
+                    // 背景颜色能明显透上来，又保留一层极淡的模糊。
+                    // 不用 material/glassEffect：它们在这种透明无边框面板里会渲染成黑块或奶白。
+                    // 直接给一层极淡的白 + 系统模糊背景，背景内容清晰透出来 = 「清澈玻璃」的观感。
+                    shape.fill(Color.white.opacity(0.05 + 0.10 * v))
                 }
             }
             .clipShape(shape)
