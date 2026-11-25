@@ -163,11 +163,13 @@ private struct GlassPanel<V: View>: View {
 struct GlassBackdrop: NSViewRepresentable {
     var cornerRadius: CGFloat
     var tint: NSColor?
+    /// true = 系统「清澈玻璃」（更透、折射更强），false = 标准磨砂玻璃
+    var clearStyle: Bool = false
 
     func makeNSView(context: Context) -> NSView {
         if #available(macOS 26.0, *) {
             let v = NSGlassEffectView()
-            v.style = .regular
+            v.style = clearStyle ? .clear : .regular
             v.cornerRadius = cornerRadius
             v.tintColor = tint
             return v
@@ -187,6 +189,7 @@ struct GlassBackdrop: NSViewRepresentable {
         if #available(macOS 26.0, *), let g = v as? NSGlassEffectView {
             g.cornerRadius = cornerRadius
             g.tintColor = tint
+            g.style = clearStyle ? .clear : .regular
             return
         }
         if let e = v as? NSVisualEffectView {
