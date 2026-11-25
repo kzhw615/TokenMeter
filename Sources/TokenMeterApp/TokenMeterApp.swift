@@ -774,6 +774,16 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// 悬浮坞回到默认位置（右键菜单用，等价于双击坞）
+    func resetDockPosition() {
+        dockController.resetPosition(mode: sideDock == "left" ? "left" : "right")
+    }
+
+    /// 隐藏坞里的某个工具（右键该工具行）
+    func hideDockSource(_ name: String) {
+        hiddenDockSources.insert(name)
+    }
+
     /// 语言变化：同步数字单位并重建界面（面板标题、菜单栏文案都受影响）
     func languageChanged() {
         Fmt.english = L10n.isEnglish

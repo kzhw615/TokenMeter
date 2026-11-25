@@ -27,12 +27,12 @@ extension AppActions {
         let open = NSMenuItem(title: L10n.t("打开面板"), action: #selector(MenuActionRouter.openPanel), keyEquivalent: "")
         menu.addItem(open)
 
-        let settings = NSMenuItem(title: L10n.t("设置…"), action: #selector(MenuActionRouter.openSettings), keyEquivalent: ",")
+        let settings = NSMenuItem(title: L10n.t("设置…"), action: #selector(MenuActionRouter.openSettings), keyEquivalent: "")
         menu.addItem(settings)
 
         menu.addItem(.separator())
 
-        let refresh = NSMenuItem(title: L10n.t("立即刷新统计"), action: #selector(MenuActionRouter.refresh), keyEquivalent: "r")
+        let refresh = NSMenuItem(title: L10n.t("立即刷新统计"), action: #selector(MenuActionRouter.refresh), keyEquivalent: "")
         menu.addItem(refresh)
 
         let update = NSMenuItem(title: L10n.t("检查更新…"), action: #selector(MenuActionRouter.checkUpdate), keyEquivalent: "")
@@ -49,7 +49,7 @@ extension AppActions {
 
         menu.addItem(.separator())
 
-        let quit = NSMenuItem(title: L10n.t("退出 TokenMeter"), action: #selector(MenuActionRouter.quit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: L10n.t("退出 TokenMeter"), action: #selector(MenuActionRouter.quit), keyEquivalent: "")
         menu.addItem(quit)
 
         for item in menu.items where item.action != nil {

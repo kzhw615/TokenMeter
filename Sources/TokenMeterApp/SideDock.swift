@@ -83,19 +83,9 @@ struct BarFlareShape: Shape {
     }
 }
 
-/// 悬浮坞面板：SwiftUI hosting 会吞掉右键，需在窗口层捕获
-final class DockPanel: NSPanel {
-    var contextMenu: NSMenu?
-
-    override func rightMouseDown(with event: NSEvent) {
-        guard let menu = contextMenu, let view = contentView else {
-            super.rightMouseDown(with: event)
-            return
-        }
-        let point = view.convert(event.locationInWindow, from: nil)
-        menu.popUp(positioning: nil, at: point, in: view)
-    }
-}
+/// 悬浮坞面板：右键菜单交给 SwiftUI 的 .contextMenu，
+/// 这样才能区分「坞空白处」和「某个工具行」，各自弹不同的菜单。
+final class DockPanel: NSPanel {}
 
 /// 侧边悬浮坞：单窗口。拖动=独立圆角浮块；松手=滑向较近屏边并 cross-fade 成贴边融合形态；
 /// 位置/侧别记忆；双击回位；单击弹面板。四角完全透明（无投影 haze）
@@ -145,7 +135,6 @@ final class SideDockController: ObservableObject {
         panel.isMovableByWindowBackground = false   // 改由视图内的 DragGesture 显式移动
         panel.contentView = NSHostingView(rootView:
             SideDockView(controller: self).environmentObject(model))
-        panel.contextMenu = AppActions.shared.buildMenu(model: model)
         panel.orderFrontRegardless()
         self.panel = panel
 
@@ -476,6 +465,45 @@ struct SideDockView: View {
         }
     }
 
+
+    /// 坞空白处右键：坞自己的设置项（位置 / 材质 / 回位）+ 隐藏 + 通用操作
+    @ViewBuilder
+    private var dockMenu: some View {
+        Button(L10n.t("打开面板")) { controller.showDetail(model: model) }
+        Divider()
+        Toggle(isOn: Binding(get: { model.sideDock == "left" },
+                             set: { if $0 { model.sideDock = "left" } })) {
+            Text(L10n.t("移到左侧"))
+        }
+        Toggle(isOn: Binding(get: { model.sideDock == "right" },
+                             set: { if $0 { model.sideDock = "right" } })) {
+            Text(L10n.t("移到右侧"))
+        }
+        Divider()
+        Toggle(isOn: Binding(get: { model.dockStyle == "ink" },
+                             set: { if $0 { model.dockStyle = "ink" } })) {
+            Text(L10n.t("黑色"))
+        }
+        Toggle(isOn: Binding(get: { model.dockStyle == "glass" },
+                             set: { if $0 { model.dockStyle = "glass" } })) {
+            Text(L10n.t("液态玻璃"))
+        }
+        Divider()
+        Button(L10n.t("回到默认位置")) { model.resetDockPosition() }
+        Button(L10n.t("隐藏悬浮坞")) { model.sideDock = "off" }
+        Divider()
+        Button(L10n.t("设置…")) { AppActions.shared.openSettings() }
+        Button(L10n.t("退出 TokenMeter")) { AppActions.shared.quit() }
+    }
+
+    /// 工具行右键：只针对这一个工具
+    @ViewBuilder
+    private func rowMenu(_ name: String) -> some View {
+        Button(L10n.t("隐藏") + "「" + name + "」") { model.hideDockSource(name) }
+        Divider()
+        Button(L10n.t("设置…")) { AppActions.shared.openSettings() }
+    }
+
     /// 底行：燃烧中=速率（含 0/s），空闲=命中率；悬浮时改为判定说明
     private var bottomIsRate: Bool { model.isBurning }
     private var bottomText: String {
@@ -542,6 +570,7 @@ struct SideDockView: View {
                     else if hoveredSource == name { hoveredSource = nil }
                 }
                 .help("\(name)｜\(stateText(state))\n\(ActivityDetector.stateBasis(for: name))")
+                .contextMenu { rowMenu(name) }
             }
         }
         .padding(.top, 8)
@@ -673,6 +702,7 @@ struct SideDockView: View {
         .background(dockBackground(ink: ink))
         .overlay(dockShape.stroke(Color.white.opacity(model.dockStyle == "glass" ? 0.25 : 0.06), lineWidth: 0.7))
         .contentShape(Rectangle())
+        .contextMenu { dockMenu }
         .gesture(dragGesture)
         .onTapGesture(count: 2) { controller.resetPosition(mode: model.sideDock == "left" ? "left" : "right") }
         .onTapGesture { controller.showDetail(model: model) }
