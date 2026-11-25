@@ -89,7 +89,9 @@ struct BarFlareShape: Shape {
 /// NSVisualEffectView 是自己的视图，layer.masksToBounds + cornerRadius 一定能裁住。
 final class DockBackdropView: NSView {
     private let blur = NSVisualEffectView()
-    var style: String = "glass"
+    private var glass: AnyObject?
+    var tintAlpha: CGFloat = 0.4
+    var isDark: Bool = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -98,21 +100,41 @@ final class DockBackdropView: NSView {
         layer?.cornerRadius = 30
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
-        blur.material = .hudWindow
-        blur.blendingMode = .behindWindow
-        blur.state = .active
-        blur.wantsLayer = true
-        blur.layer?.masksToBounds = true
-        blur.layer?.cornerCurve = .continuous
-        addSubview(blur)
+        if #available(macOS 26.0, *) {
+            // 系统液态玻璃：模糊、折射、边缘高光全部由系统提供，
+            // 放进我们自己的圆角容器里，再由容器层裁切——圆角和效果都可靠。
+            let g = NSGlassEffectView()
+            g.style = .regular
+            g.cornerRadius = 30
+            addSubview(g)
+            glass = g
+        } else {
+            blur.material = .hudWindow
+            blur.blendingMode = .behindWindow
+            blur.state = .active
+            addSubview(blur)
+        }
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    /// 不透明度滑块 → 玻璃着色强度
+    func updateTint(opacity: Double, dark: Bool) {
+        guard #available(macOS 26.0, *), let g = glass as? NSGlassEffectView else { return }
+        let base: NSColor = dark ? NSColor(white: 0.08, alpha: 1) : NSColor(white: 0.98, alpha: 1)
+        g.tintColor = base.withAlphaComponent(0.85 * min(max(opacity, 0), 1))
+    }
+
     override func layout() {
         super.layout()
-        // 铺满整个窗口，圆角由容器层裁切（窗口即胶囊，不留 4pt 边）
+        if #available(macOS 26.0, *), let g = glass as? NSGlassEffectView {
+            g.frame = bounds
+            g.cornerRadius = 30
+            return
+        }
         blur.frame = bounds
         blur.layer?.cornerRadius = 30
+        blur.layer?.cornerCurve = .continuous
+        blur.layer?.masksToBounds = true
     }
 }
 
@@ -174,6 +196,7 @@ final class SideDockController: ObservableObject {
             hosting.frame = backdrop.bounds
             hosting.autoresizingMask = [.width, .height]
             backdrop.addSubview(hosting)
+            backdrop.updateTint(opacity: model.glassOpacity, dark: false)
             panel.contentView = backdrop
         } else {
             panel.contentView = hosting
@@ -644,50 +667,56 @@ struct SideDockView: View {
                     // 材质/玻璃这类「系统效果图层」上屏合成时不吃 SwiftUI 的 clipShape
                     // （窗口截图里是圆角、屏幕上却是直角方块）。
                     // 必须用 background(_:in:) 让系统自己按形状裁切。
-                    // 毛玻璃由 AppKit 的 DockBackdropView 负责（layer 裁切，上屏可靠）。
-                    // 这里只保留一层极薄的着色，让玻璃档和黑档在色彩上区分开。
-                    shape.fill(Color.white.opacity(0.06 * v))
-                    shape.fill(LinearGradient(
-                        colors: [tintSwiftUI.opacity(0.6), tintSwiftUI.opacity(0.2)],
-                        startPoint: .top, endPoint: .bottom))
-                    // 先画一圈很淡的暗边：玻璃压在浅色页面上时，圆角会「糊」进背景，
-                    // 有了这圈边界，圆角轮廓才看得出来。
-                    shape.stroke(Color.black.opacity(dark ? 0.28 : 0.13), lineWidth: 2.0)
-                    // 高光限制在顶部 66×66 的方形区域内做渐变，对角线才是真正的 45°。
-                    shape.stroke(Color.white, lineWidth: 2.6)
-                        .mask(
-                            LinearGradient(
-                                stops: [.init(color: .white, location: 0.00),
-                                        .init(color: .white.opacity(0.55), location: 0.12),
-                                        .init(color: .white.opacity(0.12), location: 0.26),
-                                        .init(color: .clear, location: 0.40)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing)
-                                .frame(width: 66, height: 66)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        )
-                    // 左上角径向辉光：光进入玻璃后的散射
-                    Rectangle()
-                        .fill(RadialGradient(
-                            colors: [.white.opacity(dark ? 0.16 : 0.30), .clear],
-                            center: .topLeading, startRadius: 0, endRadius: 90))
-                        .frame(width: 150, height: 150)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    // 右下背光侧暗边：厚度感，与左上亮边形成斜向明暗
-                    shape.stroke(Color.black.opacity(dark ? 0.30 : 0.14), lineWidth: 2.2)
-                        .mask(
-                            LinearGradient(
-                                stops: [.init(color: .clear, location: 0.72),
-                                        .init(color: .white, location: 1.00)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing)
-                                .frame(width: 120, height: 120)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                        )
+                    // 只留一层极薄的着色：模糊、折射、边缘高光由容器里的
+                    // NSGlassEffectView（系统液态玻璃）负责，不再自己画描边，
+                    // 否则会出现「一圈都是高光」「边被裁掉」这类问题。
+                    shape.fill(Color.white.opacity(0.03 * v))
                 }
             }
             .clipShape(shape)
         } else {
             shape.fill(ink)
         }
+    }
+
+
+    /// 玻璃档的高光：必须是 overlay（画在内容层之上）。
+    /// 之前放在 .background 里，会被 AppKit 的玻璃视图盖住，看起来就是「高光没了」。
+    @ViewBuilder
+    private var glassHighlight: some View {
+        let rim = RoundedRectangle(cornerRadius: 30, style: .continuous).inset(by: 1.2)
+        ZStack {
+            // 左上斜向受光：限制在顶部 60×60 方框内做 45° 衰减，左端最亮、右上角没有
+            rim.stroke(Color.white, lineWidth: 1.8)
+                .mask(
+                    LinearGradient(
+                        stops: [.init(color: .white, location: 0.00),
+                                .init(color: .white.opacity(0.55), location: 0.14),
+                                .init(color: .white.opacity(0.10), location: 0.30),
+                                .init(color: .clear, location: 0.46)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing)
+                        .frame(width: 60, height: 60)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                )
+            // 顶边内侧一层极淡的镜面
+            Rectangle()
+                .fill(LinearGradient(colors: [.white.opacity(0.18), .clear],
+                                     startPoint: .top, endPoint: .center))
+                .frame(height: 140)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .mask(rim.stroke(Color.white, lineWidth: 6))
+            // 右下背光侧暗边
+            rim.stroke(Color.black.opacity(0.16), lineWidth: 1.6)
+                .mask(
+                    LinearGradient(
+                        stops: [.init(color: .clear, location: 0.70),
+                                .init(color: .white, location: 1.00)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing)
+                        .frame(width: 120, height: 120)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                )
+        }
+        .allowsHitTesting(false)
     }
 
     var body: some View {
@@ -723,6 +752,7 @@ struct SideDockView: View {
         .frame(width: 64, height: controller.dockHeight,
                alignment: isGlassDock ? .top : (controller.side == "right" ? .topTrailing : .topLeading))
         .background(dockBackground(ink: ink))
+        .overlay { if model.dockStyle == "glass" { glassHighlight } }
         .overlay(dockShape.stroke(Color.white.opacity(model.dockStyle == "glass" ? 0.25 : 0.06), lineWidth: 0.7))
         .contentShape(Rectangle())
         .contextMenu { dockMenu }
