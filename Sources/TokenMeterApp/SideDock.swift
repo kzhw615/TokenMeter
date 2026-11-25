@@ -684,8 +684,8 @@ struct SideDockView: View {
                     // 系统玻璃在深色背景下会偏暗（看起来像"灰色加了透明度"）。
                     // 叠一层上亮下暗的白，模拟光在玻璃内部散射，观感更接近浅色玻璃。
                     shape.fill(LinearGradient(
-                        colors: [Color.white.opacity(0.60 + 0.24 * v),
-                                 Color.white.opacity(0.42 + 0.20 * v)],
+                        colors: [Color.white.opacity(0.08 + 0.12 * v),
+                                 Color.white.opacity(0.03 + 0.08 * v)],
                         startPoint: .top, endPoint: .bottom))
                 }
             }
@@ -706,17 +706,18 @@ struct SideDockView: View {
         let rim = RoundedRectangle(cornerRadius: 30, style: .continuous).inset(by: 1.1)
         let diag = LinearGradient(
             stops: [.init(color: .white, location: 0.00),
-                    .init(color: .white.opacity(0.80), location: 0.12),
-                    .init(color: .white.opacity(0.28), location: 0.28),
-                    .init(color: .clear, location: 0.48)],
+                    .init(color: .white.opacity(0.85), location: 0.14),
+                    .init(color: .white.opacity(0.40), location: 0.32),
+                    .init(color: .clear, location: 0.56)],
             startPoint: .topLeading, endPoint: .bottomTrailing)
             .frame(width: 64, height: 64)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // 纵向衰减：0% 全亮 → 35% 剩三成 → 60% 消失
         let vertical = LinearGradient(
             stops: [.init(color: .white, location: 0.00),
-                    .init(color: .white.opacity(0.30), location: 0.35),
-                    .init(color: .clear, location: 0.60)],
+                    .init(color: .white.opacity(0.45), location: 0.45),
+                    .init(color: .white.opacity(0.12), location: 0.75),
+                    .init(color: .clear, location: 0.92)],
             startPoint: .top, endPoint: .bottom)
 
         ZStack {
@@ -727,7 +728,7 @@ struct SideDockView: View {
                 .mask(diag)
                 .mask(vertical)
             // ② 亮线本体
-            rim.stroke(Color.white, lineWidth: 1.8)
+            rim.stroke(Color.white, lineWidth: 2.2)
                 .mask(diag)
                 .mask(vertical)
             // ③ 内侧折射暗线：只在上半段，压住贴纸感
