@@ -684,8 +684,8 @@ struct SideDockView: View {
                     // 系统玻璃在深色背景下会偏暗（看起来像"灰色加了透明度"）。
                     // 叠一层上亮下暗的白，模拟光在玻璃内部散射，观感更接近浅色玻璃。
                     shape.fill(LinearGradient(
-                        colors: [Color.white.opacity(0.20 + 0.40 * v),
-                                 Color.white.opacity(0.10 + 0.24 * v)],
+                        colors: [Color.white.opacity(0.60 + 0.24 * v),
+                                 Color.white.opacity(0.42 + 0.20 * v)],
                         startPoint: .top, endPoint: .bottom))
                 }
             }
