@@ -681,7 +681,12 @@ struct SideDockView: View {
                     // 只留一层极薄的着色：模糊、折射、边缘高光由容器里的
                     // NSGlassEffectView（系统液态玻璃）负责，不再自己画描边，
                     // 否则会出现「一圈都是高光」「边被裁掉」这类问题。
-                    shape.fill(Color.white.opacity(0.03 * v))
+                    // 系统玻璃在深色背景下会偏暗（看起来像"灰色加了透明度"）。
+                    // 叠一层上亮下暗的白，模拟光在玻璃内部散射，观感更接近浅色玻璃。
+                    shape.fill(LinearGradient(
+                        colors: [Color.white.opacity(0.20 + 0.40 * v),
+                                 Color.white.opacity(0.10 + 0.24 * v)],
+                        startPoint: .top, endPoint: .bottom))
                 }
             }
             .clipShape(shape)
