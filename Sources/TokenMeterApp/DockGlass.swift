@@ -468,6 +468,10 @@ final class DockBackdropView: NSView {
 
     func recheckPermission() {
         authorized = CGPreflightScreenCaptureAccess()
+        if ProcessInfo.processInfo.environment["TOKENMETER_DEBUG"] != nil {
+            let text = "DBG glass screenCapture=\(authorized ? "已授权" : "未授权")\n"
+            FileHandle.standardError.write(Data(text.utf8))
+        }
         updateRegion()
     }
 

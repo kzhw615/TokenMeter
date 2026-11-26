@@ -22,7 +22,12 @@ openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
     -addext "keyUsage=critical,digitalSignature" \
     -addext "extendedKeyUsage=critical,codeSigning" 2>/dev/null
 
-openssl pkcs12 -export -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
+# 必须用 -legacy：OpenSSL 3+ 默认的 PBES2/AES 算法 macOS 的 security 工具解不了，
+# 会报 "MAC verification failed during PKCS12 import"。
+openssl pkcs12 -export -legacy -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
+    -out "$TMP/id.p12" -passout pass:tokenmeter -name "$NAME" 2>/dev/null \
+ || openssl pkcs12 -export -macalg sha1 -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES \
+    -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
     -out "$TMP/id.p12" -passout pass:tokenmeter -name "$NAME" 2>/dev/null
 
 echo "==> 导入登录钥匙串（可能需要输入两次钥匙串密码）"
