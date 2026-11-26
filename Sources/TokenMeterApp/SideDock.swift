@@ -110,6 +110,9 @@ final class SideDockController: ObservableObject {
 
     @Published var fuse: CGFloat = 1     // 0 = 浮块圆角矩形，1 = 贴边融合（拖动/回弹时渐变）
     /// 坞是否真正显示着（用于判断「同一侧但被关掉了」这种状态）
+    /// 防重入：apply 内部会回写 model.sideDock，其 didSet 又会调 apply，
+    /// 不拦会出现「一次启动创建多个坞窗口」。
+    private var isApplying = false
     var isShowing: Bool { panel != nil }
     /// 坞当前实际吸附在哪一侧（拖动后会和设置里的值同步）
     weak var appModel: AppModel?
@@ -127,6 +130,10 @@ final class SideDockController: ObservableObject {
 
     /// useSaved=true 仅首启：沿用上次吸附的侧别；设置切换走 false：显式意图优先
     func apply(mode: String, model: AppModel, useSaved: Bool = false) {
+        self.appModel = model
+        guard !isApplying else { return }
+        isApplying = true
+        defer { isApplying = false }
         isGlassStyle = model.dockStyle == "glass"
         teardown()
         guard mode == "left" || mode == "right" else { return }
