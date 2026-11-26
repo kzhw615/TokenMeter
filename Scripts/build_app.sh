@@ -63,7 +63,18 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 sed -i '' "s/{{VERSION}}/$VERSION/" "$APP/Contents/Info.plist"
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+# 签名身份：优先用固定身份（TCC 授权可跨版本保留），否则退回 ad-hoc。
+# ad-hoc 每次构建 cdhash 都会变，导致「屏幕录制」权限每次更新后失效。
+IDENTITY="${SIGN_IDENTITY:-}"
+if [ -z "$IDENTITY" ]; then
+    if security find-identity -v -p codesigning 2>/dev/null | grep -q "TokenMeter Self-Signed"; then
+        IDENTITY="TokenMeter Self-Signed"
+    else
+        IDENTITY="-"
+    fi
+fi
+echo "==> 签名身份: $IDENTITY"
+codesign --force --deep --sign "$IDENTITY" "$APP" >/dev/null 2>&1 || echo "⚠️  签名失败（$IDENTITY）"
 
 echo "==> done: $APP 和 $OUT/tokenmeter"
 echo "    运行: open $APP   或   $OUT/tokenmeter report"
