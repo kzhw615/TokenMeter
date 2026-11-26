@@ -32,7 +32,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let delay: Double = 9.0 + Double(i) * 2.5
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                     guard let model = self?.model else { return }
-                    model.sideDock = step
+                    // 支持 side:xxx / style:xxx 两种指令，方便自测坞的重建路径
+                    if step.hasPrefix("style:") {
+                        model.dockStyle = String(step.dropFirst("style:".count))
+                    } else if step.hasPrefix("side:") {
+                        model.sideDock = String(step.dropFirst("side:".count))
+                    } else {
+                        model.sideDock = step
+                    }
                     let shown: Bool = model.dockControllerForTest.isShowing
                     let text: String = "DBG dock seq step=\(step) → \(shown ? "显示" : "隐藏")\n"
                     FileHandle.standardError.write(Data(text.utf8))
